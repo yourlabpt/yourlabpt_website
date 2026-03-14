@@ -1,0 +1,215 @@
+# YourLab Business Card Website
+
+A beautiful, modern single-page business card website with an intelligent chat agent that collects business ideas and customer contact information.
+
+## Features
+
+✨ **Modern Design**
+- Dark grey gradient background
+- Sleek, modern UI with smooth animations
+- Responsive design that works on all devices
+- Beautiful hover effects and transitions
+
+🤖 **Intelligent Chat Agent**
+- Conversational flow that guides visitors through sharing their business idea
+- Automatic extraction of contact information (name, email, phone)
+- Smart conversation logic that adapts based on collected information
+- User-friendly interface with typing indicators
+
+💾 **Secure Data Storage**
+- Client-side local storage for immediate backup
+- Server-side secure storage in JSON files
+- Admin endpoints to view and manage all inquiries
+- Timestamped records for each conversation
+
+🎨 **Company Branding**
+- Display your dark logo prominently
+- Showcase your work with Instagram post gallery
+- Professional company description
+- Modern typography and color scheme
+
+## Project Structure
+
+```
+website/
+├── index.html           # Main page
+├── styles.css           # Modern styling
+├── script.js            # Chat agent logic
+├── server/
+│   ├── server.js        # Express.js backend
+│   ├── package.json     # Dependencies
+│   └── inquiries/       # Stored inquiry data
+├── Logos YourLab/       # Your company logos
+└── post Intro/          # Instagram post images
+```
+
+## Installation & Setup
+
+### Option 1: Frontend Only (Local Storage)
+If you just want to test locally without a backend:
+
+1. Open `index.html` in your browser
+2. The chat data will be saved to browser local storage
+3. View saved inquiries in the browser console: `showSavedConversations()`
+
+### Option 2: Full Setup (With Backend)
+
+**Prerequisites:**
+- Node.js (v14 or higher)
+- npm
+
+**Steps:**
+
+1. **Install backend dependencies:**
+```bash
+cd website/server
+npm install
+```
+
+2. **Run the server:**
+```bash
+npm start
+```
+
+The server will start on `http://localhost:3000`
+
+3. **Access the website:**
+Open your browser and go to `http://localhost:3000`
+
+## API Endpoints
+
+### Save Inquiry (POST)
+```
+POST /api/save-inquiry
+Body: {
+  timestamp: string,
+  contact: {
+    name: string,
+    email: string,
+    phone: string
+  },
+  businessIdea: string,
+  messages: array
+}
+```
+
+### Get All Inquiries (GET)
+```
+GET /api/inquiries
+Returns: { count: number, inquiries: array }
+```
+
+### Get Single Inquiry (GET)
+```
+GET /api/inquiries/:filename
+```
+
+### Delete Inquiry (DELETE)
+```
+DELETE /api/inquiries/:filename
+```
+
+### Health Check (GET)
+```
+GET /api/health
+Returns: { status: string, timestamp: string, inquiriesCount: number }
+```
+
+## Customization
+
+### Change Colors
+Edit the CSS variables in `styles.css`:
+```css
+:root {
+    --primary-dark: #1a1a1a;      /* Main background */
+    --secondary-dark: #2d2d2d;    /* Card background */
+    --accent-color: #00d4ff;      /* Cyan highlight */
+    --text-light: #e0e0e0;        /* Main text */
+}
+```
+
+### Update Logo & Images
+Replace image paths in `index.html`:
+- Logo: `../Logos YourLab/1.png`
+- Gallery images: Update paths in gallery section
+
+### Modify Chat Flow
+Edit `script.js` function `processUserMessage()` to customize the conversation logic.
+
+## Deployment
+
+### Deploy to Netlify (Frontend Only)
+1. Push code to GitHub
+2. Connect to Netlify
+3. Set build command: (leave empty)
+4. Set publish directory: `website`
+
+### Deploy Backend to Heroku
+1. Create a Procfile in `server/`:
+```
+web: node server.js
+```
+
+2. Deploy:
+```bash
+heroku create yourlab-api
+git push heroku main
+```
+
+### Deploy to Your Own Server
+1. Install Node.js on your server
+2. Clone repository
+3. Run `npm install` in `server/` directory
+4. Use PM2 for process management:
+```bash
+npm install -g pm2
+pm2 start server.js
+pm2 startup
+pm2 save
+```
+
+## Viewing Inquiries
+
+### From Admin Dashboard
+Access `/api/inquiries` in your browser to see all collected inquiries in JSON format.
+
+### From File System
+All inquiries are stored in `server/inquiries/` directory as JSON files.
+
+### From Browser Console
+```javascript
+// If using local storage only
+showSavedConversations()
+```
+
+## Features in Detail
+
+### Chat Agent Intelligence
+- Automatically detects email addresses, phone numbers, and names in user input
+- Asks follow-up questions based on collected information
+- Prevents duplicate data requests
+- Guides users through the entire inquiry process
+
+### Responsive Design
+- Mobile-first approach
+- Adapts to all screen sizes
+- Touch-friendly interface
+- Optimized for phone and tablet viewing
+
+### Smooth Animations
+- Fade-in effects for page elements
+- Hover animations on clickable elements
+- Smooth transitions for all interactive elements
+- Staggered animations for visual appeal
+
+## Browser Support
+- Chrome/Edge (latest)
+- Firefox (latest)
+- Safari (latest)
+- Mobile browsers
+
+## License
+© 2025 YourLab. All rights reserved.
+
+## Support
+For issues or questions, please contact your YourLab team.

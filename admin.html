@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YourLab - Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-dark: #1b1b1b;
+            --secondary-dark: #242424;
+            --accent-dark: #2a2a2a;
+            --text-light: #eeede9;
+            --text-muted: #a9a8a3;
+            --accent-color: #e8d5b7;
+            --success-color: #4ade80;
+            --danger-color: #ff6b6b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: #1b1b1b;
+            color: var(--text-light);
+            min-height: 100vh;
+            padding: 20px;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #e8d5b7, #d4c4a3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: var(--accent-color);
+            color: var(--primary-dark);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 212, 255, 0.25);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--secondary-dark);
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card h3 {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .number {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--accent-color);
+        }
+
+        .inquiries-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+
+        .inquiry-card {
+            background: var(--secondary-dark);
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--accent-dark);
+            transition: all 0.3s ease;
+        }
+
+        .inquiry-card:hover {
+            border-color: var(--accent-color);
+            box-shadow: 0 8px 20px rgba(0, 212, 255, 0.15);
+            transform: translateY(-4px);
+        }
+
+        .inquiry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .contact-info h3 {
+            color: var(--accent-color);
+            margin-bottom: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .contact-info p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .timestamp {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .business-idea {
+            background: var(--accent-dark);
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            max-height: 120px;
+            overflow-y: auto;
+            border-left: 2px solid var(--accent-color);
+        }
+
+        .business-idea p {
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--text-light);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            flex: 1;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-copy {
+            background: var(--accent-dark);
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+        }
+
+        .btn-copy:hover {
+            background: var(--accent-color);
+            color: var(--primary-dark);
+        }
+
+        .btn-delete {
+            background: var(--danger-color);
+            color: white;
+        }
+
+        .btn-delete:hover {
+            opacity: 0.8;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--accent-color);
+        }
+
+        .spinner {
+            border: 3px solid var(--accent-dark);
+            border-top: 3px solid var(--accent-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .filter-section {
+            margin-bottom: 24px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .filter-section input {
+            padding: 8px 12px;
+            background: var(--secondary-dark);
+            border: 1px solid var(--accent-dark);
+            border-radius: 6px;
+            color: var(--text-light);
+            flex: 1;
+            min-width: 220px;
+            font-size: 0.9rem;
+        }
+
+        .filter-section input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.15);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--success-color);
+            color: var(--primary-dark);
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .inquiries-grid {
+                grid-template-columns: 1fr;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 20px;
+                align-items: flex-start;
+            }
+
+            .controls {
+                width: 100%;
+            }
+
+            .controls button {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>YourLab Admin Dashboard</h1>
+            <div class="controls">
+                <button onclick="refreshData()">🔄 Refresh</button>
+                <button onclick="exportData()">⬇️ Export</button>
+            </div>
+        </header>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <h3>Total Inquiries</h3>
+                <div class="number" id="totalCount">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Last Updated</h3>
+                <div id="lastUpdate" style="color: var(--accent-color); font-size: 0.9rem; margin-top: 10px;">-</div>
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <input type="text" id="searchInput" placeholder="Search by name, email, or business idea...">
+            <button onclick="clearSearch()">Clear</button>
+        </div>
+
+        <div id="content" class="inquiries-grid"></div>
+    </div>
+
+    <script>
+        let allInquiries = [];
+
+        async function loadInquiries() {
+            try {
+                const response = await fetch('/api/inquiries');
+                const data = await response.json();
+                allInquiries = data.inquiries || [];
+                displayInquiries(allInquiries);
+                updateStats();
+            } catch (error) {
+                console.error('Error loading inquiries:', error);
+                showError('Failed to load inquiries. Make sure the backend is running.');
+            }
+        }
+
+        function displayInquiries(inquiries) {
+            const content = document.getElementById('content');
+            
+            if (inquiries.length === 0) {
+                content.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
+                        <p style="font-size: 1.1rem;">No inquiries yet.</p>
+                        <p style="margin-top: 10px;">Inquiries will appear here as customers submit them.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            content.innerHTML = inquiries.map(inquiry => `
+                <div class="inquiry-card">
+                    <div class="inquiry-header">
+                        <div class="contact-info">
+                            <h3>${escapeHtml(inquiry.contact.name || 'Anonymous')}</h3>
+                            <p>📧 ${escapeHtml(inquiry.contact.email || 'N/A')}</p>
+                            <p>📱 ${escapeHtml(inquiry.contact.phone || 'N/A')}</p>
+                        </div>
+                        <span class="timestamp">${new Date(inquiry.timestamp).toLocaleDateString()}</span>
+                    </div>
+                    
+                    <div class="business-idea">
+                        <p><strong>Business Idea:</strong></p>
+                        <p>${escapeHtml(inquiry.businessIdea.substring(0, 200))}${inquiry.businessIdea.length > 200 ? '...' : ''}</p>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn-small btn-copy" onclick="copyToClipboard('${escapeHtml(JSON.stringify(inquiry))}')">📋 Copy</button>
+                        <button class="btn-small btn-delete" onclick="deleteInquiry('${inquiry.filename}')">🗑️ Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats() {
+            document.getElementById('totalCount').textContent = allInquiries.length;
+            const now = new Date().toLocaleString();
+            document.getElementById('lastUpdate').textContent = now;
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function copyToClipboard(text) {
+            try {
+                const parsed = JSON.parse(text);
+                navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
+                showToast('Copied to clipboard!');
+            } catch (e) {
+                console.error('Error copying:', e);
+            }
+        }
+
+        async function deleteInquiry(filename) {
+            if (!confirm('Are you sure you want to delete this inquiry?')) return;
+
+            try {
+                const response = await fetch(`/api/inquiries/${filename}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    showToast('Inquiry deleted!');
+                    loadInquiries();
+                }
+            } catch (error) {
+                console.error('Error deleting:', error);
+                showError('Failed to delete inquiry');
+            }
+        }
+
+        function refreshData() {
+            loadInquiries();
+            showToast('Data refreshed!');
+        }
+
+        function exportData() {
+            if (allInquiries.length === 0) {
+                showError('No inquiries to export');
+                return;
+            }
+
+            const dataStr = JSON.stringify(allInquiries, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `yourlab_inquiries_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            showToast('Data exported!');
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function showError(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = '❌ ' + message;
+            toast.style.background = 'var(--danger-color)';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Search functionality
+        document.getElementById('searchInput')?.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = allInquiries.filter(inquiry =>
+                inquiry.contact.name?.toLowerCase().includes(query) ||
+                inquiry.contact.email?.toLowerCase().includes(query) ||
+                inquiry.businessIdea.toLowerCase().includes(query)
+            );
+            displayInquiries(filtered);
+        });
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            displayInquiries(allInquiries);
+        }
+
+        // Load data on page load
+        loadInquiries();
+        // Auto-refresh every 10 seconds
+        setInterval(loadInquiries, 10000);
+    </script>
+</body>
+</html>

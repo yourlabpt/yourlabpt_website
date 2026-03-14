@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YourLab - Business Card</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Language Toggle -->
+    <button class="lang-toggle" id="langToggle" aria-label="Switch language">
+        <span class="lang-option active" data-lang="en">EN</span>
+        <span class="lang-divider">/</span>
+        <span class="lang-option" data-lang="pt">PT</span>
+    </button>
+
+    <div class="container">
+        <!-- Header with Logo -->
+        <header class="header">
+            <div class="logo-container">
+                <img src="logo.png" alt="YourLab Logo" class="logo">
+            </div>
+            <p class="tagline" data-i18n="tagline">Your Ideas Into Reality</p>
+        </header>
+
+        <!-- About Section -->
+        <section class="about" id="about">
+            <!-- Floating particles background -->
+            <div class="about-particles">
+                <canvas id="terrainDotsCanvas" class="terrain-dots-canvas" aria-hidden="true"></canvas>
+            </div>
+
+            <div class="about-content">
+                <h2 class="about-heading reveal-up" data-i18n="aboutHeading">About YourLab</h2>
+                <p class="about-lead reveal-up" data-i18n="aboutLead">Fail small. Learn fast. Launch smart.</p>
+                <p class="about-body reveal-up" data-i18n="aboutBody">Every year, over 30,000 new products are launched — and more than 90% of them fail. The biggest risk isn't having a bad idea; it's investing everything before validating on your business.</p>
+                <p class="about-body reveal-up" data-i18n="aboutBody2">At YourLab, we help you build lean solutions so you can test your concept in the real market, learn what works, and iterate — fail smaller and pivot sooner.</p>
+            </div>
+
+            <!-- Industry Reality Stats -->
+            <div class="about-stats reveal-up">
+                <div class="stat stat-danger">
+                    <span class="stat-number" data-target="90">0</span><span class="stat-suffix">%</span>
+                    <span class="stat-label" data-i18n="statLabel1">of new products fail</span>
+                    <span class="stat-source">Harvard Business Review</span>
+                </div>
+                <div class="stat stat-warning">
+                    <span class="stat-number" data-target="70">0</span><span class="stat-suffix">%</span>
+                    <span class="stat-label" data-i18n="statLabel2">of organisations struggle to innovate</span>
+                    <span class="stat-source">VMware / Digitalisation World</span>
+                </div>
+            </div>
+
+            <p class="about-cta-text reveal-up" data-i18n="aboutCta" data-i18n-html="true">The solution? Don't build everything — build the <strong>right thing first</strong>. That's what an MVP does.</p>
+
+            <!-- Idea → MVP Journey -->
+            <div class="journey">
+                <div class="journey-step reveal-up">
+                    <div class="journey-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 1 4 12.9V17H8v-2.1A7 7 0 0 1 12 2z"/></svg>
+                    </div>
+                    <h3 data-i18n="journeyIdea">Idea</h3>
+                    <p data-i18n="journeyIdeaDesc">You share your vision and business concept with us</p>
+                </div>
+                <div class="journey-connector reveal-up"><span></span></div>
+                <div class="journey-step reveal-up">
+                    <div class="journey-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                    </div>
+                    <h3 data-i18n="journeyStrategy">Strategy</h3>
+                    <p data-i18n="journeyStrategyDesc">We define the roadmap, scope, and core features</p>
+                </div>
+                <div class="journey-connector reveal-up"><span></span></div>
+                <div class="journey-step reveal-up">
+                    <div class="journey-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>
+                    </div>
+                    <h3 data-i18n="journeyBuild">Build</h3>
+                    <p data-i18n="journeyBuildDesc">Our team designs and develops your product rapidly</p>
+                </div>
+                <div class="journey-connector reveal-up"><span></span></div>
+                <div class="journey-step reveal-up">
+                    <div class="journey-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 3 0 3 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-3 0-3"/></svg>
+                    </div>
+                    <h3 data-i18n="journeyLaunch">Launch MVP</h3>
+                    <p data-i18n="journeyLaunchDesc">Your product is ready to meet real users and grow</p>
+                </div>
+            </div>
+
+            <div class="about-content">
+                <p class="about-lead reveal-up" data-i18n="conclusionHeading">Why we are different?</p>
+                <p class="about-body reveal-up" data-i18n="conclusionBody">We apply disciplined requirements engineering to transform your ideas into structured, measurable outcomes. Every request becomes a defined requirement, and every requirement carries a validation metric — so you always know what is being built and why. We don’t build for you; we build with you. This isn’t our lab — it’s YourLab. A place to test, measure, iterate, and grow. If you’re ready to move from assumption to validation, let’s start building the right thing.</p>
+          </div>
+        </section>
+
+        <!-- Gallery Slideshow Section -->
+        <section class="slideshow-section" id="slideshow">
+            <div class="slideshow-container">
+                <div class="slide active" style="background-image: url('./post_intro/4.png')"></div>
+                <div class="slide" style="background-image: url('./post_intro/5.png')"></div>
+                <div class="slide" style="background-image: url('./post_intro/6.png')"></div>
+                <div class="slide" style="background-image: url('./post_intro/7.png')"></div>
+
+                <!-- Navigation Arrows -->
+                <button class="slide-arrow slide-prev" aria-label="Previous slide">&#10094;</button>
+                <button class="slide-arrow slide-next" aria-label="Next slide">&#10095;</button>
+
+                <!-- Dots -->
+                <div class="slide-dots">
+                    <span class="dot active" data-index="0"></span>
+                    <span class="dot" data-index="1"></span>
+                    <span class="dot" data-index="2"></span>
+                    <span class="dot" data-index="3"></span>
+                </div>
+
+                <!-- Progress bar -->
+                <div class="slide-progress"><div class="slide-progress-bar"></div></div>
+            </div>
+        </section>
+
+        <!-- Chat Agent Section -->
+        <section class="chat-section">
+            <h2 data-i18n="chatHeading">Let's Talk About Your Idea</h2>
+            <p class="chat-description" data-i18n="chatDescription">Have a business idea? Our AI agent is here to listen and help you shape your vision. Just describe your idea and leave your contact information.</p>
+            
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot-message">
+                        <p data-i18n="chatGreeting">Hi there! I'm the YourLab Agent. Tell me about your business idea and share your contact info so we can reach out to discuss it further.</p>
+                    </div>
+                </div>
+
+                <form class="chat-form" id="chatForm">
+                    <input
+                        type="text"
+                        id="userInput"
+                        placeholder="Type your message here..."
+                        data-i18n-placeholder="inputPlaceholder"
+                        required
+                    >
+                    <button type="submit" class="send-btn" data-i18n="sendBtn">Send</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p data-i18n="footerText">&copy; 2025 YourLab. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
