@@ -4,9 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YourLab - Business Card</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <div class="global-landscape-bg" aria-hidden="true">
+        <canvas id="globalLandscapeCanvas" class="global-landscape-canvas"></canvas>
+    </div>
+
     <!-- Language Toggle -->
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">
         <span class="lang-option active" data-lang="en">EN</span>
@@ -25,11 +32,6 @@
 
         <!-- About Section -->
         <section class="about" id="about">
-            <!-- Floating particles background -->
-            <div class="about-particles">
-                <canvas id="terrainDotsCanvas" class="terrain-dots-canvas" aria-hidden="true"></canvas>
-            </div>
-
             <div class="about-content">
                 <h2 class="about-heading reveal-up" data-i18n="aboutHeading">About YourLab</h2>
                 <p class="about-lead reveal-up" data-i18n="aboutLead">Fail small. Learn fast. Launch smart.</p>
@@ -96,11 +98,81 @@
 
         <!-- Gallery Slideshow Section -->
         <section class="slideshow-section" id="slideshow">
+            <div class="slideshow-intro reveal-up">
+                <p class="slideshow-kicker">IMMERSIVE OVERVIEW</p>
+                <h2>An interactive walkthrough of how YourLab builds products</h2>
+                <p>Move through each scene, interact with words, and follow the journey from concept to launch.</p>
+            </div>
+
             <div class="slideshow-container">
-                <div class="slide active" style="background-image: url('./post_intro/4.png')"></div>
-                <div class="slide" style="background-image: url('./post_intro/5.png')"></div>
-                <div class="slide" style="background-image: url('./post_intro/6.png')"></div>
-                <div class="slide" style="background-image: url('./post_intro/7.png')"></div>
+                <div class="slide active">
+                    <article class="story-scene">
+                        <p class="slide-index">01 / 05</p>
+                        <h3 data-word-interactive>Welcome to YourLab.</h3>
+                        <p class="scene-lead" data-word-interactive>We are the lab where your business ideas are developed, tested, and brought to life.</p>
+                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                    </article>
+                </div>
+                <div class="slide">
+                    <article class="story-scene">
+                        <p class="slide-index">02 / 05</p>
+                        <h3 data-word-interactive>What We Do</h3>
+                        <p class="scene-quote" data-word-interactive>Your idea in our lab.</p>
+                        <div class="scene-list">
+                            <p data-word-interactive>Smart Design — we transform raw ideas into actionable, well-defined requirements based on systems engineering methods.</p>
+                            <p data-word-interactive>Test first — we start with a focused MVP, giving you something tangible to test and refine before moving ahead.</p>
+                            <p data-word-interactive>Scope — projects range from custom business software to IoT applications and integrations built around your needs.</p>
+                        </div>
+                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                    </article>
+                </div>
+                <div class="slide">
+                    <article class="story-scene">
+                        <p class="slide-index">03 / 05</p>
+                        <h3 data-word-interactive>Our Process</h3>
+                        <p class="scene-quote" data-word-interactive>Turning ideas into action.</p>
+                        <div class="scene-steps">
+                            <article class="step-card">
+                                <span>01</span>
+                                <p data-word-interactive>Book a call and show your idea.</p>
+                            </article>
+                            <article class="step-card">
+                                <span>02</span>
+                                <p data-word-interactive>Plan the requirements and select the essentials for the MVP.</p>
+                            </article>
+                            <article class="step-card">
+                                <span>03</span>
+                                <p data-word-interactive>Build with regular updates as your idea comes to life.</p>
+                            </article>
+                            <article class="step-card">
+                                <span>04</span>
+                                <p data-word-interactive>Launch with confidence by validating before investing more.</p>
+                            </article>
+                        </div>
+                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                    </article>
+                </div>
+                <div class="slide">
+                    <article class="story-scene">
+                        <p class="slide-index">04 / 05</p>
+                        <h3 data-word-interactive>Why Choose YourLab</h3>
+                        <div class="scene-list">
+                            <p data-word-interactive>One-to-One Rule — each specialist handles one project at a time, ensuring focused expertise and attention.</p>
+                            <p data-word-interactive>Real People, Real Expertise — we combine human experience with AI support for smarter delivery.</p>
+                            <p data-word-interactive>Builder Driven — we work side by side with you to build innovative solutions from scratch.</p>
+                            <p data-word-interactive>Custom pricing — we understand your business reality and define pricing together.</p>
+                        </div>
+                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                    </article>
+                </div>
+                <div class="slide">
+                    <article class="story-scene scene-final">
+                        <p class="slide-index">05 / 05</p>
+                        <h3 data-word-interactive>Are you ready to turn ideas into reality?</h3>
+                        <p class="scene-lead" data-word-interactive>We are here for you. YourLab Technologies.</p>
+                        <a class="scene-next-link" href="#chatForm">Start the conversation</a>
+                    </article>
+                </div>
 
                 <!-- Navigation Arrows -->
                 <button class="slide-arrow slide-prev" aria-label="Previous slide">&#10094;</button>
@@ -112,6 +184,7 @@
                     <span class="dot" data-index="1"></span>
                     <span class="dot" data-index="2"></span>
                     <span class="dot" data-index="3"></span>
+                    <span class="dot" data-index="4"></span>
                 </div>
 
                 <!-- Progress bar -->
