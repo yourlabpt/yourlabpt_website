@@ -427,9 +427,26 @@ function processFallbackUserMessage(userText) {
     return botResponse;
 }
 
+function setChatStatus(mode) {
+    // mode: 'ai' | 'server' | 'offline' | 'connecting'
+    const dot   = document.getElementById('chatStatusDot');
+    const label = document.getElementById('chatStatusLabel');
+    if (!dot || !label) return;
+    const isPt = currentLang === 'pt';
+    const labels = {
+        ai:         isPt ? 'Alex IA · online'        : 'Alex AI · online',
+        server:     isPt ? 'modo offline do servidor' : 'server offline mode',
+        offline:    isPt ? 'modo offline'             : 'offline mode',
+        connecting: isPt ? 'a ligar…'                 : 'connecting…'
+    };
+    dot.className = 'chat-status-dot ' + (mode === 'connecting' ? '' : mode);
+    label.textContent = labels[mode] || labels.connecting;
+}
+
 async function processUserMessage(userText) {
     addUserMessage(userText);
     const typingIndicator = addTypingIndicator();
+    setChatStatus('connecting');
 
     try {
         const result = await sendMessageToAi(userText);
@@ -439,6 +456,8 @@ async function processUserMessage(userText) {
             chatState.sessionId = result.sessionId;
             localStorage.setItem('yourlab_chat_session_id', chatState.sessionId);
         }
+
+        setChatStatus(result.usingFallback ? 'server' : 'ai');
 
         const botResponse = (result.reply || '').trim() || getBotText().generic[0];
         addBotMessage(botResponse);
@@ -472,6 +491,7 @@ async function processUserMessage(userText) {
     } catch (error) {
         console.warn('AI backend unavailable, using fallback flow:', error.message);
         removeTypingIndicator(typingIndicator);
+        setChatStatus('offline');
         const fallbackReply = processFallbackUserMessage(userText);
         setTimeout(() => addBotMessage(fallbackReply), 250);
     }
