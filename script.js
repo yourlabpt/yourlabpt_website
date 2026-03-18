@@ -307,7 +307,8 @@ function saveConversationLocally(payload) {
 }
 
 async function sendMessageToAi(userText) {
-    const response = await fetch('/api/chat', {
+    const apiBase = (window.YOURLAB_API_URL || '').replace(/\/$/, '');
+    const response = await fetch(`${apiBase}/api/chat`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

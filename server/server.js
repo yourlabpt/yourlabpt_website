@@ -9,7 +9,7 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const CHAT_SESSION_TTL_MS = Number(process.env.CHAT_SESSION_TTL_MS || 45 * 60 * 1000);
 const SHOULD_STORE_RESPONSES = String(process.env.OPENAI_STORE_RESPONSES || 'false') === 'true';
 
@@ -17,8 +17,26 @@ const openai = process.env.OPENAI_API_KEY
     ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
-// Middleware
-app.use(cors());
+// CORS — allow same-origin requests and known production/dev origins
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'https://yourlabpt.com',
+    'https://www.yourlabpt.com',
+    process.env.ALLOWED_ORIGIN
+].filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no Origin header (same-origin, curl, mobile)
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS: origin ${origin} not allowed`));
+        }
+    }
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Serve vCard with explicit MIME type for better mobile compatibility
