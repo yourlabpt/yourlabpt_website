@@ -36,13 +36,22 @@ showSavedConversations()
    npm install
    ```
 
-3. **Start the server:**
+3. **Configure `.env`:**
+   ```bash
+   cp .env.example .env
+   ```
+   Required for production behavior:
+   - `OPENAI_API_KEY`
+   - `LEAD_NOTIFY_TO`
+   - SMTP variables (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, etc.)
+
+4. **Start the server:**
    ```bash
    npm start
    ```
-   You'll see: `🚀 YourLab Chat API running on http://localhost:3000`
+   You'll see: `YourLab Chat API running on http://localhost:3000`
 
-4. **Open in browser:**
+5. **Open in browser:**
    - Website: http://localhost:3000
    - Admin Dashboard: http://localhost:3000/admin.html
 

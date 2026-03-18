@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YourLab - Business Card</title>
+    <link rel="icon" type="image/png" href="favicon.png?v=2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,9 +17,9 @@
 
     <!-- Language Toggle -->
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">
-        <span class="lang-option active" data-lang="en">EN</span>
+        <span class="lang-option" data-lang="en">EN</span>
         <span class="lang-divider">/</span>
-        <span class="lang-option" data-lang="pt">PT</span>
+        <span class="lang-option active" data-lang="pt">PT</span>
     </button>
 
     <div class="container">
@@ -61,32 +62,40 @@
                     <div class="journey-icon">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 1 4 12.9V17H8v-2.1A7 7 0 0 1 12 2z"/></svg>
                     </div>
-                    <h3 data-i18n="journeyIdea">Idea</h3>
-                    <p data-i18n="journeyIdeaDesc">You share your vision and business concept with us</p>
+                    <div class="journey-step-text">
+                        <h3 data-i18n="journeyIdea">Idea</h3>
+                        <p data-i18n="journeyIdeaDesc">You share your vision and business concept with us</p>
+                    </div>
                 </div>
                 <div class="journey-connector reveal-up"><span></span></div>
                 <div class="journey-step reveal-up">
                     <div class="journey-icon">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                     </div>
-                    <h3 data-i18n="journeyStrategy">Strategy</h3>
-                    <p data-i18n="journeyStrategyDesc">We define the roadmap, scope, and core features</p>
+                    <div class="journey-step-text">
+                        <h3 data-i18n="journeyStrategy">Strategy</h3>
+                        <p data-i18n="journeyStrategyDesc">We define the roadmap, scope, and core features</p>
+                    </div>
                 </div>
                 <div class="journey-connector reveal-up"><span></span></div>
                 <div class="journey-step reveal-up">
                     <div class="journey-icon">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>
                     </div>
-                    <h3 data-i18n="journeyBuild">Build</h3>
-                    <p data-i18n="journeyBuildDesc">Our team designs and develops your product rapidly</p>
+                    <div class="journey-step-text">
+                        <h3 data-i18n="journeyBuild">Build</h3>
+                        <p data-i18n="journeyBuildDesc">Our team designs and develops your product rapidly</p>
+                    </div>
                 </div>
                 <div class="journey-connector reveal-up"><span></span></div>
                 <div class="journey-step reveal-up">
                     <div class="journey-icon">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 3 0 3 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-3 0-3"/></svg>
                     </div>
-                    <h3 data-i18n="journeyLaunch">Launch MVP</h3>
-                    <p data-i18n="journeyLaunchDesc">Your product is ready to meet real users and grow</p>
+                    <div class="journey-step-text">
+                        <h3 data-i18n="journeyLaunch">Launch MVP</h3>
+                        <p data-i18n="journeyLaunchDesc">Your product is ready to meet real users and grow</p>
+                    </div>
                 </div>
             </div>
 
@@ -99,78 +108,78 @@
         <!-- Gallery Slideshow Section -->
         <section class="slideshow-section" id="slideshow">
             <div class="slideshow-intro reveal-up">
-                <p class="slideshow-kicker">IMMERSIVE OVERVIEW</p>
-                <h2>An interactive walkthrough of how YourLab builds products</h2>
-                <p>Move through each scene, interact with words, and follow the journey from concept to launch.</p>
+                <p class="slideshow-kicker" data-i18n="slideshowKicker">IMMERSIVE OVERVIEW</p>
+                <h2 data-i18n="slideshowIntroHeading">An interactive walkthrough of how YourLab builds products</h2>
+                <p data-i18n="slideshowIntroDesc">Move through each scene, interact with words, and follow the journey from concept to launch.</p>
             </div>
 
             <div class="slideshow-container">
                 <div class="slide active">
                     <article class="story-scene">
                         <p class="slide-index">01 / 05</p>
-                        <h3 data-word-interactive>Welcome to YourLab.</h3>
-                        <p class="scene-lead" data-word-interactive>We are the lab where your business ideas are developed, tested, and brought to life.</p>
-                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                        <h3 data-word-interactive data-i18n="slide1Heading">Welcome to YourLab.</h3>
+                        <p class="scene-lead" data-word-interactive data-i18n="slide1Lead">We are the lab where your business ideas are developed, tested, and brought to life.</p>
+                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
                     <article class="story-scene">
                         <p class="slide-index">02 / 05</p>
-                        <h3 data-word-interactive>What We Do</h3>
-                        <p class="scene-quote" data-word-interactive>Your idea in our lab.</p>
+                        <h3 data-word-interactive data-i18n="slide2Heading">What We Do</h3>
+                        <p class="scene-quote" data-word-interactive data-i18n="slide2Quote">Your idea in our lab.</p>
                         <div class="scene-list">
-                            <p data-word-interactive>Smart Design — we transform raw ideas into actionable, well-defined requirements based on systems engineering methods.</p>
-                            <p data-word-interactive>Test first — we start with a focused MVP, giving you something tangible to test and refine before moving ahead.</p>
-                            <p data-word-interactive>Scope — projects range from custom business software to IoT applications and integrations built around your needs.</p>
+                            <p data-word-interactive data-i18n="slide2Item1">Smart Design — we transform raw ideas into actionable, well-defined requirements based on systems engineering methods.</p>
+                            <p data-word-interactive data-i18n="slide2Item2">Test first — we start with a focused MVP, giving you something tangible to test and refine before moving ahead.</p>
+                            <p data-word-interactive data-i18n="slide2Item3">Scope — projects range from custom business software to IoT applications and integrations built around your needs.</p>
                         </div>
-                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
                     <article class="story-scene">
                         <p class="slide-index">03 / 05</p>
-                        <h3 data-word-interactive>Our Process</h3>
-                        <p class="scene-quote" data-word-interactive>Turning ideas into action.</p>
+                        <h3 data-word-interactive data-i18n="slide3Heading">Our Process</h3>
+                        <p class="scene-quote" data-word-interactive data-i18n="slide3Quote">Turning ideas into action.</p>
                         <div class="scene-steps">
                             <article class="step-card">
                                 <span>01</span>
-                                <p data-word-interactive>Book a call and show your idea.</p>
+                                <p data-word-interactive data-i18n="slide3Step1">Book a call and show your idea.</p>
                             </article>
                             <article class="step-card">
                                 <span>02</span>
-                                <p data-word-interactive>Plan the requirements and select the essentials for the MVP.</p>
+                                <p data-word-interactive data-i18n="slide3Step2">Plan the requirements and select the essentials for the MVP.</p>
                             </article>
                             <article class="step-card">
                                 <span>03</span>
-                                <p data-word-interactive>Build with regular updates as your idea comes to life.</p>
+                                <p data-word-interactive data-i18n="slide3Step3">Build with regular updates as your idea comes to life.</p>
                             </article>
                             <article class="step-card">
                                 <span>04</span>
-                                <p data-word-interactive>Launch with confidence by validating before investing more.</p>
+                                <p data-word-interactive data-i18n="slide3Step4">Launch with confidence by validating before investing more.</p>
                             </article>
                         </div>
-                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
                     <article class="story-scene">
                         <p class="slide-index">04 / 05</p>
-                        <h3 data-word-interactive>Why Choose YourLab</h3>
+                        <h3 data-word-interactive data-i18n="slide4Heading">Why Choose YourLab</h3>
                         <div class="scene-list">
-                            <p data-word-interactive>One-to-One Rule — each specialist handles one project at a time, ensuring focused expertise and attention.</p>
-                            <p data-word-interactive>Real People, Real Expertise — we combine human experience with AI support for smarter delivery.</p>
-                            <p data-word-interactive>Builder Driven — we work side by side with you to build innovative solutions from scratch.</p>
-                            <p data-word-interactive>Custom pricing — we understand your business reality and define pricing together.</p>
+                            <p data-word-interactive data-i18n="slide4Item1">One-to-One Rule — each specialist handles one project at a time, ensuring focused expertise and attention.</p>
+                            <p data-word-interactive data-i18n="slide4Item2">Real People, Real Expertise — we combine human experience with AI support for smarter delivery.</p>
+                            <p data-word-interactive data-i18n="slide4Item3">Builder Driven — we work side by side with you to build innovative solutions from scratch.</p>
+                            <p data-word-interactive data-i18n="slide4Item4">Custom pricing — we understand your business reality and define pricing together.</p>
                         </div>
-                        <button class="scene-next" type="button" data-action="next">Continue</button>
+                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
                     <article class="story-scene scene-final">
                         <p class="slide-index">05 / 05</p>
-                        <h3 data-word-interactive>Are you ready to turn ideas into reality?</h3>
-                        <p class="scene-lead" data-word-interactive>We are here for you. YourLab Technologies.</p>
-                        <a class="scene-next-link" href="#chatForm">Start the conversation</a>
+                        <h3 data-word-interactive data-i18n="slide5Heading">Are you ready to turn ideas into reality?</h3>
+                        <p class="scene-lead" data-word-interactive data-i18n="slide5Lead">We are here for you. YourLab Technologies.</p>
+                        <a class="scene-next-link" href="#chatForm" data-i18n="slide5Cta">Start the conversation</a>
                     </article>
                 </div>
 

@@ -258,6 +258,11 @@ body {
     line-height: 1.5;
 }
 
+.journey-step-text {
+    display: flex;
+    flex-direction: column;
+}
+
 .journey-connector {
     display: flex;
     align-items: center;
@@ -385,43 +390,94 @@ body {
 /* Responsive journey */
 @media (max-width: 768px) {
     .about {
-        padding: 60px 20px 50px;
+        padding: 50px 20px 40px;
+    }
+
+    .about-content {
+        margin-bottom: 36px;
+        width: 100%;
     }
 
     .about-heading {
-        font-size: 1.8rem;
+        font-size: 1.7rem;
     }
 
     .about-lead {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
+    }
+
+    .about-body {
+        font-size: 0.95rem;
+    }
+
+    .about-cta-text {
+        font-size: 1rem;
+        max-width: 100%;
+        margin-bottom: 36px;
     }
 
     .journey {
         flex-direction: column;
         align-items: center;
         gap: 0;
+        width: 100%;
+    }
+
+    .journey-step {
+        max-width: 100%;
+        width: 100%;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        text-align: left;
+        gap: 16px;
+    }
+
+    .journey-step .journey-icon {
+        flex-shrink: 0;
+        width: 56px;
+        height: 56px;
+        margin: 0;
+    }
+
+    .journey-step .journey-icon svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .journey-step-text {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .journey-step h3 {
+        margin-bottom: 4px;
     }
 
     .journey-connector {
         transform: rotate(90deg);
         padding-top: 0;
         min-width: unset;
-        height: 40px;
+        height: 36px;
     }
 
     .about-stats {
         flex-direction: column;
         gap: 16px;
         width: 100%;
-        max-width: 300px;
+        max-width: 100%;
+    }
+
+    .stat {
+        width: 100%;
+        min-width: unset;
     }
 }
 
 /* ===== Immersive Story Section ===== */
 .slideshow-section,
 .chat-section {
-    --spotlight-x: 50%;
-    --spotlight-y: 42%;
     position: relative;
     overflow: hidden;
     isolation: isolate;
@@ -434,9 +490,7 @@ body {
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background:
-        radial-gradient(450px circle at var(--spotlight-x) var(--spotlight-y), rgba(232, 213, 183, 0.14), transparent 72%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 20%, rgba(0, 0, 0, 0.34) 100%);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 20%, rgba(0, 0, 0, 0.34) 100%);
 }
 
 .slideshow-section::after,
@@ -827,8 +881,6 @@ body {
 }
 
 .chat-container {
-    --spotlight-x: 50%;
-    --spotlight-y: 42%;
     position: relative;
     background: linear-gradient(140deg, rgba(36, 36, 36, 0.8), rgba(24, 24, 24, 0.88));
     border-radius: 12px;
@@ -846,9 +898,7 @@ body {
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background:
-        radial-gradient(360px circle at var(--spotlight-x) var(--spotlight-y), rgba(232, 213, 183, 0.16), transparent 72%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%, rgba(0, 0, 0, 0.28) 100%);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 20%, rgba(0, 0, 0, 0.28) 100%);
 }
 
 .chat-container::after {

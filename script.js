@@ -1,5 +1,5 @@
 // ===== Internationalization (i18n) =====
-let currentLang = localStorage.getItem('yourlab_lang') || 'en';
+let currentLang = localStorage.getItem('yourlab_lang_v2') || 'pt';
 
 const translations = {
     en: {
@@ -26,11 +26,39 @@ const translations = {
         // Conclusion
         conclusionHeading: 'Why we are different?',
         conclusionBody: "We apply disciplined requirements engineering to transform your ideas into structured, measurable outcomes. Every request becomes a defined requirement, and every requirement carries a validation metric — so you always know what is being built and why. We don’t build for you; we build with you. This isn’t our lab — it’s YourLab. A place to test, measure, iterate, and grow. If you’re ready to move from assumption to validation, let’s start building the right thing.",
- 
+
+        // Slideshow
+        slideshowKicker: 'IMMERSIVE OVERVIEW',
+        slideshowIntroHeading: 'An interactive walkthrough of how YourLab builds products',
+        slideshowIntroDesc: 'Move through each scene, interact with words, and follow the journey from concept to launch.',
+        slideContinue: 'Continue',
+        slide1Heading: 'Welcome to YourLab.',
+        slide1Lead: 'We are the lab where your business ideas are developed, tested, and brought to life.',
+        slide2Heading: 'What We Do',
+        slide2Quote: 'Your idea in our lab.',
+        slide2Item1: 'Smart Design — we transform raw ideas into actionable, well-defined requirements based on systems engineering methods.',
+        slide2Item2: 'Test first — we start with a focused MVP, giving you something tangible to test and refine before moving ahead.',
+        slide2Item3: 'Scope — projects range from custom business software to IoT applications and integrations built around your needs.',
+        slide3Heading: 'Our Process',
+        slide3Quote: 'Turning ideas into action.',
+        slide3Step1: 'Book a call and show your idea.',
+        slide3Step2: 'Plan the requirements and select the essentials for the MVP.',
+        slide3Step3: 'Build with regular updates as your idea comes to life.',
+        slide3Step4: 'Launch with confidence by validating before investing more.',
+        slide4Heading: 'Why Choose YourLab',
+        slide4Item1: 'One-to-One Rule — each specialist handles one project at a time, ensuring focused expertise and attention.',
+        slide4Item2: 'Real People, Real Expertise — we combine human experience with AI support for smarter delivery.',
+        slide4Item3: 'Builder Driven — we work side by side with you to build innovative solutions from scratch.',
+        slide4Item4: 'Custom pricing — we understand your business reality and define pricing together.',
+        slide5Heading: 'Are you ready to turn ideas into reality?',
+        slide5Lead: 'We are here for you. YourLab Technologies.',
+        slide5Cta: 'Start the conversation',
+
         // Chat
         chatHeading: "Let's Talk About Your Idea",
         chatDescription: 'Have a business idea? Our AI agent is here to listen and help you shape your vision. Just describe your idea and leave your contact information.',
         chatGreeting: "Hi there! I'm the YourLab Agent. Tell me about your business idea and share your contact info so we can reach out to discuss it further.",
+        chatThinking: 'I am analyzing your context...',
         inputPlaceholder: 'Type your message here...',
         sendBtn: 'Send',
         // Footer
@@ -60,7 +88,8 @@ const translations = {
         // About
         aboutHeading: 'Sobre a YourLab',
         aboutLead: 'Erre pequeno. Aprenda r\u00E1pido. Lance com intelig\u00EAncia.',
-        aboutBody: 'Todos os anos, mais de 30.000 novos produtos s\u00E3o lan\u00E7ados \u2014 e mais de 90% deles falham. O maior risco n\u00E3o \u00E9 ter uma m\u00E1 ideia; \u00E9 investir tudo antes de a validar. Na YourLab, ajudamos-te a construir MVPs lean para que possas testar o teu conceito no mercado real, aprender o que funciona e iterar \u2014 sem apostar todo o neg\u00F3cio no primeiro dia.',
+        aboutBody: 'Todos os anos, mais de 30.000 novos produtos s\u00E3o lan\u00E7ados \u2014 e mais de 90% deles falham. O maior risco n\u00E3o \u00E9 ter uma m\u00E1 ideia; \u00E9 investir tudo antes de a validar no mercado real.',
+        aboutBody2: 'Na YourLab, ajudamos-te a construir solu\u00E7\u00F5es lean para testares o teu conceito com utilizadores reais, aprenderes o que funciona e iterares \u2014 erra menos e adapta mais r\u00E1pido.',
         statLabel1: 'dos novos produtos falham',
         statLabel2: 'das organiza\u00E7\u00F5es t\u00EAm dificuldade em inovar',
         aboutCta: 'A solu\u00E7\u00E3o? N\u00E3o construas tudo \u2014 constr\u00F3i <strong>a coisa certa primeiro</strong>. \u00C9 isso que um MVP faz.',
@@ -73,10 +102,42 @@ const translations = {
         journeyBuildDesc: 'A nossa equipa desenha e desenvolve o teu produto rapidamente',
         journeyLaunch: 'Lan\u00E7ar MVP',
         journeyLaunchDesc: 'O teu produto est\u00E1 pronto para chegar a utilizadores reais',
+        // Conclusion
+        conclusionHeading: 'Porque somos diferentes?',
+        conclusionBody: 'Aplicamos engenharia de requisitos disciplinada para transformar as tuas ideias em resultados estruturados e mensur\u00E1veis. Cada pedido torna-se um requisito definido, e cada requisito tem uma m\u00E9trica de valida\u00E7\u00E3o \u2014 para que saibas sempre o que est\u00E1 a ser constru\u00EDdo e porqu\u00EA. N\u00E3o constru\u00EDmos por ti; constru\u00EDmos contigo. Este n\u00E3o \u00E9 o nosso laborat\u00F3rio \u2014 \u00E9 o YourLab. Um lugar para testar, medir, iterar e crescer. Se est\u00E1s pronto para passar da suposi\u00E7\u00E3o para a valida\u00E7\u00E3o, vamos come\u00E7ar a construir a coisa certa.',
+
+        // Slideshow
+        slideshowKicker: 'VIS\u00C3O GERAL IMERSIVA',
+        slideshowIntroHeading: 'Uma experi\u00EAncia interativa sobre como a YourLab constr\u00F3i produtos',
+        slideshowIntroDesc: 'Navega por cada cena, interage com as palavras e segue a jornada do conceito ao lan\u00E7amento.',
+        slideContinue: 'Continuar',
+        slide1Heading: 'Bem-vindo \u00E0 YourLab.',
+        slide1Lead: 'Somos o laborat\u00F3rio onde as tuas ideias de neg\u00F3cio s\u00E3o desenvolvidas, testadas e transformadas em realidade.',
+        slide2Heading: 'O Que Fazemos',
+        slide2Quote: 'A tua ideia no nosso laborat\u00F3rio.',
+        slide2Item1: 'Design Inteligente \u2014 transformamos ideias em requisitos bem definidos e acion\u00E1veis, baseados em m\u00E9todos de engenharia de sistemas.',
+        slide2Item2: 'Teste primeiro \u2014 come\u00E7amos com um MVP focado, dando-te algo tang\u00EDvel para testar e refinar antes de avan\u00E7ar.',
+        slide2Item3: '\u00C2mbito \u2014 os projetos v\u00E3o desde software empresarial personalizado a aplica\u00E7\u00F5es IoT e integra\u00E7\u00F5es constru\u00EDdas \u00E0 medida das tuas necessidades.',
+        slide3Heading: 'O Nosso Processo',
+        slide3Quote: 'Transformar ideias em a\u00E7\u00E3o.',
+        slide3Step1: 'Agenda uma chamada e apresenta a tua ideia.',
+        slide3Step2: 'Planeia os requisitos e seleciona o essencial para o MVP.',
+        slide3Step3: 'Constr\u00F3i com atualiza\u00E7\u00F5es regulares enquanto a tua ideia ganha vida.',
+        slide3Step4: 'Lan\u00E7a com confian\u00E7a, validando antes de investir mais.',
+        slide4Heading: 'Porqu\u00EA Escolher a YourLab',
+        slide4Item1: 'Regra Um-para-Um \u2014 cada especialista gere um projeto de cada vez, garantindo aten\u00E7\u00E3o e dedica\u00E7\u00E3o total.',
+        slide4Item2: 'Pessoas Reais, Expertise Real \u2014 combinamos experi\u00EAncia humana com suporte de IA para entregas mais inteligentes.',
+        slide4Item3: 'Orientados \u00E0 Constru\u00E7\u00E3o \u2014 trabalhamos lado a lado contigo para construir solu\u00E7\u00F5es inovadoras de raiz.',
+        slide4Item4: 'Pre\u00E7o personalizado \u2014 compreendemos a tua realidade de neg\u00F3cio e definimos o pre\u00E7o em conjunto.',
+        slide5Heading: 'Est\u00E1s pronto para transformar ideias em realidade?',
+        slide5Lead: 'Estamos aqui para ti. YourLab Technologies.',
+        slide5Cta: 'Come\u00E7a a conversa',
+
         // Chat
         chatHeading: 'Vamos Falar Sobre a Tua Ideia',
         chatDescription: 'Tens uma ideia de neg\u00F3cio? O nosso agente de IA est\u00E1 aqui para ouvir e ajudar-te a moldar a tua vis\u00E3o. Basta descrever a tua ideia e deixar as tuas informa\u00E7\u00F5es de contacto.',
         chatGreeting: 'Ol\u00E1! Sou o Agente da YourLab. Fala-me da tua ideia de neg\u00F3cio e partilha as tuas informa\u00E7\u00F5es de contacto para podermos entrar em contacto contigo.',
+        chatThinking: 'Estou a analisar o teu contexto...',
         inputPlaceholder: 'Escreve a tua mensagem aqui...',
         sendBtn: 'Enviar',
         // Footer
@@ -104,7 +165,7 @@ const translations = {
 
 function setLanguage(lang) {
     currentLang = lang;
-    localStorage.setItem('yourlab_lang', lang);
+    localStorage.setItem('yourlab_lang_v2', lang);
     document.documentElement.lang = lang;
 
     // Update toggle UI
@@ -151,66 +212,125 @@ function getBotText() {
 const chatForm = document.getElementById('chatForm');
 const userInput = document.getElementById('userInput');
 const chatMessages = document.getElementById('chatMessages');
+const sendButton = chatForm.querySelector('.send-btn');
 
-// Store conversations
-let currentConversation = {
-    messages: [],
-    contact: {
-        name: '',
-        email: '',
-        phone: ''
-    },
-    businessIdea: ''
+const chatState = {
+    sessionId: localStorage.getItem('yourlab_chat_session_id') || '',
+    processing: false,
+    turns: [],
+    fallbackConversation: {
+        messages: [],
+        contact: {
+            name: '',
+            email: '',
+            phone: ''
+        },
+        businessIdea: ''
+    }
 };
 
-// Initial bot greeting
+function scrollChatToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 function addBotMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message bot-message';
-    messageDiv.innerHTML = `<p>${text}</p>`;
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    paragraph.style.whiteSpace = 'pre-line';
+    messageDiv.appendChild(paragraph);
     chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    scrollChatToBottom();
 }
 
 function addUserMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user-message';
-    messageDiv.innerHTML = `<p>${text}</p>`;
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    paragraph.style.whiteSpace = 'pre-line';
+    messageDiv.appendChild(paragraph);
     chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    scrollChatToBottom();
 }
 
-// Parse user input to extract contact information
-function parseInput(text) {
-    const emailRegex = /[\w\.-]+@[\w\.-]+\.\w+/g;
+function addTypingIndicator() {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message bot-message';
+    messageDiv.dataset.typing = 'true';
+    const paragraph = document.createElement('p');
+    paragraph.textContent = translations[currentLang].chatThinking;
+    messageDiv.appendChild(paragraph);
+    chatMessages.appendChild(messageDiv);
+    scrollChatToBottom();
+    return messageDiv;
+}
+
+function removeTypingIndicator(indicatorEl) {
+    if (indicatorEl && indicatorEl.parentNode) {
+        indicatorEl.parentNode.removeChild(indicatorEl);
+    }
+}
+
+function updateInputState(disabled) {
+    userInput.disabled = disabled;
+    sendButton.disabled = disabled;
+}
+
+function saveConversationLocally(payload) {
+    const conversations = JSON.parse(localStorage.getItem('yourlab_conversations') || '[]');
+    conversations.push(payload);
+    localStorage.setItem('yourlab_conversations', JSON.stringify(conversations));
+}
+
+async function sendMessageToAi(userText) {
+    const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            sessionId: chatState.sessionId,
+            language: currentLang,
+            message: userText
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+function parseFallbackInput(text) {
+    const emailRegex = /[\w.-]+@[\w.-]+\.\w+/g;
     const phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g;
-    const nameRegex = /(?:name is|i'm|i am|call me|chamo-me|meu nome é|sou o|sou a)\s+([a-zA-ZÀ-ÿ\s]+)(?:[,.]|$)/i;
+    const nameRegex = /(?:name is|i'm|i am|call me|chamo-me|meu nome \u00e9|sou o|sou a)\s+([a-zA-Z\u00c0-\u00ff\s]+)(?:[,.]|$)/i;
 
     const emails = text.match(emailRegex);
     const phones = text.match(phoneRegex);
     const nameMatch = text.match(nameRegex);
 
-    if (emails) currentConversation.contact.email = emails[0];
-    if (phones) currentConversation.contact.phone = phones[0];
-    if (nameMatch) currentConversation.contact.name = nameMatch[1].trim();
+    if (emails) chatState.fallbackConversation.contact.email = emails[0];
+    if (phones) chatState.fallbackConversation.contact.phone = phones[0];
+    if (nameMatch) chatState.fallbackConversation.contact.name = nameMatch[1].trim();
 
-    currentConversation.businessIdea += ' ' + text;
+    chatState.fallbackConversation.businessIdea += ` ${text}`;
 }
 
-// Chat logic with conversation flow
-function processUserMessage(userText) {
-    addUserMessage(userText);
-    parseInput(userText);
+function processFallbackUserMessage(userText) {
+    parseFallbackInput(userText);
 
     let botResponse = '';
-    const messageCount = currentConversation.messages.length;
+    const messageCount = chatState.fallbackConversation.messages.length;
     const bot = getBotText();
 
-    // Check if we have collected enough information
-    const hasName = currentConversation.contact.name;
-    const hasEmail = currentConversation.contact.email;
-    const hasPhone = currentConversation.contact.phone;
-    const hasIdea = currentConversation.businessIdea.trim().length > 20;
+    const hasName = chatState.fallbackConversation.contact.name;
+    const hasEmail = chatState.fallbackConversation.contact.email;
+    const hasPhone = chatState.fallbackConversation.contact.phone;
+    const hasIdea = chatState.fallbackConversation.businessIdea.trim().length > 20;
 
     if (messageCount === 0) {
         botResponse = bot.r0;
@@ -223,81 +343,110 @@ function processUserMessage(userText) {
     } else if (!hasPhone) {
         botResponse = bot.askPhone;
     } else if (hasName && hasEmail && hasPhone && hasIdea) {
-        // Save the conversation
-        saveConversation();
-        botResponse = bot.saved(currentConversation.contact.name);
+        botResponse = bot.saved(chatState.fallbackConversation.contact.name);
     } else if (messageCount > 5) {
-        // If user hasn't provided all info after many messages
-        if (!hasEmail || !hasPhone) {
-            botResponse = bot.askMissing(hasEmail, hasPhone);
-        } else {
-            botResponse = bot.moreInfo;
-        }
+        botResponse = (!hasEmail || !hasPhone) ? bot.askMissing(hasEmail, hasPhone) : bot.moreInfo;
     } else {
         botResponse = bot.generic[messageCount % bot.generic.length];
     }
 
-    currentConversation.messages.push({
+    chatState.fallbackConversation.messages.push({
         user: userText,
         bot: botResponse,
         timestamp: new Date().toISOString()
     });
 
-    setTimeout(() => {
+    if (hasName && hasEmail && hasPhone && hasIdea) {
+        saveConversationLocally({
+            timestamp: new Date().toISOString(),
+            contact: { ...chatState.fallbackConversation.contact },
+            businessIdea: chatState.fallbackConversation.businessIdea.trim(),
+            messages: [...chatState.fallbackConversation.messages],
+            source: 'frontend-fallback-flow'
+        });
+
+        chatState.fallbackConversation = {
+            messages: [],
+            contact: {
+                name: '',
+                email: '',
+                phone: ''
+            },
+            businessIdea: ''
+        };
+    }
+
+    return botResponse;
+}
+
+async function processUserMessage(userText) {
+    addUserMessage(userText);
+    const typingIndicator = addTypingIndicator();
+
+    try {
+        const result = await sendMessageToAi(userText);
+        removeTypingIndicator(typingIndicator);
+
+        if (result.sessionId) {
+            chatState.sessionId = result.sessionId;
+            localStorage.setItem('yourlab_chat_session_id', chatState.sessionId);
+        }
+
+        const botResponse = (result.reply || '').trim() || getBotText().generic[0];
         addBotMessage(botResponse);
-    }, 500);
 
-    userInput.value = '';
-    userInput.focus();
+        chatState.turns.push({
+            user: userText,
+            bot: botResponse,
+            timestamp: new Date().toISOString(),
+            stage: result.stage || '',
+            leadScore: result.leadScore || 0
+        });
+
+        if (result.saved) {
+            saveConversationLocally({
+                timestamp: new Date().toISOString(),
+                sessionId: chatState.sessionId,
+                contact: {
+                    name: (result.lead && result.lead.name) || '',
+                    email: (result.lead && result.lead.email) || '',
+                    phone: (result.lead && result.lead.phone) || ''
+                },
+                businessIdea: chatState.turns.map(turn => turn.user).join(' ').trim(),
+                messages: [...chatState.turns],
+                summary: {
+                    stage: result.stage || '',
+                    score: result.leadScore || 0
+                },
+                source: result.usingFallback ? 'backend-fallback-flow' : 'backend-ai-flow'
+            });
+        }
+    } catch (error) {
+        console.warn('AI backend unavailable, using fallback flow:', error.message);
+        removeTypingIndicator(typingIndicator);
+        const fallbackReply = processFallbackUserMessage(userText);
+        setTimeout(() => addBotMessage(fallbackReply), 250);
+    }
 }
 
-// Save conversation to local storage and send to backend
-function saveConversation() {
-    const data = {
-        timestamp: new Date().toISOString(),
-        contact: currentConversation.contact,
-        businessIdea: currentConversation.businessIdea.trim(),
-        messages: currentConversation.messages
-    };
-
-    // Save to local storage
-    let conversations = JSON.parse(localStorage.getItem('yourlab_conversations') || '[]');
-    conversations.push(data);
-    localStorage.setItem('yourlab_conversations', JSON.stringify(conversations));
-
-    // Send to backend (if available)
-    fetch('/api/save-inquiry', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-    }).catch(err => {
-        console.log('Backend not available, saved locally:', err);
-    });
-
-    // Reset conversation
-    currentConversation = {
-        messages: [],
-        contact: {
-            name: '',
-            email: '',
-            phone: ''
-        },
-        businessIdea: ''
-    };
-}
-
-// Form submission
-chatForm.addEventListener('submit', (e) => {
+chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const userText = userInput.value.trim();
-    if (userText) {
-        processUserMessage(userText);
+    if (!userText || chatState.processing) return;
+
+    chatState.processing = true;
+    updateInputState(true);
+    userInput.value = '';
+
+    try {
+        await processUserMessage(userText);
+    } finally {
+        chatState.processing = false;
+        updateInputState(false);
+        userInput.focus();
     }
 });
 
-// Allow Enter key to send (Shift+Enter for new line)
 userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -305,14 +454,13 @@ userInput.addEventListener('keydown', (e) => {
     }
 });
 
-// Debug: Show saved conversations in console
 function showSavedConversations() {
     const conversations = JSON.parse(localStorage.getItem('yourlab_conversations') || '[]');
     console.log('Saved Conversations:', conversations);
     return conversations;
 }
 
-console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in console to view all saved inquiries.');
+console.log('YourLab AI chat ready. Type "showSavedConversations()" in console to view saved inquiries.');
 
 // ===== Scroll Reveal & Counter Animation =====
 (function () {
@@ -481,27 +629,6 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
         if (e.key === 'ArrowLeft') prev();
     });
 
-    function bindSpotlight(source, targets) {
-        if (!source || !targets.length) return;
-
-        source.addEventListener('pointermove', (e) => {
-            const rect = source.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 100;
-            const y = ((e.clientY - rect.top) / Math.max(1, rect.height)) * 100;
-            targets.forEach(target => {
-                target.style.setProperty('--spotlight-x', `${x.toFixed(2)}%`);
-                target.style.setProperty('--spotlight-y', `${y.toFixed(2)}%`);
-            });
-        });
-
-        source.addEventListener('pointerleave', () => {
-            targets.forEach(target => {
-                target.style.setProperty('--spotlight-x', '50%');
-                target.style.setProperty('--spotlight-y', '42%');
-            });
-        });
-    }
-
     if (container) {
         // Touch / swipe support
         let touchStartX = 0;
@@ -525,21 +652,13 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
         });
     }
 
-    bindSpotlight(container, section ? [section] : []);
-
-    const chatSection = document.querySelector('.chat-section');
-    const chatContainer = document.querySelector('.chat-container');
-    if (chatSection && chatContainer) {
-        bindSpotlight(chatSection, [chatSection, chatContainer]);
-    }
-
     // Start
     enhanceWords();
     setActiveSlideState();
     resetProgress();
 })();
 
-// ===== Global Background: Dot Mountains + Cloud Smoke =====
+// ===== Global Background: Infinite Sinusoidal Dot Field + Cloud Smoke =====
 (function () {
     const canvas = document.getElementById('globalLandscapeCanvas');
     if (!canvas) return;
@@ -548,16 +667,22 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
     if (!ctx) return;
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     const state = {
         width: 0,
         height: 0,
         dpr: 1,
-        cols: 0,
         rows: 0,
-        points: [],
+        cols: 0,
+        waveRows: [],
         clouds: [],
+        ripples: [],
+        pointerTargetX: 0.5,
+        pointerTargetY: 0.5,
         pointerX: 0.5,
         pointerY: 0.5,
+        lastRippleX: 0.5,
+        lastRippleY: 0.5,
         parallaxX: 0,
         parallaxY: 0,
         lastDisturbAt: 0,
@@ -570,7 +695,7 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
     }
 
     function lerp(a, b, t) {
-        return a + (b - a) * t;
+        return a + ((b - a) * t);
     }
 
     function smoothstep(t) {
@@ -592,85 +717,71 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
         const b = hash2d(ix + 1, iy);
         const c = hash2d(ix, iy + 1);
         const d = hash2d(ix + 1, iy + 1);
-
         const ux = smoothstep(fx);
         const uy = smoothstep(fy);
-        const lerpX1 = lerp(a, b, ux);
-        const lerpX2 = lerp(c, d, ux);
-        return lerp(lerpX1, lerpX2, uy);
+
+        return lerp(lerp(a, b, ux), lerp(c, d, ux), uy);
     }
 
-    function fbm(x, y, octaves = 4) {
-        let amp = 0.5;
-        let freq = 1;
-        let sum = 0;
-        for (let i = 0; i < octaves; i += 1) {
-            sum += valueNoise(x * freq, y * freq) * amp;
-            amp *= 0.5;
-            freq *= 2;
-        }
-        return sum;
-    }
-
-    function terrainHeight(x, z) {
-        const peaks = [
-            { x: -0.72, z: 0.56, a: 1.15, sx: 0.23, sz: 0.16 },
-            { x: -0.20, z: 0.60, a: 1.45, sx: 0.26, sz: 0.17 },
-            { x: 0.42, z: 0.52, a: 1.25, sx: 0.22, sz: 0.15 },
-            { x: 0.06, z: 0.82, a: 0.70, sx: 0.40, sz: 0.22 }
-        ];
-
-        let h = 0;
-        for (let i = 0; i < peaks.length; i += 1) {
-            const p = peaks[i];
-            const dx = x - p.x;
-            const dz = z - p.z;
-            h += p.a * Math.exp(-((dx * dx) / p.sx + (dz * dz) / p.sz));
+    function createWaveRows() {
+        state.waveRows.length = 0;
+        if (isCoarsePointer) {
+            state.rows = clamp(Math.floor(state.height / 8) + 54, 86, 132);
+            state.cols = clamp(Math.floor(state.width / 9) + 78, 118, 205);
+        } else {
+            state.rows = clamp(Math.floor(state.height / 6) + 72, 118, 188);
+            state.cols = clamp(Math.floor(state.width / 7) + 110, 170, 320);
         }
 
-        h += 0.22 * Math.exp(-Math.pow(z - 0.64, 2) / 0.13) * (0.5 + 0.5 * Math.cos((x + 0.18) * 7.1));
-        h += (fbm((x + 1.8) * 2.6, (z + 0.4) * 3.8) - 0.5) * 0.26;
-        h -= Math.max(0, (Math.abs(x) - 0.94)) * 0.35;
+        const groupCount = 8;
+        const groups = [];
+        for (let g = 0; g < groupCount; g += 1) {
+            const t = g / Math.max(1, groupCount - 1);
+            groups.push({
+                freq: 4.9 + (t * 2.6),
+                amp: 0.62 + (t * 0.48),
+                speed: 0.58 + (t * 0.44),
+                phase: g * 0.68
+            });
+        }
 
-        return Math.max(0, h);
-    }
+        for (let i = 0; i < state.rows; i += 1) {
+            const depth = i / (state.rows - 1);
+            const groupPos = depth * (groupCount - 1);
+            const g0 = Math.floor(groupPos);
+            const g1 = Math.min(groupCount - 1, g0 + 1);
+            const mix = smoothstep(groupPos - g0);
+            const base = groups[g0];
+            const next = groups[g1];
+            const profile = valueNoise((depth * 7.5) + 1.2, 0.4) - 0.5;
 
-    function createClouds() {
-        state.clouds.length = 0;
-        const cloudCount = clamp(Math.floor(state.width / 14), 70, 140);
-        for (let i = 0; i < cloudCount; i += 1) {
-            state.clouds.push({
-                x: (Math.random() * 2 - 1) * 1.6,
-                z: Math.random(),
-                y: 0.06 + Math.random() * 0.25,
-                size: 0.5 + Math.random() * 0.9,
-                alpha: 0.04 + Math.random() * 0.07,
-                drift: (Math.random() - 0.5) * 0.18,
-                phase: Math.random() * Math.PI * 2
+            state.waveRows.push({
+                depth,
+                freq: lerp(base.freq, next.freq, mix) + ((1 - depth) * 0.55),
+                amp: (0.46 + depth * 0.85) * lerp(base.amp, next.amp, mix),
+                speed: lerp(base.speed, next.speed, mix) * (0.82 + ((1 - depth) * 0.22)),
+                phase: lerp(base.phase, next.phase, mix) + (depth * 2.6),
+                profile: profile * 0.18,
+                tilt: Math.sin(depth * 8.2) * 0.16
             });
         }
     }
 
-    function buildGrid() {
-        state.points.length = 0;
-        state.cols = clamp(Math.floor(state.width / 13), 82, 112);
-        state.rows = clamp(Math.floor(state.height / 15) + 24, 52, 78);
-
-        for (let row = 0; row < state.rows; row += 1) {
-            const z = row / (state.rows - 1);
-            for (let col = 0; col < state.cols; col += 1) {
-                const jitterX = (Math.random() - 0.5) * 0.013;
-                const jitterZ = (Math.random() - 0.5) * 0.011;
-                const x = ((col / (state.cols - 1)) * 2 - 1) + jitterX;
-                const sampleZ = clamp(z + jitterZ, 0, 1);
-                state.points.push({
-                    x,
-                    z: sampleZ,
-                    base: terrainHeight(x, sampleZ),
-                    offset: 0,
-                    vel: 0
-                });
-            }
+    function createClouds() {
+        state.clouds.length = 0;
+        const cloudCount = isCoarsePointer
+            ? clamp(Math.floor(state.width / 13) + 24, 70, 140)
+            : clamp(Math.floor(state.width / 10) + 40, 110, 220);
+        for (let i = 0; i < cloudCount; i += 1) {
+            state.clouds.push({
+                x: (Math.random() * 2 - 1) * 2.2,
+                depth: Math.random(),
+                band: Math.random(),
+                size: 0.38 + Math.random() * 0.95,
+                alpha: 0.028 + Math.random() * 0.06,
+                drift: (Math.random() - 0.5) * 0.32,
+                phase: Math.random() * Math.PI * 2
+            });
         }
     }
 
@@ -685,125 +796,166 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
         canvas.style.height = `${state.height}px`;
         ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
 
-        buildGrid();
+        createWaveRows();
         createClouds();
         render(performance.now());
     }
 
-    function disturbTerrain(nx, ny, strength = 0.048) {
-        const worldX = nx * 2 - 1;
-        const worldZ = clamp((ny - 0.08) / 0.92, 0, 1);
-        const radius = 0.14;
-        const radiusSq = radius * radius;
+    function addRipple(nx, ny, strength = 0.5) {
+        state.ripples.push({
+            x: (nx * 2) - 1,
+            z: clamp((ny - 0.1) / 0.9, 0, 1),
+            radius: 0.02,
+            speed: 0.01 + Math.random() * 0.01,
+            strength,
+            life: 1
+        });
 
-        for (let i = 0; i < state.points.length; i += 1) {
-            const p = state.points[i];
-            const dx = p.x - worldX;
-            const dz = p.z - worldZ;
-            const distSq = dx * dx + dz * dz;
-            if (distSq > radiusSq) continue;
-
-            const influence = 1 - distSq / radiusSq;
-            p.vel += influence * strength * (0.9 + Math.random() * 0.2);
+        if (state.ripples.length > 12) {
+            state.ripples.shift();
         }
     }
 
+    function rippleInfluence(x, z, time) {
+        let total = 0;
+        for (let i = 0; i < state.ripples.length; i += 1) {
+            const r = state.ripples[i];
+            const dx = x - r.x;
+            const dz = z - r.z;
+            const dist = Math.sqrt((dx * dx) + (dz * dz));
+            const edge = Math.abs(dist - r.radius);
+            if (edge > 0.18) continue;
+
+            const wave = Math.sin((edge * 42) - (time * 0.0042));
+            const falloff = Math.exp(-edge * 22);
+            total += wave * falloff * r.strength * r.life;
+        }
+        return total;
+    }
+
     function update(dt) {
-        const spring = 0.16;
-        const damping = 0.9;
-        for (let i = 0; i < state.points.length; i += 1) {
-            const p = state.points[i];
-            p.vel += -p.offset * spring * dt;
-            p.vel *= damping;
-            p.offset += p.vel * dt;
+        for (let i = state.ripples.length - 1; i >= 0; i -= 1) {
+            const r = state.ripples[i];
+            r.radius += r.speed * dt;
+            r.life -= dt * 0.022;
+            if (r.life <= 0 || r.radius > 1.65) {
+                state.ripples.splice(i, 1);
+            }
         }
 
         for (let i = 0; i < state.clouds.length; i += 1) {
             const c = state.clouds[i];
             c.x += c.drift * dt * 0.01;
-            if (c.x > 1.8) c.x = -1.8;
-            if (c.x < -1.8) c.x = 1.8;
-            c.phase += dt * 0.015;
+            c.phase += dt * 0.011;
+            if (c.x > 2.35) c.x = -2.35;
+            if (c.x < -2.35) c.x = 2.35;
         }
+
+        const pointerEase = isCoarsePointer ? 0.05 : 0.075;
+        state.pointerX = lerp(state.pointerX, state.pointerTargetX, pointerEase);
+        state.pointerY = lerp(state.pointerY, state.pointerTargetY, pointerEase);
 
         const px = (state.pointerX - 0.5) * 2;
         const py = (state.pointerY - 0.5) * 2;
-        state.parallaxX = lerp(state.parallaxX, px, 0.055);
-        state.parallaxY = lerp(state.parallaxY, py, 0.055);
+        state.parallaxX = lerp(state.parallaxX, px, 0.06);
+        state.parallaxY = lerp(state.parallaxY, py, 0.06);
     }
 
-    function drawTerrain() {
-        const horizonY = state.height * (0.2 + state.parallaxY * 0.01);
-        const floorY = state.height * 1.02;
-
+    function drawAtmosphere() {
         const atmosphere = ctx.createLinearGradient(0, 0, 0, state.height);
-        atmosphere.addColorStop(0, 'rgba(232, 213, 183, 0.06)');
-        atmosphere.addColorStop(0.3, 'rgba(232, 213, 183, 0.02)');
+        atmosphere.addColorStop(0, 'rgba(232, 213, 183, 0.07)');
+        atmosphere.addColorStop(0.35, 'rgba(232, 213, 183, 0.03)');
         atmosphere.addColorStop(1, 'rgba(232, 213, 183, 0.01)');
         ctx.fillStyle = atmosphere;
         ctx.fillRect(0, 0, state.width, state.height);
+    }
+
+    function drawSinusoidLandscape(time, horizonY, floorY) {
+        const t = time * 0.001;
 
         for (let row = 0; row < state.rows; row += 1) {
-            const depth = row / (state.rows - 1);
-            const spread = state.width * (0.08 + depth * 0.56);
-            const baseY = horizonY + Math.pow(depth, 1.08) * (floorY - horizonY);
-            const rowOffset = row * state.cols;
+            const r = state.waveRows[row];
+            const depth = r.depth;
+            const spread = state.width * (0.09 + depth * 0.66);
+            const baseY = horizonY + Math.pow(depth, 1.75) * (floorY - horizonY);
+            const ampPx = (2.2 + depth * 56) * r.amp;
 
             for (let col = 0; col < state.cols; col += 1) {
-                const p = state.points[rowOffset + col];
-                const sx = (state.width * 0.5) + (p.x * spread) + (state.parallaxX * depth * 26);
-                const heightAmp = state.height * (0.02 + depth * 0.14);
-                const sy = baseY - ((p.base + p.offset) * heightAmp);
-                if (sx < -8 || sx > state.width + 8 || sy < horizonY - 12 || sy > state.height + 12) continue;
+                const xNorm = ((col / (state.cols - 1)) * 2) - 1;
+                const primary = Math.sin((xNorm * r.freq) + (t * r.speed) + r.phase + (depth * 3.4));
+                const secondary = Math.sin((xNorm * ((r.freq * 0.5) + 1.7)) - (t * (r.speed * 0.7)) + (r.phase * 1.4));
+                const tertiary = Math.sin((xNorm * ((r.freq * 0.3) + 0.95)) + (t * (r.speed * 0.35)) + (r.phase * 0.7));
+                const noise = (valueNoise((xNorm + 2.4) * 1.4, (depth * 3.6) + (t * 0.11)) - 0.5) * 0.12;
+                const ripple = rippleInfluence(xNorm, depth, time) * (0.28 + depth * 0.22);
+                const wave = (primary * 0.7) + (secondary * 0.2) + (tertiary * 0.1) + noise + ripple + r.profile;
 
-                const size = 0.18 + depth * 1.05 + p.base * 0.18;
-                const alpha = 0.013 + depth * 0.16 + p.base * 0.04;
+                const sx = (state.width * 0.5) + (xNorm * spread) + (state.parallaxX * depth * 28);
+                const sy = baseY - (wave * ampPx) + (r.tilt * xNorm * depth * 42);
+                if (sx < -12 || sx > state.width + 12 || sy < horizonY - 80 || sy > state.height + 28) continue;
+
+                const size = 0.16 + depth * 1.42;
+                const alpha = 0.01 + (depth * 0.18) + (Math.abs(primary) * 0.04);
 
                 ctx.beginPath();
-                ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.3, alpha).toFixed(4)})`;
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.35, alpha).toFixed(4)})`;
                 ctx.arc(sx, sy, size, 0, Math.PI * 2);
                 ctx.fill();
 
-                if (p.base > 0.98 && depth > 0.12) {
+                if (Math.abs(primary) > 0.8 && depth > 0.12) {
                     ctx.beginPath();
-                    ctx.fillStyle = `rgba(232, 213, 183, ${Math.min(0.19, alpha * 0.62).toFixed(4)})`;
-                    ctx.arc(sx, sy, size * 0.52, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(232, 213, 183, ${Math.min(0.2, alpha * 0.65).toFixed(4)})`;
+                    ctx.arc(sx, sy, size * 0.5, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
         }
     }
 
-    function drawCloudSmoke(time) {
+    function drawCloudSmoke(time, horizonY) {
+        const t = time * 0.001;
+
         for (let i = 0; i < state.clouds.length; i += 1) {
             const c = state.clouds[i];
-            const depth = c.z;
-            const sx = (state.width * 0.5) + (c.x * state.width * (0.18 + depth * 0.5)) + (state.parallaxX * 24);
-            const sy = (state.height * c.y) + (depth * state.height * 0.2) + (Math.sin((time * 0.00018) + c.phase) * 9);
-            const radius = state.width * (0.024 + c.size * 0.036) * (0.5 + depth * 0.7);
+            const depth = c.depth;
+            const spread = state.width * (0.22 + depth * 0.66);
+            const sx = (state.width * 0.5) + (c.x * spread) + (state.parallaxX * 14 * (0.4 + depth));
+            const sy = horizonY - (state.height * (0.17 - (c.band * 0.24))) + (depth * state.height * 0.06) + (Math.sin((t * 0.55) + c.phase) * 7);
+            const radius = state.width * (0.015 + c.size * 0.05) * (0.35 + (1 - depth) * 0.95);
             if (sx < -radius || sx > state.width + radius || sy < -radius || sy > state.height + radius) continue;
 
             const gradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
             gradient.addColorStop(0, `rgba(255, 255, 255, ${(c.alpha * 1.35).toFixed(4)})`);
-            gradient.addColorStop(0.45, `rgba(255, 255, 255, ${(c.alpha * 0.55).toFixed(4)})`);
+            gradient.addColorStop(0.42, `rgba(255, 255, 255, ${(c.alpha * 0.55).toFixed(4)})`);
             gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(sx, sy, radius, 0, Math.PI * 2);
             ctx.fill();
         }
+
+        const horizonMist = ctx.createLinearGradient(0, horizonY - (state.height * 0.16), 0, horizonY + (state.height * 0.14));
+        horizonMist.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        horizonMist.addColorStop(0.45, 'rgba(232, 213, 183, 0.11)');
+        horizonMist.addColorStop(1, 'rgba(232, 213, 183, 0)');
+        ctx.fillStyle = horizonMist;
+        ctx.fillRect(0, horizonY - (state.height * 0.16), state.width, state.height * 0.3);
     }
 
     function render(time) {
         ctx.clearRect(0, 0, state.width, state.height);
-        drawTerrain();
-        drawCloudSmoke(time);
+        drawAtmosphere();
 
-        const floorFog = ctx.createLinearGradient(0, state.height * 0.58, 0, state.height);
+        const horizonY = state.height * (0.22 + (state.parallaxY * 0.012));
+        const floorY = state.height * 1.04;
+
+        drawSinusoidLandscape(time, horizonY, floorY);
+        drawCloudSmoke(time, horizonY);
+
+        const floorFog = ctx.createLinearGradient(0, state.height * 0.55, 0, state.height);
         floorFog.addColorStop(0, 'rgba(232, 213, 183, 0)');
-        floorFog.addColorStop(1, 'rgba(232, 213, 183, 0.08)');
+        floorFog.addColorStop(1, 'rgba(232, 213, 183, 0.1)');
         ctx.fillStyle = floorFog;
-        ctx.fillRect(0, state.height * 0.58, state.width, state.height * 0.42);
+        ctx.fillRect(0, state.height * 0.55, state.width, state.height * 0.45);
     }
 
     function animate(now) {
@@ -814,15 +966,62 @@ console.log('YourLab Chat Agent Ready! Type "showSavedConversations()" in consol
         state.rafId = requestAnimationFrame(animate);
     }
 
-    window.addEventListener('pointermove', (event) => {
-        state.pointerX = clamp(event.clientX / Math.max(1, state.width), 0, 1);
-        state.pointerY = clamp(event.clientY / Math.max(1, state.height), 0, 1);
+    function feedPointer(nx, ny) {
+        state.pointerTargetX = clamp(nx, 0, 1);
+        state.pointerTargetY = clamp(ny, 0, 1);
 
         const now = performance.now();
-        if (now - state.lastDisturbAt > 36) {
-            disturbTerrain(state.pointerX, state.pointerY);
+        const dx = state.pointerTargetX - state.lastRippleX;
+        const dy = state.pointerTargetY - state.lastRippleY;
+        const movedEnough = ((dx * dx) + (dy * dy)) > (isCoarsePointer ? 0.005 : 0.0025);
+        const rippleGap = isCoarsePointer ? 100 : 70;
+
+        if (movedEnough && (now - state.lastDisturbAt > rippleGap)) {
+            addRipple(state.pointerTargetX, state.pointerTargetY, isCoarsePointer ? 0.36 : 0.48);
             state.lastDisturbAt = now;
+            state.lastRippleX = state.pointerTargetX;
+            state.lastRippleY = state.pointerTargetY;
         }
+    }
+
+    window.addEventListener('pointermove', (event) => {
+        feedPointer(
+            event.clientX / Math.max(1, state.width),
+            event.clientY / Math.max(1, state.height)
+        );
+    });
+
+    window.addEventListener('touchstart', (event) => {
+        const touch = event.touches && event.touches[0];
+        if (!touch) return;
+        feedPointer(
+            touch.clientX / Math.max(1, state.width),
+            touch.clientY / Math.max(1, state.height)
+        );
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (event) => {
+        const touch = event.touches && event.touches[0];
+        if (!touch) return;
+        feedPointer(
+            touch.clientX / Math.max(1, state.width),
+            touch.clientY / Math.max(1, state.height)
+        );
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+        state.pointerTargetX = 0.5;
+        state.pointerTargetY = 0.5;
+    }, { passive: true });
+
+    window.addEventListener('touchcancel', () => {
+        state.pointerTargetX = 0.5;
+        state.pointerTargetY = 0.5;
+    }, { passive: true });
+
+    window.addEventListener('pointerleave', () => {
+        state.pointerTargetX = 0.5;
+        state.pointerTargetY = 0.5;
     });
 
     window.addEventListener('resize', resizeCanvas);

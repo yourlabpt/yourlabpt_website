@@ -11,16 +11,17 @@ A beautiful, modern single-page business card website with an intelligent chat a
 - Beautiful hover effects and transitions
 
 🤖 **Intelligent Chat Agent**
-- Conversational flow that guides visitors through sharing their business idea
-- Automatic extraction of contact information (name, email, phone)
-- Smart conversation logic that adapts based on collected information
-- User-friendly interface with typing indicators
+- Real AI conversation flow with session memory
+- Automatic extraction and enrichment of lead data (name, email, phone, business context)
+- Lead qualification scoring and stage tracking (discover, qualify, capture, commit)
+- Human-style conversation prompts tuned for business discovery
 
 💾 **Secure Data Storage**
 - Client-side local storage for immediate backup
 - Server-side secure storage in JSON files
 - Admin endpoints to view and manage all inquiries
 - Timestamped records for each conversation
+- Automatic lead-summary email notifications for newly qualified contacts
 
 🎨 **Company Branding**
 - Display your dark logo prominently
@@ -66,14 +67,24 @@ cd website/server
 npm install
 ```
 
-2. **Run the server:**
+2. **Configure environment variables:**
+```bash
+cp .env.example .env
+```
+Then set:
+- `OPENAI_API_KEY` (required for real AI chat)
+- `OPENAI_MODEL` (default: `gpt-5-mini`)
+- `LEAD_NOTIFY_TO` (email address that receives new lead summaries)
+- SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`)
+
+3. **Run the server:**
 ```bash
 npm start
 ```
 
 The server will start on `http://localhost:3000`
 
-3. **Access the website:**
+4. **Access the website:**
 Open your browser and go to `http://localhost:3000`
 
 ## API Endpoints
@@ -92,6 +103,17 @@ Body: {
   messages: array
 }
 ```
+
+### AI Chat Turn (POST)
+```
+POST /api/chat
+Body: {
+  sessionId: string,
+  language: "en" | "pt",
+  message: string
+}
+```
+Returns assistant reply, lead stage, lead score, and save/notification status.
 
 ### Get All Inquiries (GET)
 ```
