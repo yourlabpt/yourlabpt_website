@@ -119,7 +119,8 @@
                         <p class="slide-index">01 / 05</p>
                         <h3 data-word-interactive data-i18n="slide1Heading">Welcome to YourLab.</h3>
                         <p class="scene-lead" data-word-interactive data-i18n="slide1Lead">We are the lab where your business ideas are developed, tested, and brought to life.</p>
-                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
+                        <div class="game-shell" data-game-level="0"></div>
+                        <button class="scene-next" type="button" data-action="next" data-level-next="0" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
@@ -132,7 +133,8 @@
                             <p data-word-interactive data-i18n="slide2Item2">Test first — we start with a focused MVP, giving you something tangible to test and refine before moving ahead.</p>
                             <p data-word-interactive data-i18n="slide2Item3">Scope — projects range from custom business software to IoT applications and integrations built around your needs.</p>
                         </div>
-                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
+                        <div class="game-shell" data-game-level="1"></div>
+                        <button class="scene-next" type="button" data-action="next" data-level-next="1" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
@@ -158,7 +160,8 @@
                                 <p data-word-interactive data-i18n="slide3Step4">Launch with confidence by validating before investing more.</p>
                             </article>
                         </div>
-                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
+                        <div class="game-shell" data-game-level="2"></div>
+                        <button class="scene-next" type="button" data-action="next" data-level-next="2" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
@@ -171,7 +174,8 @@
                             <p data-word-interactive data-i18n="slide4Item3">Builder Driven — we work side by side with you to build innovative solutions from scratch.</p>
                             <p data-word-interactive data-i18n="slide4Item4">Custom pricing — we understand your business reality and define pricing together.</p>
                         </div>
-                        <button class="scene-next" type="button" data-action="next" data-i18n="slideContinue">Continue</button>
+                        <div class="game-shell" data-game-level="3"></div>
+                        <button class="scene-next" type="button" data-action="next" data-level-next="3" data-i18n="slideContinue">Continue</button>
                     </article>
                 </div>
                 <div class="slide">
@@ -179,6 +183,8 @@
                         <p class="slide-index">05 / 05</p>
                         <h3 data-word-interactive data-i18n="slide5Heading">Are you ready to turn ideas into reality?</h3>
                         <p class="scene-lead" data-word-interactive data-i18n="slide5Lead">We are here for you. YourLab Technologies.</p>
+                        <div class="game-finale" data-game-finale></div>
+                        <button class="scene-next scene-restart" type="button" data-action="restart-game" data-i18n="gameRestart">Play a new challenge</button>
                         <a class="scene-next-link" href="#chatForm" data-i18n="slide5Cta">Start the conversation</a>
                     </article>
                 </div>
@@ -246,9 +252,19 @@
     </div>
 
     <script>
-      // After deploying the API server, replace the empty string with your Render/Railway URL:
-      window.YOURLAB_API_URL = 'https://yourlab-api.onrender.com';
-      //window.YOURLAB_API_URL = '';
+      // Auto-detect API URL:
+      //   - Same machine (localhost): point to the local Node server on port 3000
+      //   - Served by the Node server itself (same origin, port 3000): use relative path
+      //   - Any other host: use relative path (server serves both frontend + API)
+      window.YOURLAB_API_URL = (function () {
+          var h = window.location.hostname;
+          var p = window.location.port;
+          if (h === 'localhost' || h === '127.0.0.1') {
+              // When opened via a live-server (e.g. VS Code port 5500) point to actual backend
+              return (p === '3000' || p === '') ? '' : 'http://localhost:3000';
+          }
+          return ''; // Production: API and frontend share the same origin
+      })();
     </script>
     <script src="script.js"></script>
 </body>

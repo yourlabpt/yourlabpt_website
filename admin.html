@@ -272,47 +272,135 @@
             border-radius: 8px;
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
             animation: slideUp 0.3s ease;
+            z-index: 9999;
         }
 
         @keyframes slideUp {
-            from {
-                transform: translateY(100px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
+            from { transform: translateY(100px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+
+        /* ── Login overlay ────────────────────────────────── */
+        #login-overlay {
+            position: fixed;
+            inset: 0;
+            background: #1b1b1b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        #login-overlay.hidden { display: none; }
+
+        .login-box {
+            background: var(--secondary-dark);
+            border: 1px solid var(--accent-color);
+            border-radius: 12px;
+            padding: 40px 36px;
+            width: 100%;
+            max-width: 380px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+
+        .login-box h2 {
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, #e8d5b7, #d4c4a3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .login-box p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-bottom: 28px;
+        }
+
+        .login-box input[type="password"] {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--accent-dark);
+            border: 1px solid var(--accent-dark);
+            border-radius: 8px;
+            color: var(--text-light);
+            font-size: 1rem;
+            margin-bottom: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .login-box input[type="password"]:focus {
+            border-color: var(--accent-color);
+        }
+
+        .login-box button[type="submit"] {
+            width: 100%;
+            padding: 12px;
+            font-size: 1rem;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        #login-error {
+            color: var(--danger-color);
+            font-size: 0.82rem;
+            min-height: 1.2em;
+        }
+
+        /* ── Lead fields row ──────────────────────────────── */
+        .lead-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .lead-tag {
+            background: var(--accent-dark);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .lead-tag strong {
+            color: var(--accent-color);
+            margin-right: 3px;
         }
 
         @media (max-width: 768px) {
-            .inquiries-grid {
-                grid-template-columns: 1fr;
-            }
-
-            header {
-                flex-direction: column;
-                gap: 20px;
-                align-items: flex-start;
-            }
-
-            .controls {
-                width: 100%;
-            }
-
-            .controls button {
-                flex: 1;
-            }
+            .inquiries-grid { grid-template-columns: 1fr; }
+            header { flex-direction: column; gap: 20px; align-items: flex-start; }
+            .controls { width: 100%; }
+            .controls button { flex: 1; }
         }
     </style>
 </head>
 <body>
+
+    <!-- ── Login overlay ──────────────────────────────────── -->
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>YourLab Admin</h2>
+            <p>Enter your admin password to continue</p>
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <input type="password" id="password-input" placeholder="Password" autocomplete="current-password" />
+                <button type="submit">Sign In</button>
+            </form>
+            <div id="login-error"></div>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <h1>YourLab Admin Dashboard</h1>
             <div class="controls">
                 <button onclick="refreshData()">🔄 Refresh</button>
                 <button onclick="exportData()">⬇️ Export</button>
+                <button onclick="logout()" style="background:var(--danger-color);color:#fff;">Sign Out</button>
             </div>
         </header>
 
@@ -336,17 +424,74 @@
     </div>
 
     <script>
-      // After deploying the API server, replace the empty string with your Render/Railway URL:
-      window.YOURLAB_API_URL = 'https://yourlab-api.onrender.com';
-      //window.YOURLAB_API_URL = window.YOURLAB_API_URL || '';
+      // Auto-detect: use localhost when running locally, same-origin in production
+      const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      window.YOURLAB_API_URL = _isLocal ? 'http://localhost:3000' : '';
     </script>
     <script>
         const API_BASE = (window.YOURLAB_API_URL || '').replace(/\/$/, '');
+        const TOKEN_KEY = 'yourlab_admin_token';
+
+        // ── Auth helpers ─────────────────────────────────────
+        function getToken() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
+        function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+        function clearToken() { sessionStorage.removeItem(TOKEN_KEY); }
+
+        function authHeaders() {
+            return { 'Content-Type': 'application/json', 'x-admin-token': getToken() };
+        }
+
+        function showLoginOverlay(message) {
+            document.getElementById('login-overlay').classList.remove('hidden');
+            if (message) document.getElementById('login-error').textContent = message;
+        }
+
+        function hideLoginOverlay() {
+            document.getElementById('login-overlay').classList.add('hidden');
+            document.getElementById('login-error').textContent = '';
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const password = document.getElementById('password-input').value;
+            if (!password) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    setToken(data.token);
+                    hideLoginOverlay();
+                    loadInquiries();
+                } else {
+                    document.getElementById('login-error').textContent = data.error || 'Invalid password.';
+                }
+            } catch (err) {
+                document.getElementById('login-error').textContent = 'Could not reach the server. Is it running?';
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch(`${API_BASE}/api/admin/logout`, {
+                    method: 'POST', headers: authHeaders()
+                });
+            } catch (_) {}
+            clearToken();
+            showLoginOverlay();
+        }
+
+        // ── Data loading ──────────────────────────────────────
         let allInquiries = [];
 
         async function loadInquiries() {
             try {
-                const response = await fetch(`${API_BASE}/api/inquiries`);
+                const response = await fetch(`${API_BASE}/api/inquiries`, { headers: authHeaders() });
+                if (response.status === 401) { clearToken(); showLoginOverlay('Session expired. Please sign in again.'); return; }
                 const data = await response.json();
                 allInquiries = data.inquiries || [];
                 displayInquiries(allInquiries);
@@ -357,145 +502,136 @@
             }
         }
 
+        function field(label, value) {
+            if (!value) return '';
+            return `<span class="lead-tag"><strong>${label}</strong>${escapeHtml(String(value))}</span>`;
+        }
+
         function displayInquiries(inquiries) {
             const content = document.getElementById('content');
-            
+
             if (inquiries.length === 0) {
                 content.innerHTML = `
-                    <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
-                        <p style="font-size: 1.1rem;">No inquiries yet.</p>
-                        <p style="margin-top: 10px;">Inquiries will appear here as customers submit them.</p>
-                    </div>
-                `;
+                    <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-muted);">
+                        <p style="font-size:1.1rem;">No inquiries yet.</p>
+                        <p style="margin-top:10px;">They will appear here as visitors chat with the bot.</p>
+                    </div>`;
                 return;
             }
 
-            content.innerHTML = inquiries.map(inquiry => `
+            content.innerHTML = inquiries.map(inquiry => {
+                const c = inquiry.contact || {};
+                const b = inquiry.businessIdea || '';
+                const details = inquiry.details || {};
+                return `
                 <div class="inquiry-card">
                     <div class="inquiry-header">
                         <div class="contact-info">
-                            <h3>${escapeHtml(inquiry.contact.name || 'Anonymous')}</h3>
-                            <p>📧 ${escapeHtml(inquiry.contact.email || 'N/A')}</p>
-                            <p>📱 ${escapeHtml(inquiry.contact.phone || 'N/A')}</p>
+                            <h3>${escapeHtml(c.name || 'Unknown')}</h3>
+                            <p>📧 ${escapeHtml(c.email || 'N/A')}</p>
+                            <p>📱 ${escapeHtml(c.phone || 'N/A')}</p>
+                            ${c.company ? `<p>🏢 ${escapeHtml(c.company)}</p>` : ''}
                         </div>
-                        <span class="timestamp">${new Date(inquiry.timestamp).toLocaleDateString()}</span>
+                        <span class="timestamp">${new Date(inquiry.timestamp).toLocaleDateString()}<br>
+                            <span style="font-size:0.7rem;color:var(--text-muted);">${inquiry.leadScore != null ? '⭐ Score: ' + inquiry.leadScore : ''}</span>
+                        </span>
                     </div>
-                    
-                    <div class="business-idea">
-                        <p><strong>Business Idea:</strong></p>
-                        <p>${escapeHtml(inquiry.businessIdea.substring(0, 200))}${inquiry.businessIdea.length > 200 ? '...' : ''}</p>
+
+                    ${b ? `<div class="business-idea">
+                        <p><strong>Summary</strong></p>
+                        <p>${escapeHtml(b.substring(0, 280))}${b.length > 280 ? '…' : ''}</p>
+                    </div>` : ''}
+
+                    <div class="lead-fields">
+                        ${field('Industry:', details.industry || c.industry)}
+                        ${field('Problem:', details.problem)}
+                        ${field('Target:', details.targetCustomer)}
+                        ${field('Goal:', details.goal)}
+                        ${field('Timeline:', details.timeline)}
+                        ${field('Budget:', details.budgetRange)}
+                        ${field('Urgency:', details.urgencyLevel)}
+                        ${field('Current solution:', details.currentSolution)}
+                        ${details.consentToContact ? '<span class="lead-tag"><strong>✅</strong>Consent given</span>' : ''}
                     </div>
 
                     <div class="action-buttons">
-                        <button class="btn-small btn-copy" onclick="copyToClipboard('${escapeHtml(JSON.stringify(inquiry))}')">📋 Copy</button>
-                        <button class="btn-small btn-delete" onclick="deleteInquiry('${inquiry.filename}')">🗑️ Delete</button>
+                        <button class="btn-small btn-copy" onclick='copyContact(${JSON.stringify(JSON.stringify({contact:c, businessIdea:b, details}))})'>📋 Copy</button>
+                        <button class="btn-small btn-delete" onclick="deleteInquiry('${escapeHtml(inquiry.filename)}')">🗑️ Delete</button>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         function updateStats() {
             document.getElementById('totalCount').textContent = allInquiries.length;
-            const now = new Date().toLocaleString();
-            document.getElementById('lastUpdate').textContent = now;
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleString();
         }
 
         function escapeHtml(text) {
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return text.replace(/[&<>"']/g, m => map[m]);
+            if (text == null) return '';
+            const map = { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
-        function copyToClipboard(text) {
-            try {
-                const parsed = JSON.parse(text);
-                navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
-                showToast('Copied to clipboard!');
-            } catch (e) {
-                console.error('Error copying:', e);
-            }
+        function copyContact(jsonStr) {
+            try { navigator.clipboard.writeText(JSON.stringify(JSON.parse(jsonStr), null, 2)); showToast('Copied!'); }
+            catch (e) { console.error(e); }
         }
 
         async function deleteInquiry(filename) {
-            if (!confirm('Are you sure you want to delete this inquiry?')) return;
-
+            if (!confirm('Delete this inquiry?')) return;
             try {
                 const response = await fetch(`${API_BASE}/api/inquiries/${filename}`, {
-                    method: 'DELETE'
+                    method: 'DELETE', headers: authHeaders()
                 });
-                if (response.ok) {
-                    showToast('Inquiry deleted!');
-                    loadInquiries();
-                }
-            } catch (error) {
-                console.error('Error deleting:', error);
-                showError('Failed to delete inquiry');
-            }
+                if (response.status === 401) { clearToken(); showLoginOverlay('Session expired.'); return; }
+                if (response.ok) { showToast('Deleted!'); loadInquiries(); }
+            } catch (error) { showError('Failed to delete inquiry'); }
         }
 
-        function refreshData() {
-            loadInquiries();
-            showToast('Data refreshed!');
-        }
+        function refreshData() { loadInquiries(); showToast('Refreshed!'); }
 
         function exportData() {
-            if (allInquiries.length === 0) {
-                showError('No inquiries to export');
-                return;
-            }
-
-            const dataStr = JSON.stringify(allInquiries, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `yourlab_inquiries_${new Date().toISOString().split('T')[0]}.json`;
-            link.click();
-            showToast('Data exported!');
+            if (allInquiries.length === 0) { showError('No inquiries to export'); return; }
+            const blob = new Blob([JSON.stringify(allInquiries, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `yourlab_inquiries_${new Date().toISOString().split('T')[0]}.json`;
+            a.click(); showToast('Exported!');
         }
 
-        function showToast(message) {
+        function showToast(message, isError) {
             const toast = document.createElement('div');
             toast.className = 'toast';
-            toast.textContent = message;
+            toast.textContent = (isError ? '❌ ' : '') + message;
+            if (isError) toast.style.background = 'var(--danger-color)';
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
+        function showError(msg) { showToast(msg, true); }
 
-        function showError(message) {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = '❌ ' + message;
-            toast.style.background = 'var(--danger-color)';
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-
-        // Search functionality
-        document.getElementById('searchInput')?.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            const filtered = allInquiries.filter(inquiry =>
-                inquiry.contact.name?.toLowerCase().includes(query) ||
-                inquiry.contact.email?.toLowerCase().includes(query) ||
-                inquiry.businessIdea.toLowerCase().includes(query)
-            );
-            displayInquiries(filtered);
+        // ── Search ────────────────────────────────────────────
+        document.getElementById('searchInput')?.addEventListener('input', e => {
+            const q = e.target.value.toLowerCase();
+            displayInquiries(allInquiries.filter(inq =>
+                (inq.contact?.name || '').toLowerCase().includes(q) ||
+                (inq.contact?.email || '').toLowerCase().includes(q) ||
+                (inq.businessIdea || '').toLowerCase().includes(q)
+            ));
         });
-
         function clearSearch() {
             document.getElementById('searchInput').value = '';
             displayInquiries(allInquiries);
         }
 
-        // Load data on page load
-        loadInquiries();
-        // Auto-refresh every 10 seconds
-        setInterval(loadInquiries, 10000);
+        // ── Boot ─────────────────────────────────────────────
+        if (getToken()) {
+            hideLoginOverlay();
+            loadInquiries();
+            setInterval(loadInquiries, 15000);
+        } else {
+            showLoginOverlay();
+        }
     </script>
 </body>
 </html>

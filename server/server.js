@@ -9,13 +9,59 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const CHAT_SESSION_TTL_MS = Number(process.env.CHAT_SESSION_TTL_MS || 45 * 60 * 1000);
-const SHOULD_STORE_RESPONSES = String(process.env.OPENAI_STORE_RESPONSES || 'false') === 'true';
 
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    : null;
+// Ollama local LLM configuration
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, '');
+const OLLAMA_MODEL_BIG  = process.env.OLLAMA_MODEL_BIG  || 'llama3.1:8b';
+const OLLAMA_MODEL_SMALL = process.env.OLLAMA_MODEL_SMALL || 'phi3:mini';
+// Number of prior turns before we upgrade to the big model
+const SMALL_MODEL_TURNS = Number(process.env.SMALL_MODEL_TURNS || 2);
+// Max time to wait for a model response before falling back (ms)
+const MODEL_TIMEOUT_MS = Number(process.env.MODEL_TIMEOUT_MS || 30000);
+
+// Admin authentication
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'yourlab-admin';
+// In-memory token store: token -> expiry timestamp
+const adminTokens = new Map();
+const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
+function issueAdminToken() {
+    const token = crypto.randomBytes(32).toString('hex');
+    adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
+    return token;
+}
+
+function isValidAdminToken(token) {
+    if (!token || !adminTokens.has(token)) return false;
+    if (Date.now() > adminTokens.get(token)) {
+        adminTokens.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function requireAdmin(req, res, next) {
+    const token = (req.headers['x-admin-token'] || '').trim();
+    if (!isValidAdminToken(token)) {
+        return res.status(401).json({ error: 'Unauthorized. Please log in to the admin dashboard.' });
+    }
+    next();
+}
+
+const ollamaClient = new OpenAI({
+    baseURL: OLLAMA_BASE_URL,
+    apiKey: 'ollama'  // Ollama ignores this but the SDK requires it
+});
+
+// Load company knowledge base once at startup
+let COMPANY_KNOWLEDGE = '';
+try {
+    COMPANY_KNOWLEDGE = fs.readFileSync(path.join(__dirname, 'company-knowledge.md'), 'utf8').trim();
+    console.log('Company knowledge base loaded (' + COMPANY_KNOWLEDGE.length + ' chars)');
+} catch (e) {
+    console.warn('company-knowledge.md not found — agent will run without it:', e.message);
+}
 
 // CORS — allow same-origin requests and known production/dev origins
 const ALLOWED_ORIGINS = [
@@ -24,7 +70,8 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:5500',
     'https://yourlabpt.com',
     'https://www.yourlabpt.com',
-    process.env.ALLOWED_ORIGIN
+    // Support additional origins from env (comma-separated list allowed)
+    ...(process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean)
 ].filter(Boolean);
 
 app.use(cors({
@@ -250,43 +297,45 @@ function buildSystemPrompt(session) {
     const knownSection = known.length > 0 ? known.join('\n') : (isPt ? '(nada capturado ainda)' : '(nothing captured yet)');
     const missingSection = missing.length > 0 ? missing.join(', ') : (isPt ? '(nada crítico em falta)' : '(nothing critical missing)');
 
+    const knowledgeSection = COMPANY_KNOWLEDGE
+        ? `\n\n---\nCOMPANY KNOWLEDGE BASE (use this as ground truth for all facts about YourLab):\n${COMPANY_KNOWLEDGE}\n---`
+        : '';
+
     const stageGuide = isPt
         ? `- discover → entender o problema/ideia\n- qualify → aprofundar: cliente-alvo, solução atual, objetivo, urgência\n- capture → obter nome + email ou telefone\n- commit → resumir e confirmar próximos passos\n- completed → concluído`
         : `- discover → understand the problem/idea\n- qualify → dig deeper: target customer, current solution, goal, urgency\n- capture → get name + email or phone\n- commit → wrap up and confirm next steps\n- completed → done`;
 
-    return `You are Alex — a charismatic, slightly bold, genuinely curious startup advisor who works with YourLab. You are talking to someone who may or may not have a business idea yet. Your job is to have a real conversation, earn their trust, and naturally uncover who they are and what they're trying to build.
+    return `${knowledgeSection ? knowledgeSection + '\n\n' : ''}You are Alex — YourLab's business development specialist. You are not a generic chatbot. You are a sharp, commercially-minded person whose job is to understand what this person wants to build, assess whether YourLab is the right fit, and get them into a real conversation with the team — fast.
 
-You are NOT a chatbot filling a form. You are a person with opinions, instincts, and wit. You enjoy small talk. You ask unusual questions no one expects. You make the other person feel smart and interesting. And somewhere in that real conversation, you pick up everything YourLab needs to follow up.
+You are effective because you are direct without being cold, and curious without being nosy. You waste no one's time, including your own. Every message you send has a purpose.
 
 ABOUT YOURLAB:
-YourLab builds MVPs — fast, lean, and structured. Philosophy: "Fail small, learn fast, launch smart." One specialist per project. Real requirements engineering. Custom software, IoT, integrations. The kind of lab where an idea becomes a real product without burning everything first.
+YourLab builds MVPs — fast, lean, structured. Philosophy: "Start small. Prove it. Scale what's real." Custom software, IoT, integrations. One specialist per project. Real requirements engineering. The cost of bringing an idea to life has never been lower — most people still think they need 6 figures and 18 months. They don't.
+
+YOUR APPROACH:
+- **Message 1**: Respond to whatever they said, establish presence, ask ONE focused question to understand what they're working on. No pleasantries longer than 1 sentence.
+- **Messages 2–3**: Dig into the problem — what they're solving, for whom, what they've already tried. Ask sharp, specific questions. "What's blocking you right now?" not "Tell me more."
+- **Messages 3–4**: Start qualifying commercially — timeline, whether this is an active project or an idea, budget sensitivity. You don't ask "what's your budget?" — you ask "Is this something you're looking to move on now, or are you still mapping it out?"
+- **By message 4–5**: You have enough to know if it's worth following up. If yes, ask for contact. Be direct: "I'd like to connect you with our team — what's the best email to reach you?" Do not wait for perfect conditions.
+- If they clearly want to chat casually: 1 exchange of social warmth, then bridge: "Good to hear. What's the project you're working on — or thinking about?" Never more than 1 social exchange.
 
 YOUR PERSONALITY:
-- Warm but direct. You don't pad sentences with filler.
-- Bold. You make opinionated observations: "That's actually a harder problem than people think." "Most people try to solve this the wrong way."
-- Curious in unexpected ways. You ask things like: "What made you choose this specific problem and not something easier?" or "Is this something you've been sitting on for a while, or did it come to you recently?" or "If this totally fails in 6 months — what would be the real reason?"
-- You enjoy small talk and you're good at it. If someone says they're tired, you respond like a human. If they say something funny, you match the energy. You don't robotically redirect — you roll with it and find a natural opening.
-- You make them feel like the conversation is just flowing, not that they're being interviewed.
+- Direct and confident, but not robotic. You sound like a smart person, not a sales script.
+- You make observations and opinions: "That's a classic distribution problem, actually." "Most teams try to solve that with integrations and end up making it worse."
+- You are efficient. You do NOT recap what you just asked. You ask it, you wait.
+- When someone explains their idea with clarity, you acknowledge it specifically — not "that's interesting!" but "that's a clear use case, I've seen this work well in [relevant context]."
+- You can be warm, but warmth is earned through relevance, not through enthusiasm. No exclamation points unless the person is clearly excited and you're matching energy.
+- When someone hesitates about cost, anchor them: "The barrier to building your own thing has genuinely never been lower. What people built for €200k three years ago, we build for €20k now. It's worth a real conversation."
 
-HOW TO DIG INFORMATION (without it feeling like a form):
-Extract these from the natural flow of conversation — NEVER ask for them all at once, NEVER make them feel like fields:
-- Their name (drop it casually once you have it)
-- What problem or frustration inspired the idea
-- Who they imagine using it (not "target market" — ask it like "who's the first person you picture actually loving this?")
-- What they've already tried or why the current options feel wrong
-- What winning looks like for them in a year
-- Whether they're early (just an idea) or already moving
-- Contact: email or phone — ask only after you've delivered real value in the conversation
-
-UNUSUAL QUESTIONS TO USE (pick the right moment, rotate, never repeat):
-- "What's the unfair advantage you have that nobody else in this space has?"
-- "If you couldn't use code or an app to solve this — how would you do it manually?"
-- "Who's the one person you'd show this to first, and what would their reaction probably be?"
-- "What's the version of this that ships in 6 weeks vs. the version that takes 2 years?"
-- "Is this solving a problem you have personally, or one you observed in someone else?"
-- "What would have to be true for this to become something really big?"
-- "If you had to bet your own money on this — what's the number that would make you nervous but still do it?"
-- "What's the dumbest simple version of this idea that might actually work?"
+HARD RULES:
+1. Write ONLY in ${languageInstruction}. No language mixing.
+2. 25–90 words per reply. Shorter is usually better.
+3. Ask ONE thing per reply. One question, not two.
+4. NEVER ask for something already in "WHAT YOU ALREADY KNOW".
+5. NEVER start with "Great!", "Absolutely!", "Of course!", or "Certainly!". No filler openers.
+6. If they ask what YourLab does: answer clearly and concisely using the knowledge base, then redirect back with one question.
+7. Get contact info (email or phone) by message 4–5 at the latest if there's a real lead. Don't wait for "the right moment." The right moment is when you have enough context to say "let's continue this properly."
+8. When you have name + (email OR phone) + problem: wrap up, tell them the team will review and reach out within 1 business day. Leave them with a clear next step.
 
 CURRENT CONVERSATION STAGE: ${stage}
 ${stageGuide}
@@ -294,20 +343,35 @@ ${stageGuide}
 WHAT YOU ALREADY KNOW ABOUT THIS PERSON:
 ${knownSection}
 
-WHAT YOU STILL NEED (gather naturally, not by asking directly):
+WHAT YOU STILL NEED (gather naturally — one at a time):
 ${missingSection}
 
-HARD RULES:
-1. Write ONLY in ${languageInstruction}. Absolutely no language mixing.
-2. 30–110 words per reply. Shorter is often better. Don't over-explain.
-3. Always respond specifically to what they said — never ignore their message and pivot. Echo, react, then move.
-4. Ask ONE thing per reply. One. Not two wrapped in "and".
-5. NEVER ask for something already in "WHAT YOU ALREADY KNOW". Read it before every reply.
-6. Small talk is valid. Engage with it genuinely for 1–2 exchanges, then find a smooth bridge to something meaningful.
-7. When you have name + (email or phone) + problem + goal: wrap up warmly, tell them what happens next (YourLab team reviews and reaches out), and leave them feeling like this was a conversation worth having.
-8. No corporate language. No "Great question!", "Absolutely!", "Certainly!". Sound like a real person.
-
-Output ONLY valid JSON matching the schema provided.`.trim();
+OUTPUT FORMAT — respond with ONLY a valid JSON object with exactly these fields:
+{
+  "assistant_reply": "<your reply as Alex — 25 to 90 words>",
+  "request_contact_now": <true if you are currently asking for email or phone, false otherwise>,
+  "lead_stage": "<one of: discover | qualify | capture | commit | completed>",
+  "lead_score": <integer 0-100 reflecting how much useful info has been captured>,
+  "updated_lead": {
+    "language": "<en or pt>",
+    "name": "<name if captured, else empty string>",
+    "email": "<email if captured, else empty string>",
+    "phone": "<phone if captured, else empty string>",
+    "company": "<company if captured, else empty string>",
+    "industry": "<industry if captured, else empty string>",
+    "problem": "<business problem/idea summary, else empty string>",
+    "targetCustomer": "<target customer if captured, else empty string>",
+    "currentSolution": "<current solution if captured, else empty string>",
+    "goal": "<desired outcome if captured, else empty string>",
+    "timeline": "<timeline if captured, else empty string>",
+    "budgetRange": "<budget if captured, else empty string>",
+    "urgencyLevel": "<urgency if captured, else empty string>",
+    "consentToContact": <true if user gave explicit consent, else false>
+  },
+  "topic_bullets": ["<short bullet of key topic covered>"],
+  "next_best_action": "<one sentence describing what Alex should do next>"
+}
+Do NOT add any text before or after the JSON. Do NOT wrap it in markdown code fences.`.trim();
 }
 
 const TURN_OUTPUT_SCHEMA = {
@@ -379,37 +443,38 @@ function extractOutputText(response) {
     return textChunks.join('\n').trim();
 }
 
-async function runLeadConversationTurn(session, userMessage) {
-    if (!openai) {
-        throw new Error('OPENAI_API_KEY is missing.');
-    }
-
+async function runLeadConversationTurn(session, userMessage, modelName) {
     const history = session.turns.slice(-10).flatMap((turn) => ([
         { role: 'user', content: turn.user },
         { role: 'assistant', content: turn.assistant }
     ]));
 
-    const input = [
+    const messages = [
         { role: 'system', content: buildSystemPrompt(session) },
         ...history,
         { role: 'user', content: userMessage }
     ];
 
-    const response = await openai.responses.create({
-        model: OPENAI_MODEL,
-        store: SHOULD_STORE_RESPONSES,
-        input,
-        text: {
-            format: {
-                type: 'json_schema',
-                name: 'lead_conversation_turn',
-                strict: true,
-                schema: TURN_OUTPUT_SCHEMA
-            }
-        }
-    });
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(() => abortController.abort(), MODEL_TIMEOUT_MS);
 
-    const raw = extractOutputText(response);
+    let response;
+    try {
+        response = await ollamaClient.chat.completions.create(
+            {
+                model: modelName || OLLAMA_MODEL_BIG,
+                messages,
+                response_format: { type: 'json_object' },
+                temperature: 0.7,
+                stream: false
+            },
+            { signal: abortController.signal }
+        );
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
+
+    const raw = (response.choices[0]?.message?.content || '').trim();
     if (!raw) {
         throw new Error('Model returned an empty response.');
     }
@@ -419,7 +484,31 @@ async function runLeadConversationTurn(session, userMessage) {
         .replace(/^```\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim();
-    return JSON.parse(normalized);
+
+    let parsed;
+    try {
+        parsed = JSON.parse(normalized);
+    } catch (e) {
+        throw new Error(`Model returned invalid JSON: ${e.message} — raw: ${normalized.slice(0, 200)}`);
+    }
+
+    // Tolerate minor schema deviations — fill required fields with safe defaults if missing
+    if (!parsed.assistant_reply) {
+        // Some models wrap the reply under a different key
+        parsed.assistant_reply =
+            parsed.reply || parsed.response || parsed.message || parsed.text || '';
+    }
+    if (!parsed.assistant_reply) {
+        throw new Error(`Model response missing assistant_reply. Keys returned: ${Object.keys(parsed).join(', ')}`);
+    }
+    if (typeof parsed.request_contact_now !== 'boolean') parsed.request_contact_now = false;
+    if (!parsed.lead_stage) parsed.lead_stage = 'discover';
+    if (!Number.isFinite(parsed.lead_score)) parsed.lead_score = 0;
+    if (!parsed.updated_lead || typeof parsed.updated_lead !== 'object') parsed.updated_lead = {};
+    if (!Array.isArray(parsed.topic_bullets)) parsed.topic_bullets = [];
+    if (!parsed.next_best_action) parsed.next_best_action = '';
+
+    return parsed;
 }
 
 function fallbackTurn(session, userMessage) {
@@ -649,15 +738,37 @@ app.post('/api/chat', async (req, res) => {
         const extracted = extractLeadSignalsFromText(userMessage);
         session.lead = mergeLead(session.lead, extracted);
 
+        // Route: use small model for the first few simple turns, big model for deeper conversation
+        const useSmall = session.turns.length < SMALL_MODEL_TURNS;
+        const primaryModel = useSmall ? OLLAMA_MODEL_SMALL : OLLAMA_MODEL_BIG;
+        const fallbackModel = useSmall ? null : OLLAMA_MODEL_SMALL;
+
         let modelTurn;
         let usingFallback = false;
+        let activeModel = primaryModel;
         try {
-            modelTurn = await runLeadConversationTurn(session, userMessage);
-        } catch (error) {
-            usingFallback = true;
-            console.error('AI chat fallback activated:', error.message);
-            modelTurn = fallbackTurn(session, userMessage);
+            modelTurn = await runLeadConversationTurn(session, userMessage, primaryModel);
+        } catch (primaryError) {
+            console.error(`Model ${primaryModel} failed:`, primaryError.message);
+            if (fallbackModel) {
+                try {
+                    console.log(`Retrying with small model: ${fallbackModel}`);
+                    modelTurn = await runLeadConversationTurn(session, userMessage, fallbackModel);
+                    activeModel = fallbackModel;
+                    usingFallback = true;
+                } catch (smallError) {
+                    console.error(`Small model ${fallbackModel} also failed:`, smallError.message);
+                    usingFallback = true;
+                    activeModel = 'js-fallback';
+                    modelTurn = fallbackTurn(session, userMessage);
+                }
+            } else {
+                usingFallback = true;
+                activeModel = 'js-fallback';
+                modelTurn = fallbackTurn(session, userMessage);
+            }
         }
+        console.log(`Chat turn — model: ${activeModel}, session: ${session.id.slice(0, 8)}, turns: ${session.turns.length}`);
 
         const aiLead = modelTurn && modelTurn.updated_lead ? modelTurn.updated_lead : {};
         session.lead = mergeLead(session.lead, aiLead);
@@ -683,17 +794,25 @@ app.post('/api/chat', async (req, res) => {
         session.updatedAt = new Date().toISOString();
 
         let saved = false;
-        let emailNotification = { sent: false, reason: 'Lead not complete yet.' };
-        if (hasLeadContact(session.lead) && hasLeadStory(session.lead)) {
+        let emailNotification = { sent: false, reason: 'Lead not ready yet.' };
+
+        // Save as soon as we have contact info, even without full story (partial lead).
+        // Also save after 3+ turns even without contact (warm partial).
+        const readyToSave = hasLeadContact(session.lead) || session.turns.length >= 3;
+        if (readyToSave) {
             const inquiry = sessionToInquiry(session);
             session.savedFile = saveInquiry(inquiry, session.savedFile);
             saved = true;
 
-            if (!session.notified) {
+            // Only send email notification once the lead has both contact + story
+            const leadIsQualified = hasLeadContact(session.lead) && hasLeadStory(session.lead);
+            if (leadIsQualified && !session.notified) {
                 emailNotification = await sendLeadNotificationEmail(inquiry);
                 if (emailNotification.sent) {
                     session.notified = true;
                 }
+            } else if (!leadIsQualified) {
+                emailNotification = { sent: false, reason: 'Lead saved but not yet fully qualified for notification.' };
             } else {
                 emailNotification = { sent: false, reason: 'Notification already sent for this session.' };
             }
@@ -714,7 +833,8 @@ app.post('/api/chat', async (req, res) => {
             },
             saved,
             emailNotification,
-            usingFallback
+            usingFallback,
+            activeModel
         });
     } catch (error) {
         console.error('Error in /api/chat:', error);
@@ -785,8 +905,25 @@ app.post('/api/save-inquiry', async (req, res) => {
     }
 });
 
+// Admin login
+app.post('/api/admin/login', (req, res) => {
+    const password = cleanText(req.body && req.body.password, 300);
+    if (!password || password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid password.' });
+    }
+    const token = issueAdminToken();
+    return res.json({ token });
+});
+
+// Admin logout
+app.post('/api/admin/logout', (req, res) => {
+    const token = (req.headers['x-admin-token'] || '').trim();
+    if (token) adminTokens.delete(token);
+    return res.json({ success: true });
+});
+
 // Get all inquiries (admin endpoint)
-app.get('/api/inquiries', (req, res) => {
+app.get('/api/inquiries', requireAdmin, (req, res) => {
     try {
         const files = fs.readdirSync(inquiriesDir);
         const inquiries = [];
@@ -821,7 +958,7 @@ app.get('/api/inquiries', (req, res) => {
 });
 
 // Get single inquiry
-app.get('/api/inquiries/:id', (req, res) => {
+app.get('/api/inquiries/:id', requireAdmin, (req, res) => {
     try {
         const filename = normalizeInquiryFilename(req.params.id);
         if (!filename) {
@@ -845,7 +982,7 @@ app.get('/api/inquiries/:id', (req, res) => {
 });
 
 // Delete inquiry
-app.delete('/api/inquiries/:id', (req, res) => {
+app.delete('/api/inquiries/:id', requireAdmin, (req, res) => {
     try {
         const filename = normalizeInquiryFilename(req.params.id);
         if (!filename) {
@@ -877,8 +1014,9 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         inquiriesCount: fs.readdirSync(inquiriesDir).filter((f) => f.endsWith('.json')).length,
-        aiConfigured: Boolean(process.env.OPENAI_API_KEY),
-        model: OPENAI_MODEL,
+        ollamaUrl: OLLAMA_BASE_URL,
+        modelBig: OLLAMA_MODEL_BIG,
+        modelSmall: OLLAMA_MODEL_SMALL,
         smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
     });
 });
@@ -910,5 +1048,5 @@ setInterval(() => {
 app.listen(PORT, () => {
     console.log(`YourLab Chat API running on http://localhost:${PORT}`);
     console.log(`Inquiries stored in: ${inquiriesDir}`);
-    console.log(`AI chat enabled: ${Boolean(process.env.OPENAI_API_KEY)} (model: ${OPENAI_MODEL})`);
+    console.log(`Ollama URL: ${OLLAMA_BASE_URL} | small: ${OLLAMA_MODEL_SMALL} | big: ${OLLAMA_MODEL_BIG}`);
 });
