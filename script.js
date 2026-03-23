@@ -124,6 +124,27 @@ const translations = {
         gameFinalLevel2: 'Level 2 · Find the elements',
         gameFinalLevel3: 'Level 3 · Order the sequence',
         gameFinalLevel4: 'Level 4 · Internalize the rhythm',
+        // Project Showcase
+        projectShowcaseKicker: 'PROVEN PROJECT STORIES',
+        projectShowcaseHeading: 'What we build, how we build it, and the outcomes clients get',
+        projectShowcaseDescription: 'Every case shows the full path: business request, initial pain, our execution strategy, and a flexible solution ready for daily operations.',
+        projectShowcaseAddHint: 'Add or update projects in `projectShowcaseData` in `script.js`. For agent automation, use `docs/PROJECT_SHOWCASE_AGENT_PROMPT.md`.',
+        projectCaseLabel: 'Case',
+        projectBuiltForLabel: 'Built for',
+        projectSectorLabel: 'Sector',
+        projectTimelineLabel: 'Timeline',
+        projectRequestLabel: 'Strategic request',
+        projectPainLabel: 'Initial request and pain',
+        projectBusinessImpactLabel: 'Business impact of the pain',
+        projectProcessLabel: 'Approach and execution',
+        projectResultLabel: 'Solution delivered',
+        projectOutcomesLabel: 'Results achieved',
+        projectDailyUseLabel: 'Flexible daily use',
+        projectCtaText: 'Want this type of result in your business? Tell us your scenario and we will map the best first version with you.',
+        projectCtaButton: 'Talk to the team',
+        projectPrevAria: 'Previous project',
+        projectNextAria: 'Next project',
+        projectDotAriaPrefix: 'Project',
         // NFC Business Card
         nfcKicker: 'NFC BUSINESS CARD',
         nfcHeading: 'Tap, Open, Save Contact',
@@ -278,6 +299,27 @@ const translations = {
         gameFinalLevel2: 'N\u00EDvel 2 \u00B7 Encontrar os elementos',
         gameFinalLevel3: 'N\u00EDvel 3 \u00B7 Ordenar a sequ\u00EAncia',
         gameFinalLevel4: 'N\u00EDvel 4 \u00B7 Interiorizar o ritmo',
+        // Project Showcase
+        projectShowcaseKicker: 'CASOS COM RESULTADO REAL',
+        projectShowcaseHeading: 'O que construimos, como executamos e quais resultados entregamos',
+        projectShowcaseDescription: 'Cada caso mostra a jornada completa: pedido de negocio, dor inicial, estrategia de execucao e solucao flexivel pronta para operacao diaria.',
+        projectShowcaseAddHint: 'Adicione ou atualize projetos em `projectShowcaseData` no `script.js`. Para automacao com agentes, use `docs/PROJECT_SHOWCASE_AGENT_PROMPT.md`.',
+        projectCaseLabel: 'Caso',
+        projectBuiltForLabel: 'Construido para',
+        projectSectorLabel: 'Setor',
+        projectTimelineLabel: 'Prazo',
+        projectRequestLabel: 'Pedido estrategico',
+        projectPainLabel: 'Pedido e dor inicial',
+        projectBusinessImpactLabel: 'Impacto da dor no negocio',
+        projectProcessLabel: 'Abordagem e execucao',
+        projectResultLabel: 'Solucao entregue',
+        projectOutcomesLabel: 'Resultados alcancados',
+        projectDailyUseLabel: 'Uso di\u00E1rio flex\u00EDvel',
+        projectCtaText: 'Quer este tipo de resultado no seu negocio? Conte o seu cenario e mapeamos com voce a melhor primeira versao.',
+        projectCtaButton: 'Falar com a equipa',
+        projectPrevAria: 'Projeto anterior',
+        projectNextAria: 'Pr\u00F3ximo projeto',
+        projectDotAriaPrefix: 'Projeto',
         // NFC Business Card
         nfcKicker: 'CART\u00C3O NFC',
         nfcHeading: 'Toca, abre, guarda o contacto',
@@ -356,6 +398,288 @@ document.getElementById('langToggle').addEventListener('click', () => {
 // Apply saved language on load
 setLanguage(currentLang);
 
+// ===== Projects Showcase (Bilingual + Easy to Extend) =====
+// Add new projects by appending a new object to this array.
+// Expected fields:
+// id, title{en,pt}, clientProfile{en,pt}, sector{en,pt}, timeline{en,pt},
+// strategicRequest{en,pt}, painSnapshot{en,pt}, businessImpact{en,pt},
+// approach{en[],pt[]}, solutionDelivered{en[],pt[]}, results{en[],pt[]},
+// dailyUse{en[],pt[]}, optional ctaText{en,pt}
+const projectShowcaseData = [
+    {
+        "operation": "update",
+        "target_id": "001",
+        "project": {
+            "id": "gestao-flexivel-gorjetas-restaurantes",
+            "title": {
+            "pt": "Centralizacao de Gorjetas e Fechamento Financeiro para Restaurantes",
+            "en": "Centralized Tip and Financial Closing Management for Restaurants"
+            },
+            "clientProfile": {
+            "pt": "Rede de restaurantes com donos, gerentes e supervisores que precisam controlar faturamento diario e distribuicao de gorjetas por funcionario.",
+            "en": "Restaurant group with owners, managers, and supervisors who need control over daily revenue and employee-level tip distribution."
+            },
+            "sector": {
+            "pt": "Restauracao",
+            "en": "Restaurant Operations"
+            },
+            "timeline": {
+            "pt": "Projeto evolutivo em fases, do lancamento diario a configuracoes avancadas de acerto.",
+            "en": "Phased project evolution, from daily entries to advanced settlement configuration."
+            },
+            "strategicRequest": {
+            "pt": "Criar um sistema unico para registrar gorjetas e faturamento diario, calcular corretamente por funcao e garantir pagamentos consistentes em cada restaurante.",
+            "en": "Build a single system to record tips and daily revenue, calculate correctly by role, and ensure consistent payouts in each restaurant."
+            },
+            "painSnapshot": {
+            "pt": "O pedido comecou como um controle simples de gorjetas, mas havia divergencia entre a base usada para calcular algumas funcoes e a fonte real de pagamento.",
+            "en": "The request started as simple tip tracking, but there was a mismatch between the base used to calculate some roles and the real payment source."
+            },
+            "businessImpact": {
+            "pt": "Essa divergencia gerava ajustes manuais, risco de inconsistencias entre unidades e consumo de tempo da lideranca para validar valores.",
+            "en": "This mismatch caused manual adjustments, risk of inconsistencies across units, and leadership time spent validating numbers."
+            },
+            "approach": {
+            "pt": [
+                "Mapeamos regras reais por funcao e por restaurante para identificar onde calculo e pagamento divergiam.",
+                "Estruturamos um motor de regras flexivel separando fonte de calculo e fonte de pagamento por perfil.",
+                "Conectamos cadastro, presenca, lancamento diario e acerto por periodo em um fluxo unico de operacao."
+            ],
+            "en": [
+                "We mapped real rules by role and restaurant to identify where calculation and payment diverged.",
+                "We structured a flexible rules engine separating calculation source and payment source by profile.",
+                "We connected staff records, attendance, daily entries, and period settlement into one operating flow."
+            ]
+            },
+            "solutionDelivered": {
+            "pt": [
+                "Modulo de lancamento diario com faturamento global, gorjetas e valores por funcionario.",
+                "Sistema flexivel de criacao e ajuste de regras por tipo de funcionario e tipo de restaurante.",
+                "Capacidades operacionais para ficha de funcionarios, marcacao de presenca e acerto diario ou por periodo."
+            ],
+            "en": [
+                "Daily entry module with total revenue, tips, and per-employee values.",
+                "Flexible system to create and adjust rules by employee type and restaurant type.",
+                "Operational capabilities for staff records, attendance tracking, and daily or period settlement."
+            ]
+            },
+            "results": {
+            "pt": [
+                "Calculos e pagamentos ficaram alinhados com a regra real de cada funcao.",
+                "Reducao de retrabalho manual e maior confianca no fechamento financeiro.",
+                "Gestao centralizada para donos com execucao distribuida entre gerentes e supervisores."
+            ],
+            "en": [
+                "Calculations and payouts became aligned with each role's real rule.",
+                "Lower manual rework and higher confidence in financial closing.",
+                "Centralized oversight for owners with distributed execution across managers and supervisors."
+            ]
+            },
+            "dailyUse": {
+            "pt": [
+                "Regras podem ser atualizadas no dia a dia sem interromper a operacao.",
+                "Modelo pode ser replicado para novos restaurantes mantendo padrao de controle.",
+                "Fluxo atende diferentes perfis de uso com responsabilidades claras por nivel de gestao."
+            ],
+            "en": [
+                "Rules can be updated day to day without interrupting operations.",
+                "The model can be replicated to new restaurants while keeping control standards.",
+                "The workflow supports different user profiles with clear responsibilities by management level."
+            ]
+            },
+            "ctaText": {
+            "pt": "Se voce quer padronizar gorjetas e fechamento financeiro em varias unidades, fale com a YourLab.",
+            "en": "If you want to standardize tip management and financial closing across multiple locations, talk to YourLab."
+            }
+        },
+        "changeSummary": {
+            "pt": "Case 001 atualizado com foco na correcao da divergencia entre calculo e pagamento e na evolucao para regras flexiveis por funcao e restaurante.",
+            "en": "Case 001 updated with focus on fixing the calculation-versus-payment mismatch and evolving to flexible rules by role and restaurant."
+        }
+    }
+];
+
+(function initProjectShowcase() {
+    const wrapper = document.querySelector('[data-project-showcase]');
+    if (!wrapper) return;
+
+    const slidesEl = wrapper.querySelector('[data-project-slides]');
+    const dotsEl = wrapper.querySelector('[data-project-dots]');
+    const prevBtn = wrapper.querySelector('[data-project-prev]');
+    const nextBtn = wrapper.querySelector('[data-project-next]');
+    if (!slidesEl || !dotsEl) return;
+
+    const total = projectShowcaseData.length;
+    if (!total) return;
+
+    let current = 0;
+    let touchStartX = 0;
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function t(key) {
+        return (translations[currentLang] && translations[currentLang][key]) || key;
+    }
+
+    function textFor(valueByLang) {
+        if (!valueByLang || typeof valueByLang !== 'object') return '';
+        return valueByLang[currentLang] || valueByLang.pt || valueByLang.en || '';
+    }
+
+    function listFor(valueByLang) {
+        const selected = textFor(valueByLang);
+        return Array.isArray(selected) ? selected : [];
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function twoDigits(value) {
+        return String(value).padStart(2, '0');
+    }
+
+    function render() {
+        slidesEl.innerHTML = projectShowcaseData.map((project, index) => {
+            const approachSteps = listFor(project.approach)
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join('');
+            const deliveredItems = listFor(project.solutionDelivered)
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join('');
+            const resultPoints = listFor(project.results)
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join('');
+            const dailyUsePoints = listFor(project.dailyUse)
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join('');
+            const isActive = index === current;
+            const ctaLine = textFor(project.ctaText) || t('projectCtaText');
+
+            return `
+                <article class="project-case-slide ${isActive ? 'active' : ''}" data-project-index="${index}" aria-hidden="${String(!isActive)}">
+                    <header class="project-case-header">
+                        <p class="project-case-index">${twoDigits(index + 1)} / ${twoDigits(total)}</p>
+                        <div>
+                            <p class="project-case-kicker">${t('projectCaseLabel')} ${index + 1}</p>
+                            <h3>${escapeHtml(textFor(project.title))}</h3>
+                            <p class="project-case-subtitle"><strong>${t('projectBuiltForLabel')}:</strong> ${escapeHtml(textFor(project.clientProfile))}</p>
+                        </div>
+                    </header>
+
+                    <div class="project-case-meta">
+                        <span class="project-meta-chip"><strong>${t('projectSectorLabel')}:</strong> ${escapeHtml(textFor(project.sector))}</span>
+                        <span class="project-meta-chip"><strong>${t('projectTimelineLabel')}:</strong> ${escapeHtml(textFor(project.timeline))}</span>
+                    </div>
+
+                    <article class="project-case-value-card">
+                        <h4>${t('projectRequestLabel')}</h4>
+                        <p>${escapeHtml(textFor(project.strategicRequest))}</p>
+                    </article>
+
+                    <div class="project-case-grid">
+                        <article class="project-case-block">
+                            <h4>${t('projectPainLabel')}</h4>
+                            <p>${escapeHtml(textFor(project.painSnapshot))}</p>
+                            <h5>${t('projectBusinessImpactLabel')}</h5>
+                            <p>${escapeHtml(textFor(project.businessImpact))}</p>
+                        </article>
+
+                        <article class="project-case-block">
+                            <h4>${t('projectProcessLabel')}</h4>
+                            <ul>${approachSteps}</ul>
+                        </article>
+
+                        <article class="project-case-block">
+                            <h4>${t('projectResultLabel')}</h4>
+                            <ul>${deliveredItems}</ul>
+                        </article>
+
+                        <article class="project-case-block project-case-block-results">
+                            <h4>${t('projectOutcomesLabel')}</h4>
+                            <ul>${resultPoints}</ul>
+                            <h5>${t('projectDailyUseLabel')}</h5>
+                            <ul>${dailyUsePoints}</ul>
+                        </article>
+                    </div>
+
+                    <div class="project-case-cta">
+                        <p>${escapeHtml(ctaLine)}</p>
+                        <a class="project-case-cta-link" href="#chatForm">${t('projectCtaButton')}</a>
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        dotsEl.innerHTML = projectShowcaseData.map((_, index) => `
+            <button
+                type="button"
+                class="project-showcase-dot ${index === current ? 'active' : ''}"
+                data-project-dot="${index}"
+                aria-label="${t('projectDotAriaPrefix')} ${index + 1}">
+            </button>
+        `).join('');
+
+        dotsEl.querySelectorAll('[data-project-dot]').forEach((dot) => {
+            dot.addEventListener('click', () => {
+                const index = Number.parseInt(dot.dataset.projectDot || '0', 10);
+                goTo(index);
+            });
+        });
+
+        if (prevBtn) {
+            prevBtn.disabled = current === 0;
+            prevBtn.classList.toggle('is-disabled', current === 0);
+            prevBtn.setAttribute('aria-label', t('projectPrevAria'));
+        }
+
+        if (nextBtn) {
+            nextBtn.disabled = current === total - 1;
+            nextBtn.classList.toggle('is-disabled', current === total - 1);
+            nextBtn.setAttribute('aria-label', t('projectNextAria'));
+        }
+    }
+
+    function goTo(index) {
+        current = clamp(index, 0, total - 1);
+        render();
+    }
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => goTo(current - 1));
+    }
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => goTo(current + 1));
+    }
+
+    wrapper.addEventListener('touchstart', (event) => {
+        touchStartX = event.changedTouches[0].screenX;
+    }, { passive: true });
+
+    wrapper.addEventListener('touchend', (event) => {
+        const diff = event.changedTouches[0].screenX - touchStartX;
+        if (Math.abs(diff) < 50) return;
+        if (diff < 0) {
+            goTo(current + 1);
+        } else {
+            goTo(current - 1);
+        }
+    }, { passive: true });
+
+    document.addEventListener('yourlab:language-changed', () => {
+        render();
+    });
+
+    render();
+})();
+
 // Helper to get current bot translations
 function getBotText() {
     return translations[currentLang].bot;
@@ -365,11 +689,12 @@ const chatForm = document.getElementById('chatForm');
 const userInput = document.getElementById('userInput');
 const chatMessages = document.getElementById('chatMessages');
 const sendButton = chatForm.querySelector('.send-btn');
+const CHAT_OFFLINE_MODE_KEY = 'yourlab_chat_offline_mode';
 
 const chatState = {
     sessionId: localStorage.getItem('yourlab_chat_session_id') || '',
     processing: false,
-    offlineMode: false,   // once true, skip all server retries for this session
+    offlineMode: sessionStorage.getItem(CHAT_OFFLINE_MODE_KEY) === '1',   // once true, skip all server retries for this session
     turns: [],
     fallbackConversation: {
         messages: [],
@@ -431,6 +756,12 @@ function removeTypingIndicator(indicatorEl) {
 function updateInputState(disabled) {
     userInput.disabled = disabled;
     sendButton.disabled = disabled;
+}
+
+function setOfflineMode(enabled) {
+    chatState.offlineMode = Boolean(enabled);
+    if (chatState.offlineMode) sessionStorage.setItem(CHAT_OFFLINE_MODE_KEY, '1');
+    else sessionStorage.removeItem(CHAT_OFFLINE_MODE_KEY);
 }
 
 function saveConversationLocally(payload) {
@@ -688,7 +1019,7 @@ async function processUserMessage(userText) {
         console.warn('AI backend unavailable, switching to offline mode:', error.message);
         removeTypingIndicator(typingIndicator);
         setChatStatus('offline');
-        chatState.offlineMode = true;
+        setOfflineMode(true);
         const fallbackReply = processFallbackUserMessage(userText);
         setTimeout(() => addBotMessage(fallbackReply), 250);
     }

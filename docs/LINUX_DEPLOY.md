@@ -136,7 +136,12 @@ ALLOWED_ORIGIN=https://yourlabpt.com,https://www.yourlabpt.com
 OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL_BIG=llama3.1:8b
 OLLAMA_MODEL_SMALL=phi3:mini
-SMALL_MODEL_TURNS=2
+SMALL_MODEL_TURNS=4
+CHAT_HISTORY_TURNS=4
+MODEL_MAX_TOKENS=180
+MODEL_NUM_CTX=3072
+STICKY_JS_FALLBACK=true
+MAX_AI_TURNS_WITHOUT_CONTACT=8
 CHAT_SESSION_TTL_MS=2700000
 
 # Email notifications for new leads (optional — leave blank to skip)
@@ -453,8 +458,17 @@ ollama list                            # Should show phi3:mini and llama3.1:8b
 - Verify DNS records exist in Cloudflare dashboard with proxy ON
 
 **`usingFallback: true` in chat responses:**
-- Means Ollama is running but the model isn't loaded yet (first request after boot takes 10–30s to load into RAM)
-- Just send the message again after a few seconds
+- Means the request did not complete on the selected model in time.
+- The session is now "sticky fallback" (coherent offline flow for the rest of that chat), so users do not see style switching between AI and fallback.
+- For low-resource machines, reduce load with:
+  ```env
+  OLLAMA_MODEL_BIG=llama3.2:3b
+  OLLAMA_MODEL_SMALL=phi3:mini
+  SMALL_MODEL_TURNS=6
+  CHAT_HISTORY_TURNS=3
+  MODEL_MAX_TOKENS=140
+  MODEL_NUM_CTX=2048
+  ```
 
 **Out of memory when loading llama3.1:8b:**
 ```bash

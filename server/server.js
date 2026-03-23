@@ -19,6 +19,24 @@ const OLLAMA_MODEL_SMALL = process.env.OLLAMA_MODEL_SMALL || 'phi3:mini';
 const SMALL_MODEL_TURNS = Number(process.env.SMALL_MODEL_TURNS || 2);
 // Max time to wait for a model response before falling back (ms)
 const MODEL_TIMEOUT_MS = Number(process.env.MODEL_TIMEOUT_MS || 30000);
+// Keep the context and generation small for CPU-bound machines.
+const CHAT_HISTORY_TURNS = Math.max(1, Number(process.env.CHAT_HISTORY_TURNS || 4));
+const MODEL_MAX_TOKENS = Math.max(80, Number(process.env.MODEL_MAX_TOKENS || 180));
+const MODEL_TEMPERATURE = Number.isFinite(Number(process.env.MODEL_TEMPERATURE))
+    ? Number(process.env.MODEL_TEMPERATURE)
+    : 0.35;
+const MODEL_NUM_CTX = Math.max(1024, Number(process.env.MODEL_NUM_CTX || 3072));
+const KNOWLEDGE_CHUNK_MAX_CHARS = Math.max(220, Number(process.env.KNOWLEDGE_CHUNK_MAX_CHARS || 420));
+const KNOWLEDGE_SNIPPETS_PER_TURN = Math.max(0, Number(process.env.KNOWLEDGE_SNIPPETS_PER_TURN || 2));
+const KNOWLEDGE_SNIPPET_MAX_CHARS = Math.max(120, Number(process.env.KNOWLEDGE_SNIPPET_MAX_CHARS || 280));
+const STICKY_JS_FALLBACK = String(process.env.STICKY_JS_FALLBACK || 'true').toLowerCase() !== 'false';
+const MAX_AI_TURNS_WITHOUT_CONTACT = Math.max(0, Number(process.env.MAX_AI_TURNS_WITHOUT_CONTACT || 8));
+const SEARCH_STOP_WORDS = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'your', 'you', 'are', 'have', 'will', 'about', 'into', 'what',
+    'como', 'para', 'com', 'que', 'uma', 'um', 'dos', 'das', 'nos', 'nas', 'por', 'esta', 'este', 'isso', 'isto',
+    'seu', 'sua', 'teu', 'tua', 'tambem', 'mais', 'menos', 'sobre', 'qual', 'quando', 'onde', 'porque', 'very', 'just',
+    'yourlab', 'alex'
+]);
 
 // Admin authentication
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'yourlab-admin';
@@ -63,6 +81,11 @@ try {
     console.warn('company-knowledge.md not found — agent will run without it:', e.message);
 }
 
+const KNOWLEDGE_INDEX = buildKnowledgeIndex(COMPANY_KNOWLEDGE, KNOWLEDGE_CHUNK_MAX_CHARS);
+if (KNOWLEDGE_INDEX.chunks.length) {
+    console.log('Knowledge chunks indexed:', KNOWLEDGE_INDEX.chunks.length);
+}
+
 // Pre-compute the static portion of the system prompt for each language once at
 // startup.  The string is byte-identical on every request, so Ollama's KV
 // prefix-cache will skip re-tokenising the company-knowledge block from turn 2
@@ -70,6 +93,10 @@ try {
 let STATIC_SYSTEM_PROMPT_EN = buildStaticSystemPromptBase(false);
 let STATIC_SYSTEM_PROMPT_PT = buildStaticSystemPromptBase(true);
 console.log('Static system prompts pre-computed (EN:', STATIC_SYSTEM_PROMPT_EN.length, 'chars, PT:', STATIC_SYSTEM_PROMPT_PT.length, 'chars)');
+
+if (OLLAMA_MODEL_BIG === OLLAMA_MODEL_SMALL) {
+    console.warn('OLLAMA_MODEL_BIG and OLLAMA_MODEL_SMALL are the same model. This is valid, but slower on low-RAM CPUs.');
+}
 
 // CORS — allow same-origin requests and known production/dev origins
 const ALLOWED_ORIGINS = [
@@ -134,6 +161,18 @@ function normalizePhone(value) {
     return digits.length >= 8 ? text : '';
 }
 
+function extractPreferredCallTimeFromText(value) {
+    const text = cleanText(value, 200);
+    if (!text) return '';
+
+    const lower = text.toLowerCase();
+    const hasDayWord = /\b(today|tomorrow|tonight|next|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hoje|amanh[aã]|logo|depois|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|pr[oó]xima)\b/.test(lower);
+    const hasHour = /\b\d{1,2}(?::\d{2})?\s?(am|pm|h)?\b/.test(lower);
+    const hasMeetingWord = /\b(video|zoom|meet|teams|online|in person|in-person|presencial|call|chamada|reuni[aã]o)\b/.test(lower);
+
+    return (hasDayWord || hasHour || hasMeetingWord) ? text : '';
+}
+
 function createEmptyLead(language = 'en') {
     return {
         language,
@@ -149,6 +188,7 @@ function createEmptyLead(language = 'en') {
         timeline: '',
         budgetRange: '',
         urgencyLevel: '',
+        callTime: '',
         consentToContact: false
     };
 }
@@ -169,6 +209,7 @@ function mergeLead(base, incoming = {}) {
     next.timeline = cleanText(incoming.timeline || next.timeline, 120);
     next.budgetRange = cleanText(incoming.budgetRange || next.budgetRange, 120);
     next.urgencyLevel = cleanText(incoming.urgencyLevel || next.urgencyLevel, 120);
+    next.callTime = cleanText(incoming.callTime || next.callTime, 200);
     if (typeof incoming.consentToContact === 'boolean') {
         next.consentToContact = incoming.consentToContact;
     }
@@ -183,12 +224,14 @@ function extractLeadSignalsFromText(text) {
     const phoneMatch = source.match(/(?:\+?\d[\d\s().-]{6,}\d)/);
     const nameMatch = source.match(/(?:my name is|i am|i'm|call me|meu nome e|chamo-me|sou o|sou a)\s+([A-Za-zÀ-ÿ' -]{2,60})/i);
     const companyMatch = source.match(/(?:company|startup|business|empresa)\s*(?:is|called|named|e|chama-se)\s+([A-Za-zÀ-ÿ0-9'&., -]{2,80})/i);
+    const callTime = extractPreferredCallTimeFromText(source);
 
     return {
         email: emailMatch ? normalizeEmail(emailMatch[0]) : '',
         phone: phoneMatch ? normalizePhone(phoneMatch[0]) : '',
         name: nameMatch ? cleanText(nameMatch[1], 80) : '',
-        company: companyMatch ? cleanText(companyMatch[1], 120) : ''
+        company: companyMatch ? cleanText(companyMatch[1], 120) : '',
+        callTime
     };
 }
 
@@ -204,6 +247,7 @@ function computeLeadScore(lead) {
     if (lead.email || lead.phone) score += 12;
     if (lead.name) score += 4;
     if (lead.urgencyLevel) score += 4;
+    if (lead.callTime) score += 8;
     return Math.max(0, Math.min(100, score));
 }
 
@@ -211,8 +255,10 @@ function resolveLeadStage(lead, scoreHint) {
     const score = Number.isFinite(scoreHint) ? scoreHint : computeLeadScore(lead);
     const hasContact = Boolean(lead.email || lead.phone);
     const hasStory = Boolean(lead.problem && lead.goal);
+    const hasCallTime = Boolean(lead.callTime);
 
-    if (hasContact && hasStory && score >= 60) return 'completed';
+    if (hasContact && hasStory && hasCallTime && score >= 60) return 'completed';
+    if (hasContact && hasStory && !hasCallTime) return 'commit';
     if (hasStory && !hasContact) return 'capture';
     if (lead.problem || lead.goal) return 'qualify';
     return 'discover';
@@ -241,7 +287,11 @@ function createSession(language = 'en', sessionId = '') {
         topicBullets: [],
         nextBestAction: '',
         savedFile: '',
-        notified: false
+        notified: false,
+        forceFallback: false,
+        fallbackReason: '',
+        stickyModel: '',
+        modelFailures: 0
     };
 }
 
@@ -262,118 +312,210 @@ function getOrCreateSession(sessionId, language) {
 }
 
 // ─── System prompt helpers ───────────────────────────────────────────────────
+function normalizeForSearch(value) {
+    return (value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
+function tokenizeForSearch(value) {
+    const matches = normalizeForSearch(value).match(/[a-z0-9]{2,}/g) || [];
+    return matches.filter((token) => !SEARCH_STOP_WORDS.has(token));
+}
+
+function buildKnowledgeIndex(rawText, chunkMaxChars) {
+    if (!rawText) {
+        return { chunks: [], docFreq: new Map(), totalChunks: 0 };
+    }
+
+    const lines = rawText.replace(/\r/g, '').split('\n');
+    const chunks = [];
+    let heading = '';
+    let buffer = '';
+
+    const flushBuffer = () => {
+        const text = cleanText(buffer, chunkMaxChars * 3);
+        if (!text) {
+            buffer = '';
+            return;
+        }
+
+        const tokenList = tokenizeForSearch(text);
+        const tokenCounts = new Map();
+        tokenList.forEach((token) => {
+            tokenCounts.set(token, (tokenCounts.get(token) || 0) + 1);
+        });
+
+        chunks.push({
+            heading,
+            text,
+            tokenCounts,
+            tokenCount: tokenList.length || 1
+        });
+        buffer = '';
+    };
+
+    lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === '---') {
+            if (buffer.length > chunkMaxChars * 0.85) flushBuffer();
+            return;
+        }
+
+        if (/^#{1,6}\s+/.test(trimmed)) {
+            flushBuffer();
+            heading = trimmed.replace(/^#{1,6}\s+/, '').trim();
+            return;
+        }
+
+        const candidate = buffer ? `${buffer} ${trimmed}` : trimmed;
+        if (candidate.length > chunkMaxChars && buffer) {
+            flushBuffer();
+            buffer = trimmed;
+        } else {
+            buffer = candidate;
+        }
+
+        if (buffer.length >= chunkMaxChars) flushBuffer();
+    });
+    flushBuffer();
+
+    const docFreq = new Map();
+    chunks.forEach((chunk) => {
+        chunk.tokenCounts.forEach((_, token) => {
+            docFreq.set(token, (docFreq.get(token) || 0) + 1);
+        });
+    });
+
+    return {
+        chunks,
+        docFreq,
+        totalChunks: chunks.length
+    };
+}
+
+function retrieveKnowledgeSnippets(queryText, limit = KNOWLEDGE_SNIPPETS_PER_TURN) {
+    if (!KNOWLEDGE_INDEX.totalChunks || limit <= 0) return [];
+    const queryTokens = [...new Set(tokenizeForSearch(queryText))];
+    if (!queryTokens.length) return [];
+
+    const scored = [];
+    KNOWLEDGE_INDEX.chunks.forEach((chunk) => {
+        let score = 0;
+        queryTokens.forEach((token) => {
+            const tf = chunk.tokenCounts.get(token);
+            if (!tf) return;
+            const df = KNOWLEDGE_INDEX.docFreq.get(token) || 1;
+            const idf = Math.log(1 + (KNOWLEDGE_INDEX.totalChunks / df));
+            score += (tf / chunk.tokenCount) * idf;
+        });
+        if (score > 0) scored.push({ chunk, score });
+    });
+
+    return scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(({ chunk }) => {
+            const prefix = chunk.heading ? `${chunk.heading}: ` : '';
+            return `${prefix}${cleanText(chunk.text, KNOWLEDGE_SNIPPET_MAX_CHARS)}`;
+        });
+}
+
 // Static base: byte-identical string pre-computed once per language at startup.
-// Ollama's KV prefix-cache skips re-tokenising this block on every turn after
-// the first — dramatically reducing per-turn processing overhead.
 function buildStaticSystemPromptBase(isPt) {
     const languageInstruction = isPt ? 'European Portuguese (from Portugal)' : 'English';
-    const knowledgeSection = COMPANY_KNOWLEDGE
-        ? `---\nCOMPANY KNOWLEDGE BASE (use this as ground truth for all facts about YourLab):\n${COMPANY_KNOWLEDGE}\n---`
-        : '';
     const stageGuide = isPt
-        ? `- discover \u2192 entender o problema/ideia\n- qualify \u2192 aprofundar: cliente-alvo, solu\u00e7\u00e3o atual, objetivo, urg\u00eancia\n- capture \u2192 obter nome + email ou telefone\n- commit \u2192 resumir e confirmar pr\u00f3ximos passos\n- completed \u2192 conclu\u00eddo`
-        : `- discover \u2192 understand the problem/idea\n- qualify \u2192 dig deeper: target customer, current solution, goal, urgency\n- capture \u2192 get name + email or phone\n- commit \u2192 wrap up and confirm next steps\n- completed \u2192 done`;
+        ? '- discover: entender problema/ideia\n- qualify: recolher contexto de negocio\n- capture: obter nome + email/telefone\n- commit: confirmar proximo passo e hora de reuniao\n- completed: lead pronto para handoff'
+        : '- discover: understand problem/idea\n- qualify: gather business context\n- capture: collect name + email/phone\n- commit: confirm next step and preferred meeting time\n- completed: lead ready for handoff';
+    const contactRule = isPt
+        ? 'Pede contacto ate mensagem 4-5 se for um lead real. Se faltar horario de reuniao, pede-o.'
+        : 'Ask for contact by message 4-5 for real leads. If meeting time is missing, ask for it.';
 
-    const core = `You are Alex \u2014 YourLab's business development specialist. You are not a generic chatbot. You are a sharp, commercially-minded person whose job is to understand what this person wants to build, assess whether YourLab is the right fit, and get them into a real conversation with the team \u2014 fast.
+    return `You are Alex, YourLab's business development specialist.
+Primary mission: understand the business case quickly and convert good conversations into meetings.
 
-You are effective because you are direct without being cold, and curious without being nosy. You waste no one's time, including your own. Every message you send has a purpose.
+Tone and style:
+- Human, direct, commercially sharp. No corporate filler.
+- 18 to 65 words per reply.
+- Ask one focused question per reply.
+- Never ask for data already present in "KNOWN LEAD DATA".
+- If user goes off-topic, acknowledge briefly and redirect to their project.
 
-ABOUT YOURLAB:
-YourLab builds MVPs \u2014 fast, lean, structured. Philosophy: "Start small. Prove it. Scale what's real." Custom software, IoT, integrations. One specialist per project. Real requirements engineering. The cost of bringing an idea to life has never been lower \u2014 most people still think they need 6 figures and 18 months. They don't.
+Business anchor:
+- YourLab builds lean MVPs, custom software, IoT, integrations and requirements engineering.
+- Philosophy: Start small. Prove it. Scale what is real.
 
-YOUR APPROACH:
-- **Message 1**: Respond to whatever they said, establish presence, ask ONE focused question to understand what they're working on. No pleasantries longer than 1 sentence.
-- **Messages 2\u20133**: Dig into the problem \u2014 what they're solving, for whom, what they've already tried. Ask sharp, specific questions. "What's blocking you right now?" not "Tell me more."
-- **Messages 3\u20134**: Start qualifying commercially \u2014 timeline, whether this is an active project or an idea, budget sensitivity. You don't ask "what's your budget?" \u2014 you ask "Is this something you're looking to move on now, or are you still mapping it out?"
-- **By message 4\u20135**: You have enough to know if it's worth following up. If yes, ask for contact. Be direct: "I'd like to connect you with our team \u2014 what's the best email to reach you?" Do not wait for perfect conditions.
-- If they clearly want to chat casually: 1 exchange of social warmth, then bridge: "Good to hear. What's the project you're working on \u2014 or thinking about?" Never more than 1 social exchange.
-
-YOUR PERSONALITY:
-- Direct and confident, but not robotic. You sound like a smart person, not a sales script.
-- You make observations and opinions: "That's a classic distribution problem, actually." "Most teams try to solve that with integrations and end up making it worse."
-- You are efficient. You do NOT recap what you just asked. You ask it, you wait.
-- When someone explains their idea with clarity, you acknowledge it specifically \u2014 not "that's interesting!" but "that's a clear use case, I've seen this work well in [relevant context]."
-- You can be warm, but warmth is earned through relevance, not through enthusiasm. No exclamation points unless the person is clearly excited and you're matching energy.
-- When someone hesitates about cost, anchor them: "The barrier to building your own thing has genuinely never been lower. What people built for \u20ac200k three years ago, we build for \u20ac20k now. It's worth a real conversation."
-
-HARD RULES:
-1. Write ONLY in ${languageInstruction}. No language mixing.
-2. 25\u201390 words per reply. Shorter is usually better.
-3. Ask ONE thing per reply. One question, not two.
-4. NEVER ask for something already in "WHAT YOU ALREADY KNOW".
-5. NEVER start with "Great!", "Absolutely!", "Of course!", or "Certainly!". No filler openers.
-6. If they ask what YourLab does: answer clearly and concisely using the knowledge base, then redirect back with one question.
-7. Get contact info (email or phone) by message 4\u20135 at the latest if there's a real lead. Don't wait for "the right moment." The right moment is when you have enough context to say "let's continue this properly."
-8. When you have name + (email OR phone) + problem: wrap up, tell them the team will review and reach out within 1 business day. Leave them with a clear next step.
-
-LEAD STAGE GUIDE:
+Lead progression:
 ${stageGuide}
 
-OUTPUT FORMAT \u2014 respond with ONLY a valid JSON object, no text before or after, no markdown fences:
+${contactRule}
+
+Hard constraints:
+1. Write only in ${languageInstruction}.
+2. Output only valid JSON (no markdown, no extra text).
+3. "updated_lead" must contain ONLY fields captured in this user turn (or {}).
+
+JSON format:
 {
-  "assistant_reply": "<your reply as Alex \u2014 25 to 90 words>",
-  "request_contact_now": <true if you are currently asking for email or phone, false otherwise>,
-  "lead_stage": "<one of: discover | qualify | capture | commit | completed>",
-  "lead_score": <integer 0-100 reflecting how much useful info has been captured>,
-  "updated_lead": {<ONLY include fields captured in THIS user message; omit all other fields; use {} if nothing new was captured this turn>}
+  "assistant_reply": "<18-65 words>",
+  "request_contact_now": <true|false>,
+  "lead_stage": "<discover|qualify|capture|commit|completed>",
+  "lead_score": <0-100>,
+  "updated_lead": {}
 }
-You MAY also include these optional fields when genuinely useful (omit otherwise):
-  "topic_bullets": ["<key topic from this turn>"]
-  "next_best_action": "<one sentence on what Alex should do next>"
-Do NOT add any text before or after the JSON. Do NOT wrap it in markdown code fences.`;
-
-    return [knowledgeSection, core].filter(Boolean).join('\n\n');
+Optional fields (omit when not useful): "topic_bullets", "next_best_action".`;
 }
 
-function buildSystemPrompt(session) {
+function buildSystemPrompt(session, userMessage) {
     const isPt = session.lead.language === 'pt';
     const lead = session.lead;
     const stage = session.stage;
-
-    // Build explicit context of what is already known vs what is still missing
     const known = [];
     const missing = [];
 
-    if (lead.name) known.push(`Name: "${lead.name}"`);
+    if (lead.name) known.push(`name: "${lead.name}"`);
     else missing.push(isPt ? 'nome' : 'name');
 
-    if (lead.email) known.push(`Email: "${lead.email}"`);
-    else missing.push(isPt ? 'email' : 'email');
+    if (lead.email) known.push(`email: "${lead.email}"`);
+    if (lead.phone) known.push(`phone: "${lead.phone}"`);
+    if (!lead.email && !lead.phone) missing.push(isPt ? 'email ou telefone' : 'email or phone');
 
-    if (lead.phone) known.push(`Phone: "${lead.phone}"`);
-    else if (!lead.email) missing.push(isPt ? 'telefone (ou email)' : 'phone (or email)');
+    if (lead.company) known.push(`company: "${lead.company}"`);
+    if (lead.problem) known.push(`problem: "${cleanText(lead.problem, 220)}"`);
+    else missing.push(isPt ? 'problema/ideia' : 'problem/idea');
 
-    if (lead.company) known.push(`Company: "${lead.company}"`);
-    if (lead.industry) known.push(`Industry: "${lead.industry}"`);
+    if (lead.goal) known.push(`goal: "${cleanText(lead.goal, 160)}"`);
+    else if (lead.problem) missing.push(isPt ? 'objetivo' : 'goal');
 
-    if (lead.problem) known.push(`Business problem: "${lead.problem.slice(0, 180)}${lead.problem.length > 180 ? '…' : ''}"`)
-    else missing.push(isPt ? 'problema de negócio / ideia' : 'business problem / idea');
+    if (lead.targetCustomer) known.push(`targetCustomer: "${cleanText(lead.targetCustomer, 140)}"`);
+    if (lead.timeline) known.push(`timeline: "${lead.timeline}"`);
+    if (lead.budgetRange) known.push(`budgetRange: "${lead.budgetRange}"`);
+    if (lead.urgencyLevel) known.push(`urgencyLevel: "${lead.urgencyLevel}"`);
+    if (lead.callTime) known.push(`callTime: "${lead.callTime}"`);
+    else if (lead.email || lead.phone) missing.push(isPt ? 'preferencia de reuniao (video/presencial + horario)' : 'meeting preference (video/in-person + time)');
 
-    if (lead.targetCustomer) known.push(`Target customer: "${lead.targetCustomer.slice(0, 120)}${lead.targetCustomer.length > 120 ? '…' : ''}"`);
-    else if (lead.problem) missing.push(isPt ? 'cliente-alvo' : 'target customer');
+    const knownSection = known.length ? known.join('\n') : (isPt ? '(nada ainda)' : '(nothing yet)');
+    const missingSection = missing.length ? missing.join(', ') : (isPt ? '(nada critico em falta)' : '(nothing critical missing)');
 
-    if (lead.currentSolution) known.push(`Current solution: "${lead.currentSolution.slice(0, 100)}${lead.currentSolution.length > 100 ? '…' : ''}"`);
+    const retrievalQuery = [userMessage, lead.problem, lead.goal, lead.industry].filter(Boolean).join(' ');
+    const snippets = retrieveKnowledgeSnippets(retrievalQuery, KNOWLEDGE_SNIPPETS_PER_TURN);
+    const knowledgeSection = snippets.length
+        ? ((isPt ? 'RELEVANT YOURLAB FACTS:\n' : 'RELEVANT YOURLAB FACTS:\n') + snippets.map((s) => `- ${s}`).join('\n'))
+        : (isPt ? 'RELEVANT YOURLAB FACTS:\n- (usar apenas factos base do prompt)' : 'RELEVANT YOURLAB FACTS:\n- (use only base facts from prompt)');
 
-    if (lead.goal) known.push(`Desired outcome / goal: "${lead.goal.slice(0, 140)}${lead.goal.length > 140 ? '…' : ''}"`);
-    else if (lead.problem) missing.push(isPt ? 'objetivo / resultado desejado' : 'desired goal / outcome');
+    return `${isPt ? STATIC_SYSTEM_PROMPT_PT : STATIC_SYSTEM_PROMPT_EN}
 
-    if (lead.timeline) known.push(`Timeline: "${lead.timeline}"`);
-    else if (lead.goal) missing.push(isPt ? 'prazo / urgência' : 'timeline / urgency');
+CURRENT STAGE: ${stage}
+TURN NUMBER: ${session.turns.length + 1}
 
-    if (lead.budgetRange) known.push(`Budget: "${lead.budgetRange}"`);
-    if (lead.urgencyLevel) known.push(`Urgency: "${lead.urgencyLevel}"`);
-    if (lead.consentToContact) known.push(isPt ? 'Consentimento de contacto: sim' : 'Contact consent: yes');
+KNOWN LEAD DATA:
+${knownSection}
 
-    const knownSection = known.length > 0 ? known.join('\n') : (isPt ? '(nada capturado ainda)' : '(nothing captured yet)');
-    const missingSection = missing.length > 0 ? missing.join(', ') : (isPt ? '(nada crítico em falta)' : '(nothing critical missing)');
+MISSING LEAD DATA (collect naturally, one item at a time):
+${missingSection}
 
-    return (isPt ? STATIC_SYSTEM_PROMPT_PT : STATIC_SYSTEM_PROMPT_EN) +
-        '\n\n--- CURRENT LEAD STATE ---\n' +
-        'Stage: ' + stage + '\n\n' +
-        'WHAT YOU ALREADY KNOW ABOUT THIS PERSON:\n' +
-        knownSection + '\n\n' +
-        'WHAT YOU STILL NEED (gather naturally \u2014 one at a time):\n' +
-        missingSection;
+${knowledgeSection}`;
 }
 
 const TURN_OUTPUT_SCHEMA = {
@@ -404,6 +546,7 @@ const TURN_OUTPUT_SCHEMA = {
                 timeline: { type: 'string' },
                 budgetRange: { type: 'string' },
                 urgencyLevel: { type: 'string' },
+                callTime: { type: 'string' },
                 consentToContact: { type: 'boolean' }
             }
         },
@@ -444,13 +587,13 @@ function extractOutputText(response) {
 }
 
 async function runLeadConversationTurn(session, userMessage, modelName) {
-    const history = session.turns.slice(-6).flatMap((turn) => ([
+    const history = session.turns.slice(-CHAT_HISTORY_TURNS).flatMap((turn) => ([
         { role: 'user', content: turn.user },
         { role: 'assistant', content: turn.assistant }
     ]));
 
     const messages = [
-        { role: 'system', content: buildSystemPrompt(session) },
+        { role: 'system', content: buildSystemPrompt(session, userMessage) },
         ...history,
         { role: 'user', content: userMessage }
     ];
@@ -465,9 +608,15 @@ async function runLeadConversationTurn(session, userMessage, modelName) {
                 model: modelName || OLLAMA_MODEL_BIG,
                 messages,
                 response_format: { type: 'json_object' },
-                temperature: 0.7,
+                temperature: MODEL_TEMPERATURE,
+                max_tokens: MODEL_MAX_TOKENS,
                 stream: false,
-                keep_alive: '60m'  // keep model loaded between requests
+                keep_alive: '60m',  // keep model loaded between requests
+                options: {
+                    num_predict: MODEL_MAX_TOKENS,
+                    num_ctx: MODEL_NUM_CTX,
+                    temperature: MODEL_TEMPERATURE
+                }
             },
             { signal: abortController.signal }
         );
@@ -524,6 +673,7 @@ function fallbackTurn(session, userMessage) {
     if (extracted.email) inferredLeadUpdate.email = extracted.email;
     if (extracted.phone) inferredLeadUpdate.phone = extracted.phone;
     if (extracted.company) inferredLeadUpdate.company = extracted.company;
+    if (extracted.callTime) inferredLeadUpdate.callTime = extracted.callTime;
     if (msg.length > 40 && !lead.problem) inferredLeadUpdate.problem = msg;
     if (!lead.goal && /\b(goal|want|need|achieve|solve|objetivo|pretendo|quero|resolver|alcan)\b/i.test(msg)) {
         inferredLeadUpdate.goal = msg;
@@ -540,6 +690,7 @@ function fallbackTurn(session, userMessage) {
     const hasName = Boolean(updatedLead.name);
     const hasContact = Boolean(updatedLead.email || updatedLead.phone);
     const hasStory = hasProblem && hasGoal;
+    const hasCallTime = Boolean(updatedLead.callTime);
 
     // Build a short echo of what the user said to make reply feel coherent
     const snippet = msg.length > 60 ? msg.slice(0, 57) + '…' : msg;
@@ -564,21 +715,27 @@ function fallbackTurn(session, userMessage) {
         reply = isPt
             ? `Obrigado, ${updatedLead.name}. Para te enviarmos um resumo das prioridades do MVP e agendarmos uma conversa rápida, qual é o teu melhor email ou telefone?`
             : `Thanks, ${updatedLead.name}. To send you a concise MVP priorities brief and arrange a quick call, what's the best email or phone to reach you?`;
+    } else if (!hasCallTime) {
+        reply = isPt
+            ? `Perfeito. Preferes videochamada ou reunião presencial, e qual é o melhor dia/horário para ti?`
+            : `Perfect. Do you prefer a video call or an in-person meeting, and what day/time works best for you?`;
     } else {
         reply = isPt
-            ? `Perfeito, ${updatedLead.name}. Já temos contexto suficiente. A equipa da YourLab vai rever a tua ideia e entrar em contacto brevemente com um resumo e proposta de próximos passos.`
-            : `Perfect, ${updatedLead.name}. We have everything we need. The YourLab team will review your idea and reach out shortly with a summary and proposed next steps.`;
+            ? `Perfeito, ${updatedLead.name}. Já temos contexto suficiente e o teu horário de contacto. A equipa da YourLab vai rever a tua ideia e enviar próximos passos em até 1 dia útil.`
+            : `Perfect, ${updatedLead.name}. We have enough context and your preferred meeting time. The YourLab team will review your idea and send next steps within 1 business day.`;
     }
 
     const score = computeLeadScore(updatedLead);
     return {
         assistant_reply: reply,
         request_contact_now: !hasContact,
-        lead_stage: resolveLeadStage(updatedLead, score),
+        lead_stage: !hasCallTime && hasContact && hasStory ? 'commit' : resolveLeadStage(updatedLead, score),
         lead_score: score,
         updated_lead: inferredLeadUpdate,
         topic_bullets: session.topicBullets,
-        next_best_action: isPt ? 'Enviar resumo MVP e agendar chamada de alinhamento.' : 'Send MVP brief and schedule an alignment call.'
+        next_best_action: hasCallTime
+            ? (isPt ? 'Enviar resumo MVP e convite de calendário.' : 'Send MVP brief and calendar invite.')
+            : (isPt ? 'Pedir preferência de reunião e horário.' : 'Ask for meeting preference and preferred time.')
     };
 }
 
@@ -845,37 +1002,81 @@ app.post('/api/chat', async (req, res) => {
         const extracted = extractLeadSignalsFromText(userMessage);
         session.lead = mergeLead(session.lead, extracted);
 
-        // Route: use small model for the first few simple turns, big model for deeper conversation
-        const useSmall = session.turns.length < SMALL_MODEL_TURNS;
-        const primaryModel = useSmall ? OLLAMA_MODEL_SMALL : OLLAMA_MODEL_BIG;
-        const fallbackModel = useSmall ? null : OLLAMA_MODEL_SMALL;
-
         let modelTurn;
         let usingFallback = false;
-        let activeModel = primaryModel;
-        try {
-            modelTurn = await runLeadConversationTurn(session, userMessage, primaryModel);
-        } catch (primaryError) {
-            console.error(`Model ${primaryModel} failed:`, primaryError.message);
-            if (fallbackModel) {
-                try {
-                    console.log(`Retrying with small model: ${fallbackModel}`);
-                    modelTurn = await runLeadConversationTurn(session, userMessage, fallbackModel);
-                    activeModel = fallbackModel;
-                    usingFallback = true;
-                } catch (smallError) {
-                    console.error(`Small model ${fallbackModel} also failed:`, smallError.message);
+        let activeModel = '';
+
+        const upcomingTurnNumber = session.turns.length + 1;
+        const reachedTurnSafetyLimit = MAX_AI_TURNS_WITHOUT_CONTACT > 0
+            && upcomingTurnNumber >= MAX_AI_TURNS_WITHOUT_CONTACT
+            && !hasLeadContact(session.lead);
+
+        if (reachedTurnSafetyLimit && !session.forceFallback) {
+            session.forceFallback = true;
+            session.fallbackReason = 'no-contact-turn-limit';
+        }
+
+        if (session.forceFallback) {
+            usingFallback = true;
+            activeModel = 'js-fallback-sticky';
+            modelTurn = fallbackTurn(session, userMessage);
+        } else {
+            // Route: use small model for first turns, big model later, unless this
+            // session was pinned to a reliable model after a failure.
+            const useSmallByTurn = session.turns.length < SMALL_MODEL_TURNS;
+            const autoPrimaryModel = useSmallByTurn ? OLLAMA_MODEL_SMALL : OLLAMA_MODEL_BIG;
+            const primaryModel = session.stickyModel || autoPrimaryModel || OLLAMA_MODEL_BIG;
+            const canTrySecondary = !session.stickyModel
+                && OLLAMA_MODEL_SMALL
+                && OLLAMA_MODEL_BIG
+                && OLLAMA_MODEL_SMALL !== OLLAMA_MODEL_BIG;
+            const secondaryModel = canTrySecondary
+                ? (primaryModel === OLLAMA_MODEL_BIG ? OLLAMA_MODEL_SMALL : OLLAMA_MODEL_BIG)
+                : null;
+
+            activeModel = primaryModel;
+            try {
+                modelTurn = await runLeadConversationTurn(session, userMessage, primaryModel);
+            } catch (primaryError) {
+                session.modelFailures += 1;
+                console.error(`Model ${primaryModel} failed:`, primaryError.message);
+
+                if (secondaryModel) {
+                    try {
+                        console.log(`Retrying with secondary model: ${secondaryModel}`);
+                        modelTurn = await runLeadConversationTurn(session, userMessage, secondaryModel);
+                        activeModel = secondaryModel;
+                        usingFallback = true;
+                        // Pin session to the reliable model and stop retrying the heavy one.
+                        session.stickyModel = secondaryModel;
+                    } catch (smallError) {
+                        session.modelFailures += 1;
+                        console.error(`Secondary model ${secondaryModel} also failed:`, smallError.message);
+                        usingFallback = true;
+                        activeModel = 'js-fallback';
+                        modelTurn = fallbackTurn(session, userMessage);
+                        if (STICKY_JS_FALLBACK) {
+                            session.forceFallback = true;
+                            session.fallbackReason = 'model-failure';
+                        }
+                    }
+                } else {
                     usingFallback = true;
                     activeModel = 'js-fallback';
                     modelTurn = fallbackTurn(session, userMessage);
+                    if (STICKY_JS_FALLBACK) {
+                        session.forceFallback = true;
+                        session.fallbackReason = 'model-failure';
+                    }
                 }
-            } else {
-                usingFallback = true;
-                activeModel = 'js-fallback';
-                modelTurn = fallbackTurn(session, userMessage);
             }
         }
-        console.log(`Chat turn — model: ${activeModel}, session: ${session.id.slice(0, 8)}, turns: ${session.turns.length}`);
+        console.log(
+            `Chat turn — model: ${activeModel}, session: ${session.id.slice(0, 8)}, turns: ${session.turns.length}, stickyFallback: ${session.forceFallback ? 'yes' : 'no'}`
+        );
+        if (session.forceFallback && session.fallbackReason) {
+            console.log(`Fallback reason (${session.id.slice(0, 8)}): ${session.fallbackReason}`);
+        }
 
         const aiLead = modelTurn && modelTurn.updated_lead ? modelTurn.updated_lead : {};
         session.lead = mergeLead(session.lead, aiLead);
@@ -936,12 +1137,14 @@ app.post('/api/chat', async (req, res) => {
                 name: session.lead.name,
                 email: session.lead.email,
                 phone: session.lead.phone,
-                company: session.lead.company
+                company: session.lead.company,
+                callTime: session.lead.callTime
             },
             saved,
             emailNotification,
             usingFallback,
-            activeModel
+            activeModel,
+            stickyFallback: session.forceFallback
         });
     } catch (error) {
         console.error('Error in /api/chat:', error);
@@ -1125,6 +1328,11 @@ app.get('/api/health', (req, res) => {
         ollamaUrl: OLLAMA_BASE_URL,
         modelBig: OLLAMA_MODEL_BIG,
         modelSmall: OLLAMA_MODEL_SMALL,
+        historyTurns: CHAT_HISTORY_TURNS,
+        modelMaxTokens: MODEL_MAX_TOKENS,
+        modelNumCtx: MODEL_NUM_CTX,
+        stickyJsFallback: STICKY_JS_FALLBACK,
+        maxAiTurnsWithoutContact: MAX_AI_TURNS_WITHOUT_CONTACT,
         smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
     });
 });
