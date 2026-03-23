@@ -496,7 +496,7 @@ const projectShowcaseData = [
             "pt": "Case 001 atualizado com foco na correcao da divergencia entre calculo e pagamento e na evolucao para regras flexiveis por funcao e restaurante.",
             "en": "Case 001 updated with focus on fixing the calculation-versus-payment mismatch and evolving to flexible rules by role and restaurant."
         }
-    }
+    },
 ];
 
 (function initProjectShowcase() {
