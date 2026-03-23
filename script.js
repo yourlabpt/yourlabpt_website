@@ -375,9 +375,11 @@ const chatState = {
         contact: {
             name: '',
             email: '',
-            phone: ''
+            phone: '',
+            callTime: ''
         },
-        businessIdea: ''
+        businessIdea: '',
+        submitted: false
     }
 };
 
@@ -467,122 +469,132 @@ async function sendMessageToAi(userText) {
     return response.json();
 }
 
-function parseFallbackInput(text) {
-    const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
-    const phoneMatch = text.match(/(?:\+?\d[\d\s().-]{6,}\d)/);
-    const nameMatch = text.match(/(?:name is|i'?m|i am|call me|chamo-me|meu nome [e\u00e9]|sou o|sou a)\s+([A-Za-z\u00c0-\u00ff' -]{2,40})(?:[,.]|$)/i);
+function parseFallbackInput(text, field) {
+    // field: 'name' | 'contact' | 'idea' | 'callTime' — only extract what we're currently asking for
+    const fc = chatState.fallbackConversation;
 
-    if (emailMatch) chatState.fallbackConversation.contact.email = emailMatch[0];
-    if (phoneMatch && phoneMatch[0].replace(/\D/g, '').length >= 8) {
-        chatState.fallbackConversation.contact.phone = phoneMatch[0];
+    if (field === 'contact' || !field) {
+        const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+        const phoneMatch = text.match(/(?:\+?\d[\d\s().-]{6,}\d)/);
+        if (emailMatch) fc.contact.email = emailMatch[0].toLowerCase();
+        if (phoneMatch && phoneMatch[0].replace(/\D/g, '').length >= 8) fc.contact.phone = phoneMatch[0];
     }
-    if (nameMatch) chatState.fallbackConversation.contact.name = nameMatch[1].trim();
-
-    // Infer name only if the standalone word is not a greeting or common filler
-    const GREETING_WORDS = /^(hi|hey|hello|oi|ol\u00e1|ola|bom|boa|tudo|sim|n\u00e3o|nao|ok|okay|claro|yes|no|sure|maybe|talvez|sup|yo|great|fixe)$/i;
-    if (!chatState.fallbackConversation.contact.name && !emailMatch && !phoneMatch) {
-        const singleName = text.trim().match(/^([A-Za-z\u00c0-\u00ff]{2,20}(?:\s[A-Za-z\u00c0-\u00ff]{2,20})?)\s*\.?$/);
-        if (singleName && !GREETING_WORDS.test(singleName[1].trim())) chatState.fallbackConversation.contact.name = singleName[1];
+    if (field === 'name' || !field) {
+        if (!fc.contact.name) {
+            const SKIP = /^(hi|hey|hello|oi|olá|ola|bom|boa|tudo|sim|não|nao|ok|okay|claro|yes|no|sure|maybe|talvez|sup|yo|great|fixe)$/i;
+            const single = text.trim().match(/^([A-Za-zÀ-ÿ]{2,20}(?:\s[A-Za-zÀ-ÿ]{2,20})?)\s*\.?$/);
+            if (single && !SKIP.test(single[1].trim())) fc.contact.name = single[1].trim();
+        }
     }
+    if (field === 'idea') fc.businessIdea = text.trim();
+    if (field === 'callTime') fc.contact.callTime = text.trim();
+}
 
-    chatState.fallbackConversation.businessIdea += ' ' + text;
+// Detect which collection step the fallback bot is currently on
+function getFallbackStep() {
+    const fc = chatState.fallbackConversation;
+    const c  = fc.contact;
+    if (!c.name)                       return 'name';
+    if (!c.email && !c.phone)          return 'contact';
+    if (!fc.businessIdea)              return 'idea';
+    if (!c.callTime)                   return 'callTime';
+    return 'done';
 }
 
 function processFallbackUserMessage(userText) {
-    parseFallbackInput(userText);
+    const fc      = chatState.fallbackConversation;
+    const isPt    = currentLang === 'pt';
+    const isFirst = fc.messages.length === 0;
+    const step    = getFallbackStep(); // step BEFORE we process this message
 
-    const contact = chatState.fallbackConversation.contact;
-    const hasName    = Boolean(contact.name);
-    const hasEmail   = Boolean(contact.email);
-    const hasPhone   = Boolean(contact.phone);
-    const hasContact = hasEmail || hasPhone;
-    const idea       = chatState.fallbackConversation.businessIdea.trim();
-    const hasProblem = idea.length > 35;
-    const msgCount   = chatState.fallbackConversation.messages.length;
-    const isPt       = currentLang === 'pt';
+    // Parse the user's answer into the right field
+    parseFallbackInput(userText, step);
 
-    const trimmed  = userText.trim();
-    const snippet  = trimmed.length > 65 ? trimmed.slice(0, 62) + '\u2026' : trimmed;
-    // Note: use ($|\s|[,.!?]) instead of \b so unicode words like 'Ol\u00e1' are matched correctly
-    const isSmallTalk = trimmed.length < 50 &&
-        /^(hi|hey|hello|oi|ol[a\u00e1]|bom dia|boa tarde|boa noite|tudo bem|tudo certo|how are you|como est[\u00e1a]s?|sup|yo|haha|lol|ok|okay|sure|yes|no|sim|n[\u00e3a]o|claro|maybe|talvez|boa|fixe|e a[\u00ed]|tudo|great|and you|e tu)($|\s|[,.!?])/i.test(trimmed);
+    const contact    = fc.contact;
+    const name       = contact.name || '';
+    const nextStep   = getFallbackStep(); // step AFTER parsing
 
-    const alexQEn = [
-        "What made you choose this specific problem and not something easier?",
-        "If you couldn\u2019t use code or an app to solve this \u2014 how would you do it manually?",
-        "Who\u2019s the first person you\u2019d show this to, and what would their reaction probably be?",
-        "Is this a problem you have personally, or one you observed in someone else?",
-        "What would have to be true for this to become something really big?",
-        "What\u2019s the dumbest simple version of this idea that might actually work?",
-        "If you had to bet your own money on it \u2014 what number makes you nervous but you\u2019d still do it?",
-        "What\u2019s the unfair advantage you have here that nobody else in this space has?",
-        "If this totally fails in 6 months \u2014 what would be the real reason?",
-        "What version of this ships in 6 weeks vs. the version that takes 2 years?",
-        "When did you first have this idea — like, where were you when it came to you?",
-        "If this existed right now, perfectly working — what's the first thing you'd do differently in your business?",
-        "What does your gut tell you about this? Not the business case — the gut feeling.",
-        "Who's the one person whose reaction would tell you everything about whether this will work?"
-    ];
-    const alexQPt = [
-        "O que te fez escolher este problema espec\u00edfico e n\u00e3o outro mais f\u00e1cil?",
-        "Se n\u00e3o pudesses usar c\u00f3digo ou uma app para resolver isto \u2014 como o farias manualmente?",
-        "Quem seria a primeira pessoa a quem mostrarias isto, e qual seria provavelmente a rea\u00e7\u00e3o?",
-        "Este \u00e9 um problema que tens pessoalmente, ou algo que observaste noutras pessoas?",
-        "O que teria de ser verdade para isto se tornar algo realmente grande?",
-        "Qual \u00e9 a vers\u00e3o mais simples e crua desta ideia que poderia realmente funcionar?",
-        "Se tivesses de apostar o teu pr\u00f3prio dinheiro \u2014 que valor te deixaria nervoso mas ainda assim avan\u00e7avas?",
-        "Qual \u00e9 a vantagem injusta que tens aqui e que mais ningu\u00e9m neste espa\u00e7o tem?",
-        "Se isto falhasse completamente em 6 meses \u2014 qual seria o verdadeiro motivo?",
-        "Que vers\u00e3o disto lan\u00e7as em 6 semanas vs. a vers\u00e3o que demora 2 anos?",
-        "Quando tiveste esta ideia pela primeira vez \u2014 onde estavas quando te veio \u00e0 mente?",
-        "Se isto existisse agora, a funcionar na perfei\u00e7\u00e3o \u2014 qual seria a primeira coisa que farias de diferente no teu neg\u00f3cio?",
-        "O que te diz o instinto sobre isto? N\u00e3o o caso de neg\u00f3cio \u2014 o instinto.",
-        "Quem \u00e9 a \u00fanica pessoa cuja rea\u00e7\u00e3o te diria tudo sobre se isto vai funcionar?"
-    ];
-    const alexQ = isPt ? alexQPt : alexQEn;
-    const pickQ = (offset) => alexQ[(msgCount + (offset || 0)) % alexQ.length];
+    // Funny "AI sleeping" intro — prepended only on the very first fallback reply
+    const sleepingIntro = isPt
+        ? '😴 O nosso AI foi a dormir. Provavelmente sonha com pipelines de dados. Mas eu estou cá — a versão prática e sem floreados.\n\n'
+        : '😴 Our AI went to sleep. Probably dreaming of data pipelines. But I\'m here — the practical, no-nonsense version.\n\n';
 
     let botResponse = '';
 
-    if (isSmallTalk && msgCount === 0) {
+    if (step === 'name') {
+        if (nextStep === 'contact') {
+            // Got the name
+            botResponse = (isFirst ? sleepingIntro : '') + (isPt
+                ? `Boa, ${name}! 📬 Qual o teu email ou número de telefone?`
+                : `Got it, ${name}! 📬 What's your email or phone number?`);
+        } else {
+            // Couldn't extract the name — ask again (or first prompt)
+            botResponse = (isFirst ? sleepingIntro : '') + (isPt
+                ? 'Como te chamas?'
+                : 'What\'s your name?');
+        }
+    } else if (step === 'contact') {
+        if (nextStep === 'idea') {
+            botResponse = isPt
+                ? `Anotado. 💡 Em poucas palavras — qual é a ideia ou problema que queres resolver?`
+                : `Noted. 💡 In a few words — what's the idea or problem you want to solve?`;
+        } else {
+            botResponse = isPt
+                ? 'Preciso de um email válido ou número de telefone para a equipa te contactar.'
+                : "I need a valid email or phone number so the team can reach you.";
+        }
+    } else if (step === 'idea') {
+        if (nextStep === 'callTime') {
+            botResponse = isPt
+                ? `Entendido. 📅 Quando preferes uma chamada rápida? (ex: "amanhã de tarde", "segunda às 10h", "próxima semana")`
+                : `Got it. 📅 When's a good time for a quick call? (e.g. "tomorrow afternoon", "Monday at 10am", "next week")`;
+        } else {
+            botResponse = isPt
+                ? 'Conta-me um pouco mais sobre a ideia — só um ou dois parágrafos.'
+                : 'Tell me a bit more about the idea — just a sentence or two.';
+        }
+    } else if (step === 'callTime') {
+        // All info collected — save and notify
+        fc.submitted = true;
+        const displayEmail = contact.email || contact.phone;
         botResponse = isPt
-            ? 'Ol\u00e1! Boa altura para uma conversa. Diz-me \u2014 tens alguma coisa a mexer-te na cabe\u00e7a ultimamente? Um projeto, uma frustra\u00e7\u00e3o, uma ideia que n\u00e3o te larga?'
-            : 'Hey! Good timing. Tell me \u2014 is there something on your mind lately? A project, a frustration, an idea that keeps coming back?';
-    } else if (isSmallTalk && msgCount <= 2) {
-        botResponse = isPt
-            ? `Haha, percebo. Mas j\u00e1 que estamos aqui \u2014 ${pickQ(1)}`
-            : `Ha, fair. But since we\u2019re here \u2014 ${pickQ(1)}`;
-    } else if (!hasProblem) {
-        botResponse = isPt
-            ? `\u201c${snippet}\u201d \u2014 percebido. Sem press\u00e3o, mas tenho curiosidade: ${pickQ()} N\u00e3o precisa de estar polido.`
-            : `\u201c${snippet}\u201d \u2014 noted. No pressure, but I\u2019m curious: ${pickQ()} Doesn\u2019t need to be polished.`;
-    } else if (!hasName && msgCount <= 4) {
-        botResponse = isPt
-            ? `\u201c${snippet}\u201d \u2014 honestamente, \u00e9 mais dif\u00edcil de resolver do que parece \u00e0 primeira vista. ${pickQ()} E como te chamas?`
-            : `\u201c${snippet}\u201d \u2014 that\u2019s actually harder to crack than it looks, honestly. ${pickQ()} And what\u2019s your name?`;
-    } else if (!hasName) {
-        botResponse = isPt
-            ? 'Ainda n\u00e3o me disseste o teu nome \u2014 como te chamas?'
-            : 'I still don\u2019t know your name \u2014 what should I call you?';
-    } else if (!hasContact) {
-        botResponse = isPt
-            ? `Faz sentido, ${contact.name}. A equipa da YourLab vai querer continuar esta conversa \u2014 qual \u00e9 o teu email ou n\u00famero para entrarem em contacto?`
-            : `This makes sense, ${contact.name}. The YourLab team will want to follow up \u2014 what\u2019s the best email or phone to reach you?`;
-    } else {
-        botResponse = isPt
-            ? `Perfeito, ${contact.name}. A equipa da YourLab tem contexto suficiente para uma an\u00e1lise a s\u00e9rio. V\u00e3o entrar em contacto em breve. \u00daltima coisa, s\u00f3 por curiosidade \u2014 ${pickQ(2)}`
-            : `Perfect, ${contact.name}. The YourLab team has enough to do a real review and will reach out soon. One last thing, out of pure curiosity \u2014 ${pickQ(2)}`;
+            ? `Tudo guardado, ${name}! ✅\nA equipa da YourLab vai entrar em contacto antes da hora que indicaste. Vai receber um convite de calendário em ${displayEmail}. O AI acorda na próxima visita 🤖`
+            : `All done, ${name}! ✅\nThe YourLab team will reach out before your preferred time. You'll get a calendar invite at ${displayEmail}. The AI will be awake next time you visit 🤖`;
 
+        // Save locally
         saveConversationLocally({
             timestamp: new Date().toISOString(),
             contact: { ...contact },
-            businessIdea: idea,
-            messages: [...chatState.fallbackConversation.messages],
-            source: 'frontend-fallback-flow'
+            businessIdea: fc.businessIdea,
+            messages: [...fc.messages, { user: userText, bot: botResponse, timestamp: new Date().toISOString() }],
+            source: 'frontend-offline-bot'
         });
+
+        // POST to server so it sends the email + calendar invite
+        const apiBase = (window.YOURLAB_API_URL || '').replace(/\/$/, '');
+        fetch(`${apiBase}/api/save-inquiry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source: 'offline-chat',
+                contact: { name: contact.name, email: contact.email, phone: contact.phone },
+                businessIdea: fc.businessIdea,
+                preferredCallTime: contact.callTime,
+                lead: {
+                    name: contact.name, email: contact.email, phone: contact.phone,
+                    problem: fc.businessIdea, callTime: contact.callTime
+                },
+                messages: fc.messages
+            })
+        }).catch(err => console.warn('Could not reach server to save offline lead:', err.message));
+    } else {
+        // Already done — no more questions
+        botResponse = isPt
+            ? 'Já temos tudo! A equipa vai entrar em contacto em breve.'
+            : 'We already have everything! The team will be in touch soon.';
     }
 
-    chatState.fallbackConversation.messages.push({
+    fc.messages.push({
         user: userText,
         bot: botResponse,
         timestamp: new Date().toISOString()

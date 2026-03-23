@@ -191,33 +191,50 @@ This prints a URL. Open it in your browser, log in to Cloudflare, and select `yo
 
 ## Step 7 — Create the Tunnel
 
+> **Important:** run this command **without `sudo`** so the credentials file is written to your home directory, not root's.
+
 ```bash
-cloudflared tunnel create yourlab-tunnel
+cloudflared tunnel create yourlabpt_website
 ```
 
-This creates a persistent tunnel and prints a **Tunnel ID** (a UUID like `abc12345-...`). Note it — you'll need it.
+This creates a persistent tunnel, prints a **Tunnel ID** (a UUID like `f05627e1-...`), and writes a credentials file:
+```
+Tunnel credentials written to /home/yourlab/.cloudflared/<TUNNEL_ID>.json
+```
 
-Confirm it exists:
+Verify the file and note your tunnel ID:
 ```bash
 cloudflared tunnel list
+cat ~/.cloudflared/<TUNNEL_ID>.json
+# Should show: AccountTag, TunnelSecret, TunnelID — 3 fields, nothing garbled
 ```
 
 ---
 
 ## Step 8 — Configure the Tunnel
 
-Create the tunnel config file:
+cloudflared's `service install` command (used in Step 10) reads config from `/etc/cloudflared/`, not your home directory. Set both up now:
 
 ```bash
-mkdir -p ~/.cloudflared
-nano ~/.cloudflared/config.yml
+# Create the system config dir
+sudo mkdir -p /etc/cloudflared
+
+# Copy the credentials file (replace the UUID with your actual tunnel ID)
+sudo cp ~/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
 ```
 
-Paste this, replacing `YOUR_TUNNEL_ID` with the UUID from Step 7:
+Create `/etc/cloudflared/config.yml`:
+
+```bash
+sudo nano /etc/cloudflared/config.yml
+```
+
+Paste this, replacing `<TUNNEL_ID>` with your actual UUID:
 
 ```yaml
-tunnel: YOUR_TUNNEL_ID
-credentials-file: /home/YOUR_LINUX_USERNAME/.cloudflared/YOUR_TUNNEL_ID.json
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+protocol: http2
 
 ingress:
   - hostname: yourlabpt.com
@@ -228,19 +245,19 @@ ingress:
   - service: http_status:404
 ```
 
-> Replace `YOUR_LINUX_USERNAME` with the result of `whoami`.
+> `protocol: http2` is required. Without it, cloudflared defaults to QUIC (UDP port 7844) which many VPS providers and firewalls block, causing instant connection failures.
 
-Save and exit (Ctrl+O, Ctrl+X).
+Save and exit (Ctrl+O, Enter, Ctrl+X).
 
 ---
 
 ## Step 9 — Route DNS Through the Tunnel
 
-This command creates the CNAME records in Cloudflare DNS automatically:
+This command creates the CNAME records in Cloudflare DNS automatically. Use the **tunnel name** you chose in Step 7 (not the UUID):
 
 ```bash
-cloudflared tunnel route dns yourlab-tunnel yourlabpt.com
-cloudflared tunnel route dns yourlab-tunnel www.yourlabpt.com
+cloudflared tunnel route dns yourlabpt_website yourlabpt.com
+cloudflared tunnel route dns yourlabpt_website www.yourlabpt.com
 ```
 
 **Then in the Cloudflare Dashboard:**
@@ -263,7 +280,7 @@ Ollama is already a systemd service (installed in Step 2). Now create one for th
 sudo nano /etc/systemd/system/yourlab.service
 ```
 
-Paste this, replacing `YOUR_LINUX_USERNAME` with `whoami`:
+Paste this — replace `YOUR_LINUX_USERNAME` with the output of `whoami` and adjust `WorkingDirectory` to where you cloned the repo:
 
 ```ini
 [Unit]
@@ -274,7 +291,7 @@ Requires=ollama.service
 [Service]
 Type=simple
 User=YOUR_LINUX_USERNAME
-WorkingDirectory=/opt/yourlab/website/server
+WorkingDirectory=/home/YOUR_LINUX_USERNAME/yourlabpt_website/server
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=5
@@ -284,13 +301,27 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 ```
 
-Now create the service for cloudflared:
+> **WorkingDirectory** must point to the `server/` folder inside your repo. If you cloned to `/opt/yourlab/website`, use `/opt/yourlab/website/server`. If you cloned to `~/yourlabpt_website`, use `/home/YOUR_LINUX_USERNAME/yourlabpt_website/server`. A wrong path causes exit code `200/CHDIR` and the service immediately dies.
+
+Now install the cloudflared service. It reads from `/etc/cloudflared/config.yml` (which you created in Step 8) — **do not pass a `--config` flag**, that flag does not exist:
 
 ```bash
 sudo cloudflared service install
 ```
 
-This auto-generates a systemd service from your `~/.cloudflared/config.yml`.
+This generates `/etc/systemd/system/cloudflared.service` automatically.
+
+Fix the systemd start timeout — cloudflared takes several seconds to establish the tunnel connection and systemd's default 30s window can be too short:
+
+```bash
+sudo nano /etc/systemd/system/cloudflared.service
+```
+
+Add `TimeoutStartSec=0` under `[Service]`:
+```ini
+[Service]
+TimeoutStartSec=0
+```
 
 **Enable and start everything:**
 
@@ -298,8 +329,6 @@ This auto-generates a systemd service from your `~/.cloudflared/config.yml`.
 sudo systemctl daemon-reload
 sudo systemctl enable yourlab
 sudo systemctl start yourlab
-
-# cloudflared service was enabled by the install command, just start it:
 sudo systemctl start cloudflared
 
 # Check all three are running:
@@ -308,7 +337,13 @@ sudo systemctl status yourlab
 sudo systemctl status cloudflared
 ```
 
-All three should say `Active: active (running)`.
+All three should say `Active: active (running)`. For cloudflared, watch the live log to confirm it connects:
+
+```bash
+sudo journalctl -u cloudflared -f
+# Look for: Connection registered connIndex=0
+# If you see "Unauthorized: Invalid tunnel secret" — the credentials JSON was corrupted (see Troubleshooting)
+```
 
 ---
 
@@ -370,6 +405,43 @@ sudo journalctl -u ollama -f         # Ollama logs
 sudo journalctl -u cloudflared -f    # Tunnel logs
 ```
 
+**yourlab.service exits immediately (exit-code 200/CHDIR):**
+- The `WorkingDirectory` in the service file is wrong. Check the actual path:
+  ```bash
+  ls ~/yourlabpt_website/server/server.js   # adjust as needed
+  sudo nano /etc/systemd/system/yourlab.service
+  # Fix WorkingDirectory to the correct server/ path
+  sudo systemctl daemon-reload && sudo systemctl restart yourlab
+  ```
+
+**cloudflared: "Unauthorized: Invalid tunnel secret":**
+- The credentials JSON was corrupted (e.g. accidentally edited with nano). Delete the broken tunnel and recreate:
+  ```bash
+  cloudflared tunnel delete <TUNNEL_ID>
+  cloudflared tunnel create yourlabpt_website   # run WITHOUT sudo
+  # Copy new .json to /etc/cloudflared/
+  sudo cp ~/.cloudflared/<NEW_ID>.json /etc/cloudflared/
+  # Update tunnel ID in /etc/cloudflared/config.yml
+  sudo nano /etc/cloudflared/config.yml
+  # Re-route DNS
+  cloudflared tunnel route dns yourlabpt_website yourlabpt.com
+  cloudflared tunnel route dns yourlabpt_website www.yourlabpt.com
+  sudo systemctl restart cloudflared
+  ```
+
+**cloudflared: "failed to run the datagram handler" / instant retries:**
+- QUIC (UDP) is blocked by your VPS or network. Ensure `protocol: http2` is set in `/etc/cloudflared/config.yml`.
+
+**cloudflared service install: "Cannot determine default configuration path":**
+- The service install command only looks in `/etc/cloudflared/`, not `~/.cloudflared/`. Copy your config there first:
+  ```bash
+  sudo mkdir -p /etc/cloudflared
+  sudo cp ~/.cloudflared/config.yml /etc/cloudflared/config.yml
+  sudo cp ~/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
+  # Then update credentials-file path in /etc/cloudflared/config.yml to /etc/cloudflared/<TUNNEL_ID>.json
+  sudo cloudflared service install
+  ```
+
 **Ollama isn't responding:**
 ```bash
 curl http://localhost:11434/api/tags   # Should list your pulled models
@@ -377,7 +449,7 @@ ollama list                            # Should show phi3:mini and llama3.1:8b
 ```
 
 **Tunnel connected but site not loading:**
-- Check `cloudflared tunnel info yourlab-tunnel` — status should be `HEALTHY`
+- Check `cloudflared tunnel info yourlabpt_website` — status should be `HEALTHY`
 - Verify DNS records exist in Cloudflare dashboard with proxy ON
 
 **`usingFallback: true` in chat responses:**

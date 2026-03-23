@@ -683,6 +683,7 @@ function buildLeadEmailText(inquiry) {
         `- Timeline: ${lead.timeline || '-'}`,
         `- Budget range: ${lead.budgetRange || '-'}`,
         `- Urgency: ${lead.urgencyLevel || '-'}`,
+        `- Preferred call time: ${inquiry.preferredCallTime || (lead.callTime) || '-'}`,
         '',
         'Qualification',
         `- Score: ${summary.score ?? '-'}/100`,
@@ -695,6 +696,101 @@ function buildLeadEmailText(inquiry) {
     ];
     return lines.join('\n');
 }
+
+// ─── Calendar invite helpers ────────────────────────────────────────────────
+
+function parsePreferredCallTime(text) {
+    const now = new Date();
+    let d = new Date(now);
+
+    const lower = (text || '').toLowerCase();
+
+    // Day offset
+    if (/amanh[aã]|tomorrow/.test(lower)) {
+        d.setDate(d.getDate() + 1);
+    } else {
+        const DAYS = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday',
+                      'domingo','segunda','ter[cç]a','quarta','quinta','sexta','s[aá]bado'];
+        const DAY_MAP = [0,1,2,3,4,5,6, 0,1,2,3,4,5,6];
+        let matched = false;
+        for (let i = 0; i < DAYS.length; i++) {
+            if (new RegExp(DAYS[i]).test(lower)) {
+                const target = DAY_MAP[i];
+                const cur = d.getDay();
+                let diff = target - cur;
+                if (diff <= 0) diff += 7;
+                d.setDate(d.getDate() + diff);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            // skip to next business day
+            d.setDate(d.getDate() + 1);
+            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+        }
+    }
+
+    // Time of day
+    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|h)?/);
+    if (timeMatch) {
+        let h = parseInt(timeMatch[1], 10);
+        const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+        const ampm = timeMatch[3];
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
+        d.setHours(h, m, 0, 0);
+    } else if (/manh[aã]|morning/.test(lower)) {
+        d.setHours(10, 0, 0, 0);
+    } else if (/tarde|afternoon/.test(lower)) {
+        d.setHours(14, 0, 0, 0);
+    } else if (/noite|evening|night/.test(lower)) {
+        d.setHours(17, 0, 0, 0);
+    } else {
+        d.setHours(10, 0, 0, 0);
+    }
+    return d;
+}
+
+function buildIcsContent(inquiry) {
+    const preferredTime = (inquiry.preferredCallTime || inquiry.lead && inquiry.lead.callTime || '').trim();
+    const start = preferredTime ? parsePreferredCallTime(preferredTime) : (() => {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+        d.setHours(10, 0, 0, 0);
+        return d;
+    })();
+    const end = new Date(start.getTime() + 30 * 60 * 1000);
+    const fmt = (dt) => dt.toISOString().replace(/[-:.]/g,'').slice(0,15) + 'Z';
+    const uid = `yourlab-${Date.now()}-${Math.random().toString(36).slice(2)}@yourlabpt.com`;
+    const name  = (inquiry.contact && inquiry.contact.name)  || 'Lead';
+    const email = (inquiry.contact && inquiry.contact.email) || (process.env.SMTP_USER || '');
+    const idea  = (inquiry.businessIdea || '').slice(0, 200).replace(/[\n\r]/g, ' ');
+    const timeNote = preferredTime || 'to be confirmed';
+
+    return [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//YourLab//Chat//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        `DTSTART:${fmt(start)}`,
+        `DTEND:${fmt(end)}`,
+        `SUMMARY:YourLab Discovery Call — ${name}`,
+        `DESCRIPTION:Preferred time: ${timeNote}\nBusiness idea: ${idea}`,
+        `ORGANIZER;CN=YourLab:mailto:${process.env.SMTP_USER || 'yourlabpt@gmail.com'}`,
+        `ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${email}`,
+        `UID:${uid}`,
+        'STATUS:CONFIRMED',
+        'SEQUENCE:0',
+        'END:VEVENT',
+        'END:VCALENDAR'
+    ].join('\r\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function sendLeadNotificationEmail(inquiry) {
     const to = cleanText(process.env.LEAD_NOTIFY_TO, 600);
@@ -711,14 +807,24 @@ async function sendLeadNotificationEmail(inquiry) {
     const leadName = inquiry.contact.name || inquiry.contact.email || inquiry.contact.phone || 'Website Lead';
     const subject = `[YourLab] New Lead ${inquiry.summary.score || 0}/100 - ${leadName}`;
 
+    // Build calendar invite only when we have a preferred call time
+    const hasCallTime = !!(inquiry.preferredCallTime ||
+        (inquiry.lead && inquiry.lead.callTime));
+    const attachments = hasCallTime ? [{
+        filename: 'call-invite.ics',
+        content: buildIcsContent(inquiry),
+        contentType: 'text/calendar; method=REQUEST'
+    }] : [];
+
     try {
         await transporter.sendMail({
             from,
             to,
             subject,
-            text: buildLeadEmailText(inquiry)
+            text: buildLeadEmailText(inquiry),
+            attachments
         });
-        return { sent: true };
+        return { sent: true, calendarInvite: hasCallTime };
     } catch (error) {
         return { sent: false, reason: error.message };
     }
@@ -872,7 +978,8 @@ app.post('/api/save-inquiry', async (req, res) => {
                 phone: mergedLead.phone
             },
             businessIdea: cleanText(inquiry.businessIdea, 3000),
-            lead: mergedLead,
+            preferredCallTime: cleanText(inquiry.preferredCallTime || (inquiry.lead && inquiry.lead.callTime), 200),
+            lead: { ...mergedLead, callTime: cleanText(inquiry.preferredCallTime || (inquiry.lead && inquiry.lead.callTime), 200) },
             summary: {
                 score: Number.isFinite(inquiry && inquiry.summary && inquiry.summary.score)
                     ? inquiry.summary.score
