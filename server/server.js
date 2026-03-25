@@ -1,4 +1,5 @@
-require('dotenv').config();
+const { loadEnv } = require('./lib/load-env');
+const loadedEnvPath = loadEnv();
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
@@ -6,10 +7,16 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 const nodemailer = require('nodemailer');
+const { createAdminAuth } = require('./lib/admin-auth');
+const { createProjectShowcaseStore } = require('./lib/project-showcase-store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const CHAT_SESSION_TTL_MS = Number(process.env.CHAT_SESSION_TTL_MS || 45 * 60 * 1000);
+
+if (loadedEnvPath) {
+    console.log('Environment loaded from:', loadedEnvPath);
+}
 
 // Ollama local LLM configuration
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, '');
@@ -38,34 +45,12 @@ const SEARCH_STOP_WORDS = new Set([
     'yourlab', 'alex'
 ]);
 
-// Admin authentication
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'yourlab-admin';
-// In-memory token store: token -> expiry timestamp
-const adminTokens = new Map();
-const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
-
-function issueAdminToken() {
-    const token = crypto.randomBytes(32).toString('hex');
-    adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
-    return token;
-}
-
-function isValidAdminToken(token) {
-    if (!token || !adminTokens.has(token)) return false;
-    if (Date.now() > adminTokens.get(token)) {
-        adminTokens.delete(token);
-        return false;
-    }
-    return true;
-}
-
-function requireAdmin(req, res, next) {
-    const token = (req.headers['x-admin-token'] || '').trim();
-    if (!isValidAdminToken(token)) {
-        return res.status(401).json({ error: 'Unauthorized. Please log in to the admin dashboard.' });
-    }
-    next();
-}
+const adminAuth = createAdminAuth({
+    password: ADMIN_PASSWORD,
+    tokenTtlMs: 8 * 60 * 60 * 1000
+});
+const requireAdmin = adminAuth.requireAdmin;
 
 const ollamaClient = new OpenAI({
     baseURL: OLLAMA_BASE_URL,
@@ -140,10 +125,9 @@ if (!fs.existsSync(inquiriesDir)) {
     fs.mkdirSync(inquiriesDir, { recursive: true });
 }
 
-const projectShowcaseFile = path.join(__dirname, 'project-showcase.json');
-if (!fs.existsSync(projectShowcaseFile)) {
-    fs.writeFileSync(projectShowcaseFile, '[]\n');
-}
+const projectShowcaseStore = createProjectShowcaseStore({
+    filePath: path.join(__dirname, 'project-showcase.json')
+});
 
 const conversationSessions = new Map();
 let mailTransporter = null;
@@ -750,209 +734,6 @@ function normalizeInquiryFilename(id) {
     return safeId.endsWith('.json') ? safeId : `${safeId}.json`;
 }
 
-function normalizeProjectId(value, fallback = '') {
-    const raw = cleanText(value, 160).toLowerCase();
-    const normalized = raw
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-    return normalized || cleanText(fallback, 160).toLowerCase() || '';
-}
-
-function normalizeProjectLangValue(value, fallback = '') {
-    if (typeof value === 'string') {
-        return {
-            pt: cleanText(value, 600),
-            en: cleanText(value, 600)
-        };
-    }
-    if (!value || typeof value !== 'object') {
-        return { pt: fallback, en: fallback };
-    }
-
-    const pt = cleanText(
-        typeof value.pt === 'string' ? value.pt : (typeof value.en === 'string' ? value.en : fallback),
-        600
-    );
-    const en = cleanText(
-        typeof value.en === 'string' ? value.en : (typeof value.pt === 'string' ? value.pt : fallback),
-        600
-    );
-
-    return { pt, en };
-}
-
-function normalizeProjectLangList(value, fallback = []) {
-    const source = Array.isArray(value)
-        ? value
-        : (value && Array.isArray(value.pt))
-            ? value.pt
-            : (value && Array.isArray(value.en))
-                ? value.en
-                : fallback;
-
-    const sourcePt = (value && Array.isArray(value.pt)) ? value.pt : source;
-    const sourceEn = (value && Array.isArray(value.en)) ? value.en : source;
-
-    return {
-        pt: sourcePt.map((item) => cleanText(item, 320)).filter(Boolean),
-        en: sourceEn.map((item) => cleanText(item, 320)).filter(Boolean)
-    };
-}
-
-function normalizeProjectEntry(input, index = 0) {
-    if (!input || typeof input !== 'object') return null;
-
-    const source = (input.project && typeof input.project === 'object')
-        ? input.project
-        : input;
-
-    const title = normalizeProjectLangValue(source.title, '');
-    if (!title.pt && !title.en) return null;
-
-    const solutionDeliveredRaw = source.solutionDelivered || source.finalResult;
-    let solutionDelivered = normalizeProjectLangList(solutionDeliveredRaw, []);
-    const finalResultText = normalizeProjectLangValue(source.finalResult || '', '');
-
-    if (!solutionDelivered.pt.length && finalResultText.pt) {
-        solutionDelivered.pt = [finalResultText.pt];
-    }
-    if (!solutionDelivered.en.length && finalResultText.en) {
-        solutionDelivered.en = [finalResultText.en];
-    }
-
-    const fallbackId = `project-${index + 1}`;
-    const id = normalizeProjectId(source.id, fallbackId) || fallbackId;
-
-    return {
-        id,
-        title,
-        clientProfile: normalizeProjectLangValue(source.clientProfile || source.client || source.audience || '', ''),
-        sector: normalizeProjectLangValue(source.sector || source.industry || '', ''),
-        timeline: normalizeProjectLangValue(source.timeline || '', ''),
-        strategicRequest: normalizeProjectLangValue(source.strategicRequest || source.request || '', ''),
-        painSnapshot: normalizeProjectLangValue(source.painSnapshot || source.requestPain || '', ''),
-        businessImpact: normalizeProjectLangValue(source.businessImpact || '', ''),
-        approach: normalizeProjectLangList(source.approach || source.processProposal || [], []),
-        solutionDelivered,
-        results: normalizeProjectLangList(source.results || [], []),
-        dailyUse: normalizeProjectLangList(source.dailyUse || [], []),
-        ctaText: normalizeProjectLangValue(source.ctaText || '', '')
-    };
-}
-
-function normalizeProjectCollection(input) {
-    const source = Array.isArray(input)
-        ? input
-        : (input && Array.isArray(input.projects))
-            ? input.projects
-            : [input];
-
-    return source
-        .map((entry, index) => normalizeProjectEntry(entry, index))
-        .filter(Boolean);
-}
-
-function readProjectShowcaseData() {
-    try {
-        if (!fs.existsSync(projectShowcaseFile)) return [];
-        const raw = fs.readFileSync(projectShowcaseFile, 'utf8').trim();
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return normalizeProjectCollection(parsed);
-    } catch (error) {
-        console.error('Failed to read project showcase data:', error.message);
-        return [];
-    }
-}
-
-function writeProjectShowcaseData(projects) {
-    const normalized = normalizeProjectCollection(projects);
-    fs.writeFileSync(projectShowcaseFile, JSON.stringify(normalized, null, 2));
-    return normalized;
-}
-
-function applyProjectPayload(currentProjects, payload) {
-    let next = [...currentProjects];
-    const actions = [];
-
-    function upsertProject(project, targetId = '') {
-        const normalized = normalizeProjectEntry(project, next.length);
-        if (!normalized) return;
-
-        const normalizedTarget = normalizeProjectId(targetId, '');
-        const effectiveId = normalizedTarget || normalized.id;
-        normalized.id = effectiveId;
-
-        const index = next.findIndex((item) => item.id === effectiveId);
-        if (index >= 0) {
-            next[index] = normalized;
-            actions.push(`updated:${effectiveId}`);
-        } else {
-            next.push(normalized);
-            actions.push(`added:${effectiveId}`);
-        }
-    }
-
-    function processNode(node) {
-        if (node == null) return;
-
-        if (typeof node === 'string') {
-            try {
-                const parsed = JSON.parse(node);
-                processNode(parsed);
-            } catch (_) {
-                throw new Error('Invalid JSON string payload.');
-            }
-            return;
-        }
-
-        if (Array.isArray(node)) {
-            node.forEach(processNode);
-            return;
-        }
-
-        if (typeof node !== 'object') return;
-
-        if (Array.isArray(node.projects)) {
-            const replaced = normalizeProjectCollection(node.projects);
-            next = replaced;
-            actions.push(`replaced:${replaced.length}`);
-            return;
-        }
-
-        const operation = cleanText(node.operation || node.mode, 40).toLowerCase();
-        const targetId = cleanText(node.target_id || node.targetId || node.id, 160);
-
-        if (operation === 'delete') {
-            const normalizedId = normalizeProjectId(targetId, '');
-            if (!normalizedId) return;
-            const before = next.length;
-            next = next.filter((item) => item.id !== normalizedId);
-            if (next.length !== before) {
-                actions.push(`deleted:${normalizedId}`);
-            }
-            return;
-        }
-
-        if (operation === 'replace' && node.project && typeof node.project === 'object') {
-            const replaced = normalizeProjectCollection([node.project]);
-            next = replaced;
-            actions.push(`replaced:${replaced.length}`);
-            return;
-        }
-
-        if (node.project && typeof node.project === 'object') {
-            upsertProject(node.project, operation === 'update' ? targetId : '');
-            return;
-        }
-
-        upsertProject(node, targetId);
-    }
-
-    processNode(payload);
-    return { projects: next, actions };
-}
-
 function saveInquiry(inquiry, existingFile = '') {
     const preferredId = cleanText(existingFile, 220);
     const filename = preferredId || (() => {
@@ -1427,17 +1208,17 @@ app.post('/api/save-inquiry', async (req, res) => {
 // Admin login
 app.post('/api/admin/login', (req, res) => {
     const password = cleanText(req.body && req.body.password, 300);
-    if (!password || password !== ADMIN_PASSWORD) {
+    if (!adminAuth.validatePassword(password)) {
         return res.status(401).json({ error: 'Invalid password.' });
     }
-    const token = issueAdminToken();
+    const token = adminAuth.issueToken();
     return res.json({ token });
 });
 
 // Admin logout
 app.post('/api/admin/logout', (req, res) => {
     const token = (req.headers['x-admin-token'] || '').trim();
-    if (token) adminTokens.delete(token);
+    if (token) adminAuth.revokeToken(token);
     return res.json({ success: true });
 });
 
@@ -1530,7 +1311,7 @@ app.delete('/api/inquiries/:id', requireAdmin, (req, res) => {
 // Project showcase (public)
 app.get('/api/project-showcase', (req, res) => {
     try {
-        const projects = readProjectShowcaseData();
+        const projects = projectShowcaseStore.read();
         return res.json({
             count: projects.length,
             projects
@@ -1550,7 +1331,7 @@ app.put('/api/project-showcase', requireAdmin, (req, res) => {
         const payload = Object.prototype.hasOwnProperty.call(req.body || {}, 'payload')
             ? req.body.payload
             : req.body;
-        const projects = writeProjectShowcaseData(payload);
+        const projects = projectShowcaseStore.write(payload);
         return res.json({
             success: true,
             count: projects.length,
@@ -1571,9 +1352,9 @@ app.post('/api/project-showcase/apply', requireAdmin, (req, res) => {
         const payload = Object.prototype.hasOwnProperty.call(req.body || {}, 'payload')
             ? req.body.payload
             : req.body;
-        const currentProjects = readProjectShowcaseData();
-        const { projects, actions } = applyProjectPayload(currentProjects, payload);
-        const saved = writeProjectShowcaseData(projects);
+        const currentProjects = projectShowcaseStore.read();
+        const { projects, actions } = projectShowcaseStore.applyPayload(currentProjects, payload);
+        const saved = projectShowcaseStore.write(projects);
         return res.json({
             success: true,
             count: saved.length,
@@ -1592,16 +1373,16 @@ app.post('/api/project-showcase/apply', requireAdmin, (req, res) => {
 // Project showcase delete item by id (admin)
 app.delete('/api/project-showcase/:id', requireAdmin, (req, res) => {
     try {
-        const id = normalizeProjectId(req.params.id, '');
+        const id = projectShowcaseStore.normalizeProjectId(req.params.id, '');
         if (!id) return res.status(400).json({ error: 'Invalid project id.' });
 
-        const current = readProjectShowcaseData();
+        const current = projectShowcaseStore.read();
         const next = current.filter((project) => project.id !== id);
         if (next.length === current.length) {
             return res.status(404).json({ error: 'Project not found.' });
         }
 
-        const saved = writeProjectShowcaseData(next);
+        const saved = projectShowcaseStore.write(next);
         return res.json({
             success: true,
             count: saved.length,
@@ -1623,7 +1404,7 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         inquiriesCount: fs.readdirSync(inquiriesDir).filter((f) => f.endsWith('.json')).length,
-        projectShowcaseCount: readProjectShowcaseData().length,
+        projectShowcaseCount: projectShowcaseStore.read().length,
         ollamaUrl: OLLAMA_BASE_URL,
         modelBig: OLLAMA_MODEL_BIG,
         modelSmall: OLLAMA_MODEL_SMALL,
@@ -1643,6 +1424,15 @@ app.get('/business-card', (req, res) => {
 
 app.get('/business-card/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'business-card', 'index.html'));
+});
+
+// Explicit admin routes
+app.get('/admin', (req, res) => {
+    res.redirect('/admin/');
+});
+
+app.get('/admin/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'admin', 'index.html'));
 });
 
 // Serve index.html for any unmatched routes

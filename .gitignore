@@ -34,3 +34,6 @@ build/
 # Inquiries (keep example only)
 server/inquiries/*
 !server/inquiries/.gitkeep
+
+# Runtime content
+server/project-showcase.json

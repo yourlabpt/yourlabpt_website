@@ -76,6 +76,7 @@ Then set:
 - `OPENAI_MODEL` (default: `gpt-5-mini`)
 - `LEAD_NOTIFY_TO` (email address that receives new lead summaries)
 - SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`)
+- `ADMIN_PASSWORD` (password used on the `/admin/` dashboard)
 
 3. **Run the server:**
 ```bash
@@ -86,6 +87,10 @@ The server will start on `http://localhost:3000`
 
 4. **Access the website:**
 Open your browser and go to `http://localhost:3000`
+
+5. **Access the admin dashboard:**
+Open `http://localhost:3000/admin/`  
+(`admin.html` remains only as a compatibility redirect)
 
 ## API Endpoints
 

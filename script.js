@@ -404,48 +404,84 @@ const projectShowcaseData = [];
 function normalizeProjectShowcaseCollection(input) {
     const asArray = Array.isArray(input) ? input : [input];
 
+    function cleanText(value, max = 600) {
+        if (typeof value !== 'string') return '';
+        return value.trim().replace(/\s+/g, ' ').slice(0, max);
+    }
+
+    function firstAvailable(source, keys, fallback = '') {
+        for (const key of keys) {
+            const value = source[key];
+            if (value == null) continue;
+            if (typeof value === 'string' && value.trim()) return value;
+            if (typeof value === 'object') return value;
+            if (Array.isArray(value) && value.length) return value;
+        }
+        return fallback;
+    }
+
     function pickLangValue(value, fallback = '') {
         if (typeof value === 'string') {
-            return { pt: value, en: value };
+            const text = cleanText(value, 600);
+            return { pt: text, en: text };
         }
         if (!value || typeof value !== 'object') {
             return { pt: fallback, en: fallback };
         }
 
         const pt = typeof value.pt === 'string'
-            ? value.pt
+            ? cleanText(value.pt, 600)
             : typeof value.en === 'string'
-                ? value.en
+                ? cleanText(value.en, 600)
                 : fallback;
         const en = typeof value.en === 'string'
-            ? value.en
+            ? cleanText(value.en, 600)
             : typeof value.pt === 'string'
-                ? value.pt
+                ? cleanText(value.pt, 600)
                 : fallback;
 
         return { pt, en };
     }
 
+    function normalizeListItems(items = []) {
+        return items
+            .map((item) => cleanText(String(item || ''), 320))
+            .filter(Boolean);
+    }
+
     function pickLangList(value, fallback = []) {
         if (Array.isArray(value)) {
-            return { pt: [...value], en: [...value] };
+            const list = normalizeListItems(value);
+            return { pt: [...list], en: [...list] };
+        }
+        if (typeof value === 'string') {
+            const item = cleanText(value, 320);
+            const list = item ? [item] : [];
+            return { pt: [...list], en: [...list] };
         }
         if (!value || typeof value !== 'object') {
-            return { pt: [...fallback], en: [...fallback] };
+            const fallbackList = normalizeListItems(fallback);
+            return { pt: [...fallbackList], en: [...fallbackList] };
         }
 
-        const pt = Array.isArray(value.pt)
+        const sourcePt = Array.isArray(value.pt)
             ? value.pt
-            : Array.isArray(value.en)
-                ? value.en
-                : fallback;
-        const en = Array.isArray(value.en)
+            : typeof value.pt === 'string'
+                ? [value.pt]
+                : [];
+        const sourceEn = Array.isArray(value.en)
             ? value.en
-            : Array.isArray(value.pt)
-                ? value.pt
-                : fallback;
+            : typeof value.en === 'string'
+                ? [value.en]
+                : [];
+        const shared = normalizeListItems(fallback);
+        const pt = sourcePt.length ? sourcePt : (sourceEn.length ? sourceEn : shared);
+        const en = sourceEn.length ? sourceEn : (sourcePt.length ? sourcePt : shared);
 
-        return { pt: [...pt], en: [...en] };
+        return {
+            pt: normalizeListItems(pt),
+            en: normalizeListItems(en)
+        };
     }
 
     return asArray
@@ -459,11 +495,15 @@ function normalizeProjectShowcaseCollection(input) {
                 ? entry.project
                 : entry;
 
-            const title = pickLangValue(source.title);
+            const title = pickLangValue(firstAvailable(source, ['title', 'name', 'projectTitle', 'caseTitle', 'headline'], ''));
             const hasRenderableTitle = Boolean((title.pt || '').trim() || (title.en || '').trim());
             if (!hasRenderableTitle) return null;
 
-            const solutionDeliveredRaw = source.solutionDelivered || source.finalResult;
+            const solutionDeliveredRaw = firstAvailable(
+                source,
+                ['solutionDelivered', 'finalResult', 'solution', 'deliverables', 'delivery'],
+                []
+            );
             const solutionDelivered = Array.isArray(solutionDeliveredRaw) || (
                 solutionDeliveredRaw && typeof solutionDeliveredRaw === 'object' && (
                     Array.isArray(solutionDeliveredRaw.pt) || Array.isArray(solutionDeliveredRaw.en)
@@ -472,7 +512,7 @@ function normalizeProjectShowcaseCollection(input) {
                 ? pickLangList(solutionDeliveredRaw)
                 : pickLangList([]);
 
-            const finalResultAsText = pickLangValue(source.finalResult || '');
+            const finalResultAsText = pickLangValue(firstAvailable(source, ['finalResult'], ''));
             if (!solutionDelivered.pt.length && (finalResultAsText.pt || '').trim()) {
                 solutionDelivered.pt = [finalResultAsText.pt];
             }
@@ -480,22 +520,27 @@ function normalizeProjectShowcaseCollection(input) {
                 solutionDelivered.en = [finalResultAsText.en];
             }
 
+            const rawId = typeof source.id === 'string' && source.id.trim()
+                ? source.id.trim().toLowerCase()
+                : `project-${index + 1}`;
+            const normalizedId = rawId
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '') || `project-${index + 1}`;
+
             return {
-                id: typeof source.id === 'string' && source.id.trim()
-                    ? source.id.trim()
-                    : `project-${index + 1}`,
+                id: normalizedId,
                 title,
-                clientProfile: pickLangValue(source.clientProfile || source.client || source.audience || ''),
-                sector: pickLangValue(source.sector || source.industry || ''),
-                timeline: pickLangValue(source.timeline || ''),
-                strategicRequest: pickLangValue(source.strategicRequest || source.request || ''),
-                painSnapshot: pickLangValue(source.painSnapshot || source.requestPain || ''),
-                businessImpact: pickLangValue(source.businessImpact || ''),
-                approach: pickLangList(source.approach || source.processProposal || []),
+                clientProfile: pickLangValue(firstAvailable(source, ['clientProfile', 'client', 'audience', 'targetClient', 'customerProfile'], '')),
+                sector: pickLangValue(firstAvailable(source, ['sector', 'industry', 'market', 'vertical'], '')),
+                timeline: pickLangValue(firstAvailable(source, ['timeline', 'duration', 'deliveryWindow'], '')),
+                strategicRequest: pickLangValue(firstAvailable(source, ['strategicRequest', 'request', 'objective', 'goal', 'challenge'], '')),
+                painSnapshot: pickLangValue(firstAvailable(source, ['painSnapshot', 'requestPain', 'pain', 'problem', 'initialPain'], '')),
+                businessImpact: pickLangValue(firstAvailable(source, ['businessImpact', 'impact', 'painImpact', 'risk'], '')),
+                approach: pickLangList(firstAvailable(source, ['approach', 'processProposal', 'process', 'execution', 'steps'], [])),
                 solutionDelivered,
-                results: pickLangList(source.results || []),
-                dailyUse: pickLangList(source.dailyUse || []),
-                ctaText: pickLangValue(source.ctaText || '')
+                results: pickLangList(firstAvailable(source, ['results', 'outcomes', 'result', 'kpis'], [])),
+                dailyUse: pickLangList(firstAvailable(source, ['dailyUse', 'operations', 'dayToDay', 'adoption'], [])),
+                ctaText: pickLangValue(firstAvailable(source, ['ctaText', 'cta', 'callToAction'], ''))
             };
         })
         .filter(Boolean);
@@ -682,8 +727,7 @@ function normalizeProjectShowcaseCollection(input) {
     async function loadProjectsFromApi() {
         try {
             const response = await fetch(`${apiBase}/api/project-showcase`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
+                method: 'GET'
             });
             if (!response.ok) return;
 
