@@ -172,11 +172,25 @@ function extractPreferredCallTimeFromText(value) {
 }
 
 const NAME_STOP_WORDS = new Set([
-    'hi', 'hello', 'hey', 'ola', 'bom', 'boa', 'sim', 'nao', 'ok', 'okay', 'yes', 'no',
-    'talvez', 'maybe', 'later', 'depois', 'equipa', 'team', 'yourlab', 'alex',
+    // English greetings
+    'hi', 'hello', 'hey', 'greetings', 'howdy', 'sup', 'yo', 'dear',
+    // Portuguese greetings and fillers
+    'oi', 'ola', 'boa', 'bom', 'tudo', 'bem', 'dia', 'tarde', 'noite',
+    // Affirmations / negations
+    'sim', 'nao', 'ok', 'okay', 'yes', 'no', 'claro', 'certo', 'sure', 'fine',
+    'talvez', 'maybe', 'later', 'depois',
+    // Organisation / context words that are not names
+    'equipa', 'team', 'yourlab', 'alex',
     'name', 'nome', 'phone', 'number', 'telefone', 'numero', 'email',
     'business', 'negocio', 'project', 'projeto', 'idea', 'ideia',
-    'my', 'meu', 'sou', 'am', 'im', 'n/a', 'none'
+    'contact', 'contacto', 'contato', 'info', 'help', 'ajuda', 'support', 'suporte',
+    // Pronouns and linking words
+    'my', 'meu', 'minha', 'sou', 'am', 'im', 'the', 'from', 'with', 'and', 'para',
+    'n/a', 'none',
+    // Time expressions
+    'good', 'morning', 'afternoon', 'evening', 'night',
+    // Thank-you forms
+    'obrigado', 'obrigada', 'thanks', 'thank', 'you'
 ]);
 
 function normalizeForComparison(value) {
@@ -197,11 +211,12 @@ function normalizeNameCandidate(value) {
         .split(/\s+/)
         .map((token) => token.replace(/[^A-Za-zÀ-ÿ'-]/g, ''))
         .filter(Boolean);
-    if (!rawTokens.length || rawTokens.length > 4) return '';
+    if (rawTokens.length < 2 || rawTokens.length > 4) return '';
     if (rawTokens.some((token) => token.length < 2 || token.length > 24)) return '';
 
     const joinedLower = normalizeForComparison(rawTokens.join(' '));
     if (NAME_STOP_WORDS.has(joinedLower)) return '';
+    if (rawTokens.some((token) => NAME_STOP_WORDS.has(normalizeForComparison(token)))) return '';
     if (/(^| )(contact|contacto|email|telefone|numero|phone|number|name|nome)( |$)/.test(joinedLower)) {
         return '';
     }
@@ -255,6 +270,19 @@ function isGeneralContactRefusal(value) {
     return /\b(no contact|d(?:on'?t|o not) contact me|nao quero contacto|nao quero contato|sem contacto|sem contato)\b/.test(text);
 }
 
+function isGreetingOnly(value) {
+    const text = normalizeForComparison(value)
+        .replace(/[!?.;,]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!text) return false;
+    // Match if the message starts with a greeting word and is short (≤ 5 words total).
+    // This catches both bare greetings ("Ola") and greeting-prefixed phrases ("Ola tudo bem").
+    const words = text.split(' ');
+    if (words.length > 5) return false;
+    return /^(oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite|good morning|good afternoon|good evening|good night)(\s|$)/.test(text);
+}
+
 function isValidBusinessBrief(value) {
     const text = cleanText(value, 1200);
     if (!text) return false;
@@ -290,7 +318,13 @@ function mergeLead(base, incoming = {}) {
     const next = { ...base };
     next.language = incoming.language === 'pt' ? 'pt' : next.language;
 
-    next.name = cleanText(incoming.name || next.name, 120);
+    const incomingName = cleanText(incoming.name, 120);
+    if (!next.name && incomingName) {
+        // Validate through normalizeNameCandidate to reject greetings, single words,
+        // and other non-name tokens even when they come from the AI model's updated_lead.
+        const validatedName = normalizeNameCandidate(incomingName);
+        if (validatedName) next.name = validatedName;
+    }
     next.email = normalizeEmail(incoming.email || next.email) || next.email;
     next.phone = normalizePhone(incoming.phone || next.phone) || next.phone;
     next.company = cleanText(incoming.company || next.company, 160);
@@ -542,6 +576,9 @@ Tone and style:
 - Ask one focused question per reply.
 - Never ask for data already present in "KNOWN LEAD DATA".
 - If user goes off-topic, acknowledge briefly and redirect to their project.
+- When asking for the user's name, always ask for their FULL name (first name AND last name/surname). Never accept or save a single first name.
+- Never interpret a greeting word ("hello", "hi", "ola", "oi", "hey", "bom dia", "boa tarde", etc.) as someone's name. If the user sends only a greeting, reply naturally with a greeting in return and ask for their full name.
+- Only set "name" in updated_lead when the user has explicitly provided both first and last name.
 
 Business anchor:
 - YourLab builds lean MVPs, custom software, IoT, integrations and requirements engineering.
@@ -837,6 +874,9 @@ function fallbackTurn(session, userMessage) {
     const askName = isPt
         ? 'Para avancarmos, diz-me o teu nome e apelido.'
         : 'To move forward, tell me your first and last name.';
+    const greetAndAskName = isPt
+        ? 'Ola! Para avancarmos, diz-me o teu nome e apelido.'
+        : 'Hello! To move forward, tell me your first and last name.';
     const askPhone = isPt
         ? 'Qual e o melhor numero de telefone para contacto? Se preferires, responde "prefiro email".'
         : 'What is the best phone number to reach you? If you prefer, reply with "I prefer email".';
@@ -874,7 +914,7 @@ function fallbackTurn(session, userMessage) {
     let reply = '';
     if (stepBefore === stepAfter) {
         if (stepAfter === 'name') {
-            reply = askName;
+            reply = isGreetingOnly(msg) ? greetAndAskName : askName;
         } else if (stepAfter === 'phone') {
             reply = fallbackState.contactChannel === 'email' ? askEmail : askPhone;
         } else if (stepAfter === 'email') {

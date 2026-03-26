@@ -910,7 +910,9 @@ async function sendMessageToAi(userText) {
 const FALLBACK_NAME_STOP_WORDS = new Set([
     'hi', 'hello', 'hey', 'ola', 'bom', 'boa', 'sim', 'nao', 'ok', 'okay', 'yes', 'no',
     'maybe', 'talvez', 'team', 'equipa', 'yourlab', 'alex', 'name', 'nome',
-    'phone', 'number', 'telefone', 'numero', 'email', 'business', 'negocio'
+    'phone', 'number', 'telefone', 'numero', 'email', 'business', 'negocio',
+    'oi', 'tudo', 'bem', 'good', 'morning', 'afternoon', 'evening', 'night',
+    'obrigado', 'obrigada', 'thanks', 'thank', 'you'
 ]);
 
 function normalizeFallbackForComparison(value) {
@@ -944,11 +946,12 @@ function normalizeFallbackNameCandidate(value) {
         .split(/\s+/)
         .map((token) => token.replace(/[^A-Za-zÀ-ÿ'-]/g, ''))
         .filter(Boolean);
-    if (!tokens.length || tokens.length > 4) return '';
+    if (tokens.length < 2 || tokens.length > 4) return '';
     if (tokens.some((token) => token.length < 2 || token.length > 24)) return '';
 
     const joined = normalizeFallbackForComparison(tokens.join(' '));
     if (FALLBACK_NAME_STOP_WORDS.has(joined)) return '';
+    if (tokens.some((token) => FALLBACK_NAME_STOP_WORDS.has(normalizeFallbackForComparison(token)))) return '';
     if (/(^| )(contact|contacto|email|telefone|numero|phone|number|name|nome)( |$)/.test(joined)) return '';
 
     return tokens
@@ -988,6 +991,16 @@ function isFallbackPhoneRefusal(text) {
 function isFallbackEmailRefusal(text) {
     const value = normalizeFallbackForComparison(text);
     return /\b(no email|d(?:on'?t|o not) share.*email|nao tenho email|nao quero.*email|sem email|prefiro telefone|prefiro numero)\b/.test(value);
+}
+
+function isFallbackGreetingOnly(text) {
+    const value = normalizeFallbackForComparison(text)
+        .replace(/[!?.;,]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!value) return false;
+    return /^(oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite|good morning|good afternoon|good evening|good night)$/.test(value)
+        || /^(oi|ola|hello|hi|hey) (tudo bem|how are you)$/.test(value);
 }
 
 function isValidFallbackBusinessBrief(text) {
@@ -1065,6 +1078,9 @@ function processFallbackUserMessage(userText) {
     const askName = isPt
         ? 'Para avancarmos, diz-me o teu nome e apelido.'
         : 'To move forward, tell me your first and last name.';
+    const greetAndAskName = isPt
+        ? 'Ola! Para avancarmos, diz-me o teu nome e apelido.'
+        : 'Hello! To move forward, tell me your first and last name.';
     const askPhone = isPt
         ? 'Qual e o melhor numero de telefone para contacto? Se preferires, responde "prefiro email".'
         : 'What is the best phone number to reach you? If you prefer, reply with "I prefer email".';
@@ -1097,7 +1113,7 @@ function processFallbackUserMessage(userText) {
 
     let botResponse = '';
     if (stepBefore === stepAfter) {
-        if (stepAfter === 'name') botResponse = askName;
+        if (stepAfter === 'name') botResponse = isFallbackGreetingOnly(userText) ? greetAndAskName : askName;
         else if (stepAfter === 'phone') botResponse = fc.contactChannel === 'email' ? askEmail : askPhone;
         else if (stepAfter === 'email') botResponse = `${requireContact} ${askEmail}`;
         else if (stepAfter === 'business') botResponse = askBusinessRetry;
