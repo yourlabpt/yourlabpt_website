@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Run | Fast-Paced Space Arcade Game</title>
+  <meta name="description" content="Your Run is a fast-paced space arcade game built for instant fun, quick reflexes, and addictive high-score chasing. Available on the App Store." />
+  <style>
+    :root {
+      --bg: #070b1a;
+      --bg-soft: #10182d;
+      --card: rgba(255,255,255,0.08);
+      --text: #f5f7ff;
+      --muted: #b7c0e0;
+      --accent: #6bd6ff;
+      --accent-2: #8f7bff;
+      --accent-3: #ffd45c;
+      --border: rgba(255,255,255,0.14);
+      --shadow: 0 20px 60px rgba(0,0,0,0.35);
+      --radius: 24px;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(143,123,255,0.22), transparent 32%),
+        radial-gradient(circle at top right, rgba(107,214,255,0.20), transparent 30%),
+        radial-gradient(circle at bottom center, rgba(255,212,92,0.10), transparent 30%),
+        linear-gradient(180deg, #060814 0%, #091121 40%, #070b1a 100%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .stars,
+    .stars::before,
+    .stars::after {
+      position: fixed;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background-image:
+        radial-gradient(2px 2px at 12% 22%, rgba(255,255,255,.7), transparent 55%),
+        radial-gradient(1.5px 1.5px at 22% 78%, rgba(255,255,255,.65), transparent 55%),
+        radial-gradient(2px 2px at 78% 18%, rgba(255,255,255,.7), transparent 55%),
+        radial-gradient(1.5px 1.5px at 88% 60%, rgba(255,255,255,.65), transparent 55%),
+        radial-gradient(1.5px 1.5px at 55% 35%, rgba(255,255,255,.55), transparent 55%),
+        radial-gradient(1.5px 1.5px at 42% 86%, rgba(255,255,255,.5), transparent 55%);
+      opacity: .55;
+    }
+
+    .stars::before { transform: scale(1.2); opacity: .35; }
+    .stars::after { transform: scale(1.5); opacity: .18; }
+
+    .container {
+      width: min(calc(100% - 32px), var(--max));
+      margin: 0 auto;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(16px);
+      background: rgba(7, 11, 26, 0.62);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .brand-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      color: #081120;
+      box-shadow: var(--shadow);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .hero {
+      padding: 72px 0 48px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 32px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      color: var(--accent);
+      font-size: 0.92rem;
+      font-weight: 600;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      font-size: clamp(2.6rem, 5vw, 4.8rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    .gradient {
+      background: linear-gradient(135deg, #ffffff 0%, #9be8ff 45%, #b29cff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 640px;
+    }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .btn {
+      padding: 14px 20px;
+      border-radius: 16px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      transition: transform .2s ease, opacity .2s ease, border-color .2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #081120;
+      box-shadow: var(--shadow);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.04);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .phone-wrap {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .glow {
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(107,214,255,0.32), rgba(143,123,255,0.10), transparent 68%);
+      filter: blur(18px);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 0;
+    }
+
+    .phone {
+      position: relative;
+      width: min(340px, 88vw);
+      border-radius: 36px;
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.42);
+      z-index: 1;
+    }
+
+    .screen {
+      border-radius: 28px;
+      aspect-ratio: 9/19.5;
+      padding: 24px 18px;
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,0.12), transparent 30%),
+        linear-gradient(180deg, #101a34 0%, #0c1328 100%);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255,255,255,.7), transparent 1.2%),
+        radial-gradient(circle at 82% 26%, rgba(255,255,255,.6), transparent 1%),
+        radial-gradient(circle at 72% 74%, rgba(255,255,255,.45), transparent 1%),
+        radial-gradient(circle at 28% 84%, rgba(255,255,255,.45), transparent 1%);
+      opacity: .55;
+    }
+
+    .screen-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+      font-size: 0.84rem;
+      color: #dfe7ff;
+    }
+
+    .pill {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 8px 12px;
+      border-radius: 999px;
+      backdrop-filter: blur(10px);
+    }
+
+    .game-title {
+      position: relative;
+      z-index: 1;
+      margin-top: 34px;
+      font-size: 2.2rem;
+      line-height: .95;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+
+    .game-title span {
+      display: block;
+      background: linear-gradient(135deg, #ffd45c, #ffffff, #6bd6ff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .track {
+      position: absolute;
+      inset: auto 18px 26px 18px;
+      height: 200px;
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+
+    .lane-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(180deg, transparent, rgba(255,255,255,0.6), transparent);
+      opacity: 0.45;
+    }
+
+    .lane-1 { left: 33.33%; }
+    .lane-2 { left: 66.66%; }
+
+    .ship, .obstacle {
+      position: absolute;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+    }
+
+    .ship {
+      width: 56px;
+      height: 96px;
+      right: 24px;
+      bottom: 14px;
+      background: linear-gradient(180deg, #7fe3ff 0%, #4fc4ff 60%, #396dff 100%);
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    .ship::before {
+      content: "";
+      position: absolute;
+      inset: 12px 10px auto;
+      height: 22px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.42);
+    }
+
+    .obstacle {
+      width: 46px;
+      height: 68px;
+      left: 38%;
+      top: 18px;
+      background: linear-gradient(180deg, #ff9c7a 0%, #ff6d8d 100%);
+      border: 1px solid rgba(255,255,255,0.24);
+    }
+
+    .rocket-trail {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      right: -20px;
+      top: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,212,92,0.3), transparent 62%);
+      filter: blur(8px);
+    }
+
+    section {
+      padding: 26px 0 32px;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: clamp(1.7rem, 3vw, 2.5rem);
+      letter-spacing: -0.03em;
+    }
+
+    .section-copy {
+      margin: 0 0 24px;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1.06rem;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.97rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    .feature-item {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 20px;
+    }
+
+    .icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, rgba(107,214,255,.22), rgba(143,123,255,.28));
+      border: 1px solid rgba(255,255,255,0.14);
+      font-size: 1.1rem;
+    }
+
+    .feature-item h3 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+    }
+
+    .feature-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .cta-banner {
+      margin-top: 20px;
+      background: linear-gradient(135deg, rgba(107,214,255,.15), rgba(143,123,255,.18));
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .cta-banner p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 620px;
+    }
+
+    .footer {
+      padding: 34px 0 54px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 22px;
+    }
+
+    @media (max-width: 920px) {
+      .hero-grid,
+      .cards,
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .cta-banner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        padding-top: 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="stars"></div>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="#top" class="brand">
+        <div class="brand-badge">YR</div>
+        <div>
+          <div>Your Run</div>
+        </div>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#why-play">Why You'll Love It</a>
+        <a href="#yourlab">YourLab</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div class="container hero-grid">
+      <div>
+        <div class="eyebrow">Available on the App Store</div>
+        <h1><span class="gradient">Your Run</span><br />a fast-paced space arcade rush</h1>
+        <p>
+          Dodge obstacles, react instantly, and chase your highest score in a colorful arcade experience built for quick fun and addictive replayability.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#" aria-label="Download Your Run on the App Store">Download on the App Store</a>
+          <a class="btn btn-secondary" href="#features">Explore the Game</a>
+        </div>
+      </div>
+
+      <div class="phone-wrap">
+        <div class="glow"></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="screen-top">
+              <div class="pill">Best Score: 482</div>
+              <div class="pill">Level Rush</div>
+            </div>
+            <div class="game-title"><span>YOUR</span><span>RUN</span></div>
+            <div class="rocket-trail"></div>
+            <div class="track">
+              <div class="lane-line lane-1"></div>
+              <div class="lane-line lane-2"></div>
+              <div class="obstacle"></div>
+              <div class="ship"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="why-play">
+    <div class="container">
+      <h2 class="section-title">Why players keep coming back</h2>
+      <p class="section-copy">
+        Your Run was designed to be instantly playable, visually exciting, and hard to put down. Every session gives you one more chance to react faster, survive longer, and beat your best run.
+      </p>
+      <div class="cards">
+        <div class="card">
+          <h3>Fast, satisfying gameplay</h3>
+          <p>Jump straight into the action with smooth controls, quick runs, and a gameplay loop that feels rewarding from the very first seconds.</p>
+        </div>
+        <div class="card">
+          <h3>Built for high-score chasing</h3>
+          <p>Every attempt pushes you to improve your timing, sharpen your reflexes, and go further than your last run.</p>
+        </div>
+        <div class="card">
+          <h3>Colorful arcade energy</h3>
+          <p>A vibrant space-inspired look gives the game a bold identity that feels fun, polished, and memorable on the App Store.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="container">
+      <h2 class="section-title">Key features</h2>
+      <p class="section-copy">
+        Simple to understand, exciting to master, and designed for players who love speed, challenge, and that classic "one more try" feeling.
+      </p>
+      <div class="feature-grid">
+        <div class="feature-item">
+          <div class="icon">⚡</div>
+          <div>
+            <h3>Instant action</h3>
+            <p>Start playing quickly with simple controls and a clean gameplay loop that gets you into the run without friction.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="icon">🎯</div>
+          <div>
+            <h3>Reflex-based challenge</h3>
+            <p>Dodge obstacles, react under pressure, and stay focused as the pace builds and every move starts to matter more.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="icon">🚀</div>
+          <div>
+            <h3>Space arcade style</h3>
+            <p>Enjoy a sleek cosmic atmosphere with bright visuals and energetic presentation designed to stand out.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="icon">🏆</div>
+          <div>
+            <h3>High-score motivation</h3>
+            <p>Every run is a fresh opportunity to go further, improve your performance, and beat your personal best.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-banner">
+        <div>
+          <h2 style="margin:0; font-size:1.5rem; letter-spacing:-0.03em;">Ready for your next run?</h2>
+          <p>Download Your Run and experience a fast-paced arcade game built for quick fun, repeat plays, and nonstop score chasing.</p>
+        </div>
+        <a class="btn btn-primary" href="#" aria-label="Get Your Run on the App Store">Get the App</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="yourlab">
+    <div class="container">
+      <h2 class="section-title">Built by YourLab</h2>
+      <p class="section-copy">
+        YourLab turns ideas into real digital products. We build polished apps and launch-ready experiences with speed, clarity, and a strong focus on what people actually enjoy using.
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>© 2026 Your Run by YourLab. All rights reserved.</div>
+      <div><a href="/your-run/privacy-policy">Privacy Policy</a></div>
+    </div>
+  </footer>
+</body>
+</html>
