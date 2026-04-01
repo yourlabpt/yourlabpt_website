@@ -1659,6 +1659,32 @@ app.get('/business-card/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'business-card', 'index.html'));
 });
 
+// Explicit your-blocks routes
+app.get('/your-blocks', (req, res) => {
+    res.redirect('/your-blocks/');
+});
+
+app.get('/your-blocks/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'your-blocks', 'index.html'));
+});
+
+app.get('/your-blocks/privacy-policy', (req, res) => {
+    res.redirect('/your-blocks/privacy-policy/');
+});
+
+app.get('/your-blocks/privacy-policy/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'your-blocks', 'privacy-policy', 'index.html'));
+});
+
+// Explicit your-run routes
+app.get('/your-run', (req, res) => {
+    res.redirect('/your-run/');
+});
+
+app.get('/your-run/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'your-run', 'index.html'));
+});
+
 // Explicit admin routes
 app.get('/admin', (req, res) => {
     res.redirect('/admin/');
