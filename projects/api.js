@@ -1,0 +1,3472 @@
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs').promises;
+const { execFileSync } = require('child_process');
+const multer = require('multer');
+
+const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const sessions = new Map();
+let writeQueue = Promise.resolve();
+
+const DEFAULT_COMMERCIAL_TERMS = {
+  paymentTerms: [
+    '40% na adjudicacao',
+    '40% na entrega funcional das fases de implementacao',
+    '20% na entrega final e validacao'
+  ],
+  validityDays: 30,
+  warrantyDays: 30,
+  exclusions: [],
+  notes: []
+};
+
+const REQUIREMENT_STATUS_FLOW = [
+  'draft',
+  'needs_clarification',
+  'approved',
+  'planned',
+  'in_development',
+  'validated',
+  'delivered',
+  'excluded'
+];
+
+const REQUIREMENT_TYPE_META = {
+  stakeholder: { prefix: 'STK', label: 'Stakeholder' },
+  functional: { prefix: 'FR', label: 'Funcional' },
+  non_functional: { prefix: 'RNF', label: 'Nao Funcional' },
+  test_case: { prefix: 'TC', label: 'Teste / Aceite' },
+  undefined: { prefix: 'UQ', label: 'Nao Definido' },
+  out_of_scope: { prefix: 'OOS', label: 'Fora de Escopo' }
+};
+
+const ARCHITECTURE_MODULES = ['Frontend', 'Backend', 'Database'];
+const DEFAULT_ARCHITECTURE_MODULE = 'Backend';
+const QUESTION_STATUS_FLOW = ['open', 'sent', 'answered', 'resolved', 'blocked'];
+const QUESTION_TARGET_FLOW = ['client', 'partner', 'both'];
+const QUESTION_CATEGORY_FLOW = ['scope', 'functional', 'non_functional', 'integration', 'data', 'business_rule', 'ux', 'security', 'timeline', 'pricing', 'other'];
+
+function registerRequirementsPlatform(app, options) {
+  const {
+    rootDir,
+    platformDir,
+    logoPath,
+    buildScriptPath,
+  } = options;
+
+  const rootBase = rootDir || path.resolve(platformDir, '..');
+  const resolvedLogoPath = logoPath
+    ? (path.isAbsolute(logoPath) ? logoPath : path.join(rootBase, logoPath))
+    : path.join(rootBase, 'Logos YourLab', '1.png');
+  const resolvedBuildScriptPath = buildScriptPath
+    ? (path.isAbsolute(buildScriptPath) ? buildScriptPath : path.join(rootBase, buildScriptPath))
+    : null;
+
+  const dataDir = path.join(platformDir, 'data');
+  const uploadsDir = path.join(platformDir, 'uploads');
+  const storePath = path.join(dataDir, 'store.json');
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 25 * 1024 * 1024,
+    },
+  });
+
+  async function ensureStore() {
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.mkdir(uploadsDir, { recursive: true });
+
+    if (!(await fileExists(storePath))) {
+      const passwordHash = hashPassword(process.env.REQ_PLATFORM_SUPER_ADMIN_PASSWORD || 'change-me-now');
+      const seedStore = {
+        version: 1,
+        meta: {
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        users: [
+          {
+            id: `usr_${crypto.randomUUID()}`,
+            name: 'Super Admin',
+            email: (process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local').toLowerCase(),
+            role: 'super_admin',
+            passwordHash,
+            isActive: true,
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+          },
+        ],
+        projects: [],
+        activity: [],
+      };
+
+      await writeJson(storePath, seedStore);
+      return seedStore;
+    }
+
+    const store = await readJson(storePath);
+    store.version = 1;
+    store.meta = store.meta || { createdAt: nowIso(), updatedAt: nowIso() };
+    store.users = Array.isArray(store.users) ? store.users : [];
+    store.projects = Array.isArray(store.projects) ? store.projects : [];
+    store.activity = Array.isArray(store.activity) ? store.activity : [];
+    store.users = store.users.map((user) => ({
+      ...user,
+      canViewBudget: user.role === 'partner' && user.canViewBudget === true,
+    }));
+
+    const existingSuper = store.users.some((u) => u.role === 'super_admin' && u.isActive !== false);
+    if (!existingSuper) {
+      store.users.push({
+        id: `usr_${crypto.randomUUID()}`,
+        name: 'Super Admin',
+        email: (process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local').toLowerCase(),
+        role: 'super_admin',
+        passwordHash: hashPassword(process.env.REQ_PLATFORM_SUPER_ADMIN_PASSWORD || 'change-me-now'),
+        isActive: true,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      });
+    }
+
+    store.projects = store.projects.map((project) => {
+      const normalized = { ...project };
+      normalized.requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+      normalized.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions || project.questions);
+      normalized.meetingMinutes = normalizeMeetingMinutes(project.meetingMinutes);
+      normalized.minutesPromptHistory = normalizeMinutesPromptHistory(project.minutesPromptHistory);
+      normalized.generated = ensureArray(project.generated).map((entry) => ({
+        ...entry,
+        selectedModules: normalizeArchitectureModuleList(entry?.selectedModules),
+      }));
+      return normalized;
+    });
+
+    await writeJson(storePath, store);
+    return store;
+  }
+
+  async function readStore() {
+    await ensureStore();
+    return readJson(storePath);
+  }
+
+  async function updateStore(mutator) {
+    writeQueue = writeQueue.then(async () => {
+      const store = await readStore();
+      await mutator(store);
+      store.meta.updatedAt = nowIso();
+      await writeJson(storePath, store);
+    });
+
+    return writeQueue;
+  }
+
+  function appendActivity(store, entry) {
+    const record = {
+      id: `act_${crypto.randomUUID()}`,
+      at: nowIso(),
+      ...entry,
+    };
+    store.activity.push(record);
+  }
+
+  function getSessionToken(req) {
+    const auth = String(req.headers.authorization || '').trim();
+    if (auth.startsWith('Bearer ')) {
+      return auth.slice(7).trim();
+    }
+    return String(req.headers['x-session-token'] || '').trim() || null;
+  }
+
+  async function authMiddleware(req, res, next) {
+    try {
+      const token = getSessionToken(req);
+      if (!token) {
+        return res.status(401).json({ message: 'Nao autenticado.' });
+      }
+
+      const session = sessions.get(token);
+      if (!session || session.expiresAt < Date.now()) {
+        sessions.delete(token);
+        return res.status(401).json({ message: 'Sessao expirada. Faça login novamente.' });
+      }
+
+      const store = await readStore();
+      const user = store.users.find((entry) => entry.id === session.userId && entry.isActive !== false);
+      if (!user) {
+        sessions.delete(token);
+        return res.status(401).json({ message: 'Utilizador nao encontrado.' });
+      }
+
+      session.expiresAt = Date.now() + SESSION_TTL_MS;
+      req.auth = { token, user };
+      return next();
+    } catch (error) {
+      return res.status(500).json({ message: `Erro de autenticacao: ${error.message}` });
+    }
+  }
+
+  function requireRole(...roles) {
+    return (req, res, next) => {
+      if (!req.auth?.user) {
+        return res.status(401).json({ message: 'Nao autenticado.' });
+      }
+
+      if (!roles.includes(req.auth.user.role)) {
+        return res.status(403).json({ message: 'Sem permissao para esta operacao.' });
+      }
+
+      return next();
+    };
+  }
+
+  function canAccessProject(user, project) {
+    if (!user || !project) return false;
+    if (user.role === 'super_admin') return true;
+
+    return ensureArray(project.members).some((member) => member.userId === user.id);
+  }
+
+  function canViewBudget(user) {
+    if (!user) return false;
+    if (user.role === 'super_admin') return true;
+    return user.role === 'partner' && user.canViewBudget === true;
+  }
+
+  function sanitizeUser(user) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      canViewBudget: canViewBudget(user),
+      isActive: user.isActive !== false,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  function sanitizePhasesForViewer(phases, viewer) {
+    const normalized = ensureArray(phases);
+    if (canViewBudget(viewer)) return normalized;
+
+    return normalized.map((phase) => {
+      const { cost, totalCost, price, budget, ...phaseRest } = phase || {};
+      return {
+        ...phaseRest,
+        items: ensureArray(phase?.items).map((item) => {
+          const { rate, cost, totalCost, price, budget, ...itemRest } = item || {};
+          return itemRest;
+        }),
+      };
+    });
+  }
+
+  function sanitizeProject(project, viewer) {
+    const includeBudget = canViewBudget(viewer);
+    const sanitized = {
+      id: project.id,
+      name: project.name,
+      clientName: project.clientName,
+      description: project.description || '',
+      status: project.status || 'active',
+      proposalCode: project.proposalCode || '',
+      subtitle: project.subtitle || 'Proposta Comercial e Tecnica',
+      language: project.language || 'pt-PT',
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      members: ensureArray(project.members),
+      summary: project.summary || defaultSummary(),
+      assumptions: ensureArray(project.assumptions),
+      risks: ensureArray(project.risks),
+      integrations: ensureArray(project.integrations),
+      technicalApproach: project.technicalApproach || defaultTechnicalApproach(),
+      requirements: ensureArray(project.requirements).map((entry) => {
+        const normalized = normalizeRequirementRecord(entry);
+        const smartValidationErrors = getSmartRequirementValidationErrors(normalized);
+        return {
+          ...normalized,
+          smartValidationErrors,
+          smartIsValid: smartValidationErrors.length === 0,
+        };
+      }),
+      clarificationQuestions: normalizeClarificationQuestions(project.clarificationQuestions || project.questions),
+      phases: sanitizePhasesForViewer(project.phases, viewer),
+      sourceText: project.sourceText || '',
+      aiPrompt: project.aiPrompt || '',
+      aiRawJson: project.aiRawJson || '',
+      documents: ensureArray(project.documents).map((doc) => ({
+        id: doc.id,
+        originalName: doc.originalName,
+        storedName: doc.storedName,
+        uploadedAt: doc.uploadedAt,
+        uploadedBy: doc.uploadedBy,
+        contentType: doc.contentType,
+        size: doc.size,
+        hasExtractedText: Boolean(doc.extractedText),
+      })),
+      generated: ensureArray(project.generated).map((entry) => ({
+        ...entry,
+        selectedModules: normalizeArchitectureModuleList(entry?.selectedModules),
+      })),
+      meetingMinutes: normalizeMeetingMinutes(project.meetingMinutes),
+      minutesPromptHistory: normalizeMinutesPromptHistory(project.minutesPromptHistory),
+    };
+
+    if (includeBudget) {
+      sanitized.currency = project.currency || 'EUR';
+      sanitized.hourlyRate = numberOr(project.hourlyRate, 30);
+      sanitized.targetBudgetMin = numberOr(project.targetBudgetMin, 5000);
+      sanitized.targetBudgetMax = numberOr(project.targetBudgetMax, 6000);
+      sanitized.commercialTerms = project.commercialTerms || { ...DEFAULT_COMMERCIAL_TERMS };
+    }
+
+    return sanitized;
+  }
+
+  async function loadProjectForUser(req, res, next) {
+    const projectId = req.params.projectId;
+    const store = await readStore();
+    const project = store.projects.find((entry) => entry.id === projectId);
+
+    if (!project) {
+      return res.status(404).json({ message: 'Projeto nao encontrado.' });
+    }
+
+    if (!canAccessProject(req.auth.user, project)) {
+      return res.status(403).json({ message: 'Sem permissao para este projeto.' });
+    }
+
+    req.loadedStore = store;
+    req.loadedProject = project;
+    return next();
+  }
+
+  app.get('/projects', (req, res) => {
+    res.sendFile(path.join(platformDir, 'public', 'index.html'));
+  });
+
+  app.use('/projects/static', expressStaticSafe(platformDir));
+
+  app.get('/api/projects/config', async (req, res) => {
+    await ensureStore();
+    return res.json({
+      statusFlow: REQUIREMENT_STATUS_FLOW,
+      types: REQUIREMENT_TYPE_META,
+      architectureModules: ARCHITECTURE_MODULES,
+      questionStatusFlow: QUESTION_STATUS_FLOW,
+      questionTargetFlow: QUESTION_TARGET_FLOW,
+      questionCategoryFlow: QUESTION_CATEGORY_FLOW,
+      defaultAdminEmail: process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local',
+      note: 'Se for primeiro acesso, use a password definida em REQ_PLATFORM_SUPER_ADMIN_PASSWORD ou change-me-now.',
+    });
+  });
+
+  app.post('/api/projects/auth/login', async (req, res) => {
+    try {
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const password = String(req.body?.password || '');
+
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email e password sao obrigatorios.' });
+      }
+
+      const store = await readStore();
+      const user = store.users.find((entry) => entry.email === email && entry.isActive !== false);
+
+      if (!user || !verifyPassword(user.passwordHash, password)) {
+        return res.status(401).json({ message: 'Credenciais invalidas.' });
+      }
+
+      const token = `sess_${crypto.randomUUID()}`;
+      sessions.set(token, {
+        userId: user.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      });
+
+      return res.json({
+        token,
+        user: sanitizeUser(user),
+      });
+    } catch (error) {
+      return res.status(500).json({ message: `Erro no login: ${error.message}` });
+    }
+  });
+
+  app.post('/api/projects/auth/logout', authMiddleware, async (req, res) => {
+    sessions.delete(req.auth.token);
+    return res.json({ message: 'Sessao terminada.' });
+  });
+
+  app.get('/api/projects/auth/me', authMiddleware, async (req, res) => {
+    return res.json({
+      user: sanitizeUser(req.auth.user),
+    });
+  });
+
+  app.get('/api/projects/users', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    const store = await readStore();
+    return res.json({ users: store.users.map(sanitizeUser) });
+  });
+
+  app.post('/api/projects/users', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const name = String(req.body?.name || '').trim();
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const role = String(req.body?.role || '').trim();
+      const password = String(req.body?.password || '').trim();
+      const canViewBudgetFlag = req.body?.canViewBudget === true;
+
+      if (!name || !email || !role || !password) {
+        return res.status(400).json({ message: 'name, email, role e password sao obrigatorios.' });
+      }
+
+      if (!['client', 'partner'].includes(role)) {
+        return res.status(400).json({ message: 'role deve ser client ou partner.' });
+      }
+
+      await updateStore(async (store) => {
+        const exists = store.users.some((user) => user.email === email);
+        if (exists) {
+          throw new Error('Ja existe utilizador com este email.');
+        }
+
+        const created = {
+          id: `usr_${crypto.randomUUID()}`,
+          name,
+          email,
+          role,
+          canViewBudget: role === 'partner' && canViewBudgetFlag,
+          passwordHash: hashPassword(password),
+          isActive: true,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+
+        store.users.push(created);
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          action: 'user_created',
+          details: { userId: created.id, email: created.email, role: created.role, canViewBudget: created.canViewBudget },
+        });
+      });
+
+      const updated = await readStore();
+      return res.json({ users: updated.users.map(sanitizeUser) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/users/:userId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const body = req.body || {};
+
+      await updateStore(async (store) => {
+        const user = store.users.find((entry) => entry.id === userId);
+        if (!user) {
+          throw new Error('Utilizador nao encontrado.');
+        }
+
+        if (typeof body.name === 'string' && body.name.trim()) {
+          user.name = body.name.trim();
+        }
+
+        if (typeof body.password === 'string' && body.password.trim()) {
+          user.passwordHash = hashPassword(body.password.trim());
+        }
+
+        if (typeof body.isActive === 'boolean') {
+          user.isActive = body.isActive;
+        }
+
+        if (typeof body.canViewBudget === 'boolean') {
+          user.canViewBudget = user.role === 'partner' && body.canViewBudget;
+        }
+
+        user.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          action: 'user_updated',
+          details: { userId: user.id },
+        });
+      });
+
+      const updated = await readStore();
+      return res.json({ users: updated.users.map(sanitizeUser) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/projects', authMiddleware, async (req, res) => {
+    const store = await readStore();
+    const visible = store.projects.filter((project) => canAccessProject(req.auth.user, project));
+    return res.json({ projects: visible.map((project) => sanitizeProject(project, req.auth.user)) });
+  });
+
+  app.post('/api/projects/projects', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const name = String(body.name || '').trim();
+      const clientName = String(body.clientName || '').trim();
+
+      if (!name || !clientName) {
+        return res.status(400).json({ message: 'name e clientName sao obrigatorios.' });
+      }
+
+      const newProject = {
+        id: `prj_${crypto.randomUUID()}`,
+        name,
+        clientName,
+        description: String(body.description || ''),
+        status: 'active',
+        proposalCode: String(body.proposalCode || ''),
+        subtitle: String(body.subtitle || 'Proposta Comercial e Tecnica'),
+        currency: String(body.currency || 'EUR'),
+        hourlyRate: numberOr(body.hourlyRate, 30),
+        language: String(body.language || 'pt-PT'),
+        targetBudgetMin: numberOr(body.targetBudgetMin, 5000),
+        targetBudgetMax: numberOr(body.targetBudgetMax, 6000),
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        createdBy: req.auth.user.id,
+        members: [],
+        summary: defaultSummary(),
+        assumptions: [],
+        risks: [],
+        integrations: [],
+        technicalApproach: defaultTechnicalApproach(),
+        commercialTerms: { ...DEFAULT_COMMERCIAL_TERMS },
+        requirements: [],
+        clarificationQuestions: [],
+        phases: defaultPhases(numberOr(body.hourlyRate, 30)),
+        sourceText: '',
+        aiPrompt: '',
+        aiRawJson: '',
+        documents: [],
+        generated: [],
+        meetingMinutes: [],
+        minutesPromptHistory: [],
+      };
+
+      await updateStore(async (store) => {
+        store.projects.push(newProject);
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: newProject.id,
+          action: 'project_created',
+          details: { name: newProject.name, clientName: newProject.clientName },
+        });
+      });
+
+      const store = await readStore();
+      const created = store.projects.find((entry) => entry.id === newProject.id);
+      return res.json({ project: sanitizeProject(created, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/projects/:projectId', authMiddleware, loadProjectForUser, async (req, res) => {
+    return res.json({ project: sanitizeProject(req.loadedProject, req.auth.user) });
+  });
+
+  app.patch('/api/projects/projects/:projectId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const patch = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const writableFields = [
+          'name',
+          'clientName',
+          'description',
+          'status',
+          'proposalCode',
+          'subtitle',
+          'currency',
+          'hourlyRate',
+          'language',
+          'targetBudgetMin',
+          'targetBudgetMax',
+          'summary',
+          'assumptions',
+          'risks',
+          'integrations',
+          'technicalApproach',
+          'commercialTerms',
+          'phases',
+          'sourceText',
+        ];
+
+        for (const field of writableFields) {
+          if (patch[field] !== undefined) {
+            project[field] = patch[field];
+          }
+        }
+
+        project.hourlyRate = numberOr(project.hourlyRate, 30);
+        project.targetBudgetMin = numberOr(project.targetBudgetMin, 5000);
+        project.targetBudgetMax = numberOr(project.targetBudgetMax, 6000);
+        project.summary = normalizeSummary(project.summary);
+        project.assumptions = normalizeStringArray(project.assumptions);
+        project.risks = normalizeStringArray(project.risks);
+        project.integrations = normalizeIntegrations(project.integrations);
+        project.technicalApproach = normalizeTechnicalApproach(project.technicalApproach);
+        project.commercialTerms = normalizeCommercialTerms(project.commercialTerms);
+        project.phases = normalizePhases(project.phases, project.hourlyRate);
+
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_updated',
+          details: { fields: Object.keys(patch) },
+        });
+      });
+
+      const store = await readStore();
+      const updated = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(updated, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/members', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const userId = String(req.body?.userId || '').trim();
+      const role = String(req.body?.role || 'client').trim();
+
+      if (!userId) {
+        return res.status(400).json({ message: 'userId e obrigatorio.' });
+      }
+
+      if (!['client', 'partner'].includes(role)) {
+        return res.status(400).json({ message: 'role deve ser client ou partner.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const user = store.users.find((entry) => entry.id === userId && entry.isActive !== false);
+        if (!user) {
+          throw new Error('Utilizador nao encontrado.');
+        }
+
+        project.members = ensureArray(project.members).filter((member) => member.userId !== userId);
+        project.members.push({ userId, role, assignedAt: nowIso() });
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_member_assigned',
+          details: { userId, role },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/projects/projects/:projectId/members/:userId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const userId = req.params.userId;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.members = ensureArray(project.members).filter((member) => member.userId !== userId);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_member_removed',
+          details: { userId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/source-text', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const sourceText = String(req.body?.sourceText || '');
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.sourceText = sourceText;
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_source_text_updated',
+          details: { length: sourceText.length },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/meeting-minutes', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const rawText = typeof req.body?.rawText === 'string' ? req.body.rawText : '';
+      const title = String(req.body?.title || '').trim();
+      const meetingDate = String(req.body?.meetingDate || '').trim();
+
+      if (!rawText.trim()) {
+        return res.status(400).json({ message: 'A ata da reunião (raw) não pode estar vazia.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.meetingMinutes = normalizeMeetingMinutes(project.meetingMinutes);
+        const record = normalizeMeetingMinuteRecord({
+          id: `min_${crypto.randomUUID()}`,
+          title: title || `Reunião com cliente ${meetingDate || nowIso().slice(0, 10)}`,
+          meetingDate,
+          rawText,
+          createdAt: nowIso(),
+          createdBy: req.auth.user.id,
+        });
+        project.meetingMinutes.unshift(record);
+        project.meetingMinutes = project.meetingMinutes.slice(0, 300);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'meeting_minutes_added',
+          details: { minuteId: record.id, meetingDate: record.meetingDate, length: record.rawText.length },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/build-minutes-prompt', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const objective = String(req.body?.objective || '').trim() || 'requirements_update';
+      const extraInstructions = String(req.body?.extraInstructions || '').trim();
+      const requestedMinuteIds = normalizeStringArray(req.body?.minuteIds);
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Projeto nao encontrado.' });
+      }
+
+      const minutes = normalizeMeetingMinutes(project.meetingMinutes);
+      if (!minutes.length) {
+        return res.status(400).json({ message: 'Sem atas disponíveis para gerar prompt.' });
+      }
+
+      const selectedMinutes = requestedMinuteIds.length
+        ? minutes.filter((entry) => requestedMinuteIds.includes(entry.id))
+        : minutes.slice(0, 1);
+
+      if (!selectedMinutes.length) {
+        return res.status(400).json({ message: 'As atas selecionadas não foram encontradas.' });
+      }
+
+      const prompt = buildMinutesUpdatePrompt(project, selectedMinutes, objective, extraInstructions);
+      const historyItem = normalizeMinutesPromptRecord({
+        id: `mpr_${crypto.randomUUID()}`,
+        objective,
+        minuteIds: selectedMinutes.map((entry) => entry.id),
+        prompt,
+        createdAt: nowIso(),
+        createdBy: req.auth.user.id,
+      });
+
+      await updateStore(async (mutableStore) => {
+        const mutableProject = mutableStore.projects.find((entry) => entry.id === projectId);
+        if (!mutableProject) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        mutableProject.minutesPromptHistory = normalizeMinutesPromptHistory(mutableProject.minutesPromptHistory);
+        mutableProject.minutesPromptHistory.unshift(historyItem);
+        mutableProject.minutesPromptHistory = mutableProject.minutesPromptHistory.slice(0, 200);
+        mutableProject.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'minutes_prompt_generated',
+          details: { objective, minuteIds: historyItem.minuteIds },
+        });
+      });
+
+      const updatedStore = await readStore();
+      const updatedProject = updatedStore.projects.find((entry) => entry.id === projectId);
+      return res.json({
+        prompt,
+        selectedMinutes: selectedMinutes.map((entry) => ({
+          id: entry.id,
+          title: entry.title,
+          meetingDate: entry.meetingDate,
+          createdAt: entry.createdAt,
+        })),
+        project: sanitizeProject(updatedProject, req.auth.user),
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/documents/upload', authMiddleware, loadProjectForUser, upload.single('document'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'Nenhum documento enviado.' });
+      }
+
+      const projectId = req.params.projectId;
+      const cleanName = sanitizeFileName(req.file.originalname) || `doc_${Date.now()}.txt`;
+      const projectFolder = path.join(uploadsDir, projectId);
+      await fs.mkdir(projectFolder, { recursive: true });
+
+      const storedName = `${Date.now()}_${cleanName}`;
+      const absolutePath = path.join(projectFolder, storedName);
+      await fs.writeFile(absolutePath, req.file.buffer);
+
+      const extractedText = tryExtractText(req.file.originalname, req.file.buffer);
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const document = {
+          id: `doc_${crypto.randomUUID()}`,
+          originalName: req.file.originalname,
+          storedName,
+          absolutePath,
+          uploadedAt: nowIso(),
+          uploadedBy: req.auth.user.id,
+          contentType: req.file.mimetype,
+          size: req.file.size,
+          extractedText: extractedText || '',
+        };
+
+        project.documents = ensureArray(project.documents);
+        project.documents.push(document);
+
+        if (extractedText && !project.sourceText) {
+          project.sourceText = extractedText;
+        }
+
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_document_uploaded',
+          details: {
+            documentId: document.id,
+            originalName: document.originalName,
+            extractedTextLength: document.extractedText.length,
+          },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({
+        project: sanitizeProject(project, req.auth.user),
+        note: extractedText
+          ? 'Documento carregado com texto extraido.'
+          : 'Documento carregado. Sem extracao automatica de texto para este formato.',
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/projects/:projectId/documents', authMiddleware, loadProjectForUser, async (req, res) => {
+    const docs = ensureArray(req.loadedProject.documents).map((doc) => ({
+      id: doc.id,
+      originalName: doc.originalName,
+      uploadedAt: doc.uploadedAt,
+      uploadedBy: doc.uploadedBy,
+      contentType: doc.contentType,
+      size: doc.size,
+      hasExtractedText: Boolean(doc.extractedText),
+      downloadUrl: `/api/projects/projects/${req.loadedProject.id}/documents/${doc.id}/download`,
+    }));
+
+    return res.json({ documents: docs });
+  });
+
+  app.get('/api/projects/projects/:projectId/documents/:documentId/download', authMiddleware, loadProjectForUser, async (req, res) => {
+    const document = ensureArray(req.loadedProject.documents).find((entry) => entry.id === req.params.documentId);
+    if (!document) {
+      return res.status(404).json({ message: 'Documento nao encontrado.' });
+    }
+
+    return res.download(document.absolutePath, document.originalName);
+  });
+
+  app.post('/api/projects/projects/:projectId/build-prompt', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const extraInstructions = String(req.body?.extraInstructions || '').trim();
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+
+      if (!project) {
+        return res.status(404).json({ message: 'Projeto nao encontrado.' });
+      }
+
+      const prompt = buildStructuredPrompt(project, extraInstructions);
+
+      await updateStore(async (mutableStore) => {
+        const mutableProject = mutableStore.projects.find((entry) => entry.id === projectId);
+        mutableProject.aiPrompt = prompt;
+        mutableProject.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'ai_prompt_generated',
+          details: { extraInstructionsLength: extraInstructions.length },
+        });
+      });
+
+      return res.json({ prompt });
+    } catch (error) {
+      return res.status(500).json({ message: `Erro ao gerar prompt: ${error.message}` });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/import-ai', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const raw = String(req.body?.aiJson || '').trim();
+
+      if (!raw) {
+        return res.status(400).json({ message: 'aiJson e obrigatorio.' });
+      }
+
+      const parsed = parseJsonLenient(extractJsonBlock(raw));
+      if (!parsed || typeof parsed !== 'object') {
+        return res.status(400).json({ message: 'JSON AI invalido.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const imported = normalizeAiPayloadIntoProject(project, parsed, req.auth.user.id);
+        project.aiRawJson = JSON.stringify(parsed, null, 2);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'ai_requirements_imported',
+          details: imported,
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/import-requirement-changes', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const raw = String(req.body?.changeJson || '').trim();
+
+      if (!raw) {
+        return res.status(400).json({ message: 'changeJson e obrigatorio.' });
+      }
+
+      const parsed = parseJsonLenient(extractJsonBlock(raw));
+      if (!parsed || typeof parsed !== 'object') {
+        return res.status(400).json({ message: 'JSON de alteracoes invalido.' });
+      }
+
+      let result = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        result = applyRequirementChangeSet(project, parsed, req.auth.user.id);
+        project.aiRawJson = JSON.stringify(parsed, null, 2);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_change_set_imported',
+          details: result,
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user), result });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/requirements', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const type = normalizeRequirementType(req.body?.type);
+      if (!type) {
+        return res.status(400).json({ message: 'type invalido.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.requirements = ensureArray(project.requirements);
+        const reqId = generateRequirementId(project.requirements, type);
+        const requirement = normalizeRequirementRecord({
+          ...req.body,
+          id: reqId,
+          type,
+          title: String(req.body?.title || '').trim() || `${REQUIREMENT_TYPE_META[type].label} sem titulo`,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          updatedBy: req.auth.user.id,
+        });
+
+        const smartErrors = getSmartRequirementValidationErrors(requirement);
+        if (requiresSmartValidity(requirement.status) && smartErrors.length) {
+          throw new Error(`Requisito funcional incompleto para status ${requirement.status}. Campos em falta: ${smartErrors.join(', ')}`);
+        }
+
+        project.requirements.push(requirement);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_created',
+          details: { requirementId: requirement.id, type: requirement.type },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/requirements/:requirementId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const requirementId = req.params.requirementId;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.requirements = ensureArray(project.requirements);
+        const requirement = project.requirements.find((entry) => entry.id === requirementId);
+        if (!requirement) {
+          throw new Error('Requisito nao encontrado.');
+        }
+
+        const patch = req.body || {};
+        const normalized = normalizeRequirementRecord({
+          ...requirement,
+          ...patch,
+          id: requirement.id,
+          type: requirement.type,
+          updatedAt: nowIso(),
+          updatedBy: req.auth.user.id,
+        });
+
+        const smartErrors = getSmartRequirementValidationErrors(normalized);
+        if (requiresSmartValidity(normalized.status) && smartErrors.length) {
+          throw new Error(`Requisito funcional incompleto para status ${normalized.status}. Campos em falta: ${smartErrors.join(', ')}`);
+        }
+
+        Object.assign(requirement, normalized);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_updated',
+          details: { requirementId: requirement.id },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/projects/projects/:projectId/requirements/:requirementId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const requirementId = req.params.requirementId;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const before = ensureArray(project.requirements).length;
+        project.requirements = ensureArray(project.requirements).filter((entry) => entry.id !== requirementId);
+
+        if (project.requirements.length === before) {
+          throw new Error('Requisito nao encontrado.');
+        }
+
+        project.requirements = project.requirements.map((entry) => {
+          const normalized = normalizeRequirementRecord(entry);
+          normalized.relatedRequirementIds = normalizeRequirementIdList(normalized.relatedRequirementIds).filter((id) => id !== requirementId);
+          if (normalized.linkedFunctionalRequirement === requirementId) {
+            normalized.linkedFunctionalRequirement = '';
+          }
+          if (normalized.stakeholderRequirementLink === requirementId) {
+            normalized.stakeholderRequirementLink = '';
+          }
+          normalized.updatedAt = nowIso();
+          normalized.updatedBy = req.auth.user.id;
+          return normalized;
+        });
+
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_deleted',
+          details: { requirementId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/questions', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const questionText = String(req.body?.question || '').trim();
+
+      if (!questionText) {
+        return res.status(400).json({ message: 'A pergunta não pode estar vazia.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions);
+        const record = normalizeClarificationQuestionRecord({
+          id: `qst_${crypto.randomUUID()}`,
+          question: questionText,
+          context: req.body?.context,
+          targetRole: req.body?.targetRole,
+          category: req.body?.category,
+          priority: req.body?.priority,
+          status: req.body?.status,
+          dueDate: req.body?.dueDate,
+          linkedRequirementIds: req.body?.linkedRequirementIds,
+          answer: req.body?.answer,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          createdBy: req.auth.user.id,
+          updatedBy: req.auth.user.id,
+        });
+
+        project.clarificationQuestions.unshift(record);
+        project.clarificationQuestions = project.clarificationQuestions.slice(0, 600);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'clarification_question_created',
+          details: { questionId: record.id, targetRole: record.targetRole, status: record.status },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/questions/:questionId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const questionId = req.params.questionId;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions);
+        const existing = project.clarificationQuestions.find((entry) => entry.id === questionId);
+        if (!existing) {
+          throw new Error('Pergunta nao encontrada.');
+        }
+
+        const patch = req.body || {};
+        const merged = normalizeClarificationQuestionRecord({
+          ...existing,
+          ...patch,
+          id: existing.id,
+          createdAt: existing.createdAt,
+          createdBy: existing.createdBy,
+          updatedAt: nowIso(),
+          updatedBy: req.auth.user.id,
+        });
+
+        if (!merged.question.trim()) {
+          throw new Error('A pergunta não pode estar vazia.');
+        }
+
+        Object.assign(existing, merged);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'clarification_question_updated',
+          details: { questionId: existing.id, status: existing.status },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/projects/projects/:projectId/questions/:questionId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const questionId = req.params.questionId;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const before = ensureArray(project.clarificationQuestions).length;
+        project.clarificationQuestions = ensureArray(project.clarificationQuestions).filter((entry) => entry.id !== questionId);
+        if (project.clarificationQuestions.length === before) {
+          throw new Error('Pergunta nao encontrada.');
+        }
+
+        project.updatedAt = nowIso();
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'clarification_question_deleted',
+          details: { questionId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/projects/:projectId/activity', authMiddleware, loadProjectForUser, async (req, res) => {
+    const activity = ensureArray(req.loadedStore.activity)
+      .filter((entry) => entry.projectId === req.loadedProject.id)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 300);
+
+    return res.json({ activity });
+  });
+
+  app.post('/api/projects/projects/:projectId/generate', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const mode = req.body?.mode === 'technical' ? 'technical' : 'commercial';
+      const dryRun = Boolean(req.body?.dryRun);
+      const requestedModulesRaw = normalizeStringArray(req.body?.selectedModules);
+      const invalidModules = requestedModulesRaw.filter((entry) => {
+        const trimmed = textOr(entry);
+        const normalized = normalizeArchitectureModuleToken(trimmed)
+          || (ARCHITECTURE_MODULES.includes(trimmed) ? trimmed : null);
+        return !normalized;
+      });
+      if (invalidModules.length) {
+        return res.status(400).json({ message: `Módulo(s) inválido(s): ${invalidModules.join(', ')}` });
+      }
+      const selectedModules = normalizeArchitectureModuleList(requestedModulesRaw);
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Projeto nao encontrado.' });
+      }
+
+      const proposal = buildProposalFromProject(project, mode, { selectedModules });
+      const folderHint = sanitizeFileName(project.name) || 'project';
+      const runFolder = path.join(
+        rootBase,
+        'generated_proposals',
+        `${new Date().toISOString().slice(0, 10)}_${Date.now()}_rp_${folderHint}`
+      );
+      const outputDir = path.join(runFolder, 'dist');
+      const proposalInput = path.join(runFolder, 'proposal_input.json');
+
+      await fs.mkdir(outputDir, { recursive: true });
+      await fs.writeFile(proposalInput, `${JSON.stringify(proposal, null, 2)}\n`, 'utf-8');
+
+      let execLog = '';
+      const canUseExternalBuilder = Boolean(resolvedBuildScriptPath) && await fileExists(resolvedBuildScriptPath);
+
+      if (canUseExternalBuilder) {
+        const args = [
+          resolvedBuildScriptPath,
+          '--input', proposalInput,
+          '--output-dir', outputDir,
+          '--logo', resolvedLogoPath,
+        ];
+        if (dryRun) {
+          args.push('--dry-run');
+        }
+
+        execLog = execFileSync('node', args, {
+          cwd: rootBase,
+          timeout: 300000,
+          maxBuffer: 100 * 1024 * 1024,
+          encoding: 'utf-8',
+        });
+      } else {
+        execLog = await generateProposalBundleFallback({
+          proposal,
+          outputDir,
+          mode,
+          selectedModules,
+        });
+      }
+
+      const fileEntries = await fs.readdir(outputDir);
+      const links = buildGeneratedLinksFromDir(rootBase, outputDir, fileEntries);
+
+      await updateStore(async (mutableStore) => {
+        const mutableProject = mutableStore.projects.find((entry) => entry.id === projectId);
+        if (!mutableProject) {
+          return;
+        }
+
+        mutableProject.generated = ensureArray(mutableProject.generated);
+        mutableProject.generated.unshift({
+          id: `gen_${crypto.randomUUID()}`,
+          mode,
+          dryRun,
+          selectedModules,
+          generatedAt: nowIso(),
+          folder: toPublicPath(rootBase, runFolder),
+          proposalInput: toPublicPath(rootBase, proposalInput),
+          outputs: links,
+        });
+        mutableProject.generated = mutableProject.generated.slice(0, 50);
+        mutableProject.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'proposal_bundle_generated',
+          details: { mode, dryRun, selectedModules, folder: toPublicPath(rootBase, runFolder) },
+        });
+      });
+
+      return res.json({
+        message: 'Bundle gerado com sucesso.',
+        mode,
+        dryRun,
+        selectedModules,
+        folder: toPublicPath(rootBase, runFolder),
+        proposalInput: toPublicPath(rootBase, proposalInput),
+        outputs: links,
+        log: execLog,
+        generator: canUseExternalBuilder ? 'external' : 'internal-fallback',
+      });
+    } catch (error) {
+      return res.status(500).json({ message: `Erro ao gerar bundle: ${error.message}` });
+    }
+  });
+
+  ensureStore().catch((error) => {
+    console.error('Erro ao inicializar Requirements Platform:', error.message);
+  });
+}
+
+function normalizeAiPayloadIntoProject(project, payload, actorUserId) {
+  const projectPayload = payload?.project && typeof payload.project === 'object' ? payload.project : {};
+  const nextName = textOr(projectPayload.name || payload.name);
+  const nextClientName = textOr(projectPayload.clientName || projectPayload.client || payload.clientName || payload.client);
+  const nextDescription = textOr(projectPayload.description || payload.description);
+  const nextStatus = textOr(projectPayload.status || payload.status);
+  const nextProposalCode = textOr(projectPayload.proposalCode || payload.proposalCode);
+  const nextSubtitle = textOr(projectPayload.subtitle || payload.subtitle);
+  const nextCurrency = textOr(projectPayload.currency || payload.currency);
+  const nextLanguage = textOr(projectPayload.language || payload.language);
+  const nextHourlyRateRaw = projectPayload.hourlyRate !== undefined ? projectPayload.hourlyRate : payload.hourlyRate;
+  const nextBudgetMinRaw = projectPayload.targetBudgetMin !== undefined ? projectPayload.targetBudgetMin : payload.targetBudgetMin;
+  const nextBudgetMaxRaw = projectPayload.targetBudgetMax !== undefined ? projectPayload.targetBudgetMax : payload.targetBudgetMax;
+
+  if (nextName) project.name = nextName;
+  if (nextClientName) project.clientName = nextClientName;
+  if (nextDescription) project.description = nextDescription;
+  if (nextStatus) project.status = nextStatus;
+  if (nextProposalCode) project.proposalCode = nextProposalCode;
+  if (nextSubtitle) project.subtitle = nextSubtitle;
+  if (nextCurrency) project.currency = nextCurrency;
+  if (nextLanguage) project.language = nextLanguage;
+  if (nextHourlyRateRaw !== undefined) project.hourlyRate = numberOr(nextHourlyRateRaw, numberOr(project.hourlyRate, 30));
+  if (nextBudgetMinRaw !== undefined) project.targetBudgetMin = numberOr(nextBudgetMinRaw, numberOr(project.targetBudgetMin, 5000));
+  if (nextBudgetMaxRaw !== undefined) project.targetBudgetMax = numberOr(nextBudgetMaxRaw, numberOr(project.targetBudgetMax, 6000));
+
+  const stakeholderRaw = payload.stakeholderRequirements || payload.stakeholders || [];
+  const functionalRaw = payload.functionalRequirements || payload?.requirements?.functional || [];
+  const nonFunctionalRaw = payload.nonFunctionalRequirements || payload?.requirements?.nonFunctional || [];
+  const testCasesRaw = payload.testCases || payload.acceptanceTestCases || payload.validationTestCases || [];
+  const undefinedRaw = payload.undefinedItems || payload.openQuestions || [];
+  const outOfScopeRaw = payload.outOfScope || payload.notIncluded || [];
+
+  const existing = ensureArray(project.requirements);
+
+  const stakeholder = normalizeImportedRequirements(stakeholderRaw, 'stakeholder', existing);
+  const functional = normalizeImportedRequirements(functionalRaw, 'functional', existing.concat(stakeholder));
+  const nonFunctional = normalizeImportedRequirements(nonFunctionalRaw, 'non_functional', existing.concat(stakeholder, functional));
+  const testCases = normalizeImportedRequirements(testCasesRaw, 'test_case', existing.concat(stakeholder, functional, nonFunctional));
+  const undefinedItems = normalizeImportedRequirements(undefinedRaw, 'undefined', existing.concat(stakeholder, functional, nonFunctional, testCases));
+  const outOfScope = normalizeImportedRequirements(outOfScopeRaw, 'out_of_scope', existing.concat(stakeholder, functional, nonFunctional, testCases, undefinedItems));
+
+  const newReqs = [...stakeholder, ...functional, ...nonFunctional, ...testCases, ...undefinedItems, ...outOfScope].map((req) => ({
+    ...req,
+    createdAt: req.createdAt || nowIso(),
+    updatedAt: nowIso(),
+    updatedBy: actorUserId,
+  }));
+
+  // Append new AI-generated requirements to the existing ones.
+  // Each type is numbered from max(existing)+1 so IDs remain sequential.
+  // Existing requirements from types not present in the AI response are kept intact.
+  project.requirements = [...existing, ...newReqs];
+
+  if (payload.summary) {
+    project.summary = normalizeSummary(payload.summary);
+  }
+
+  if (Array.isArray(payload.assumptions)) {
+    project.assumptions = normalizeStringArray(payload.assumptions);
+  }
+
+  if (Array.isArray(payload.risks)) {
+    project.risks = normalizeStringArray(payload.risks);
+  }
+
+  if (Array.isArray(payload.integrations)) {
+    project.integrations = normalizeIntegrations(payload.integrations);
+  }
+
+  if (payload.technicalApproach) {
+    project.technicalApproach = normalizeTechnicalApproach(payload.technicalApproach);
+  }
+
+  if (payload.commercialTerms) {
+    project.commercialTerms = normalizeCommercialTerms(payload.commercialTerms);
+  }
+
+  if (Array.isArray(payload.phases) && payload.phases.length) {
+    project.phases = normalizePhases(payload.phases, numberOr(project.hourlyRate, 30));
+  }
+
+  return {
+    stakeholder: stakeholder.length,
+    functional: functional.length,
+    nonFunctional: nonFunctional.length,
+    testCases: testCases.length,
+    undefinedItems: undefinedItems.length,
+    outOfScope: outOfScope.length,
+  };
+}
+
+function applyRequirementChangeSet(project, payload, actorUserId) {
+  project.requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+  project.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions);
+
+  const result = {
+    added: 0,
+    updated: 0,
+    excluded: 0,
+    clarificationsCreated: 0,
+    projectUpdated: false,
+  };
+
+  const updates = payload.projectUpdates && typeof payload.projectUpdates === 'object' ? payload.projectUpdates : {};
+  if (updates.description !== undefined) {
+    project.description = textOr(updates.description);
+    result.projectUpdated = true;
+  }
+
+  if (updates.summary && typeof updates.summary === 'object') {
+    const summary = normalizeSummary(project.summary);
+    if (updates.summary.businessContext !== undefined) summary.businessContext = textOr(updates.summary.businessContext);
+    if (updates.summary.scopeInPlainLanguage !== undefined) summary.scopeInPlainLanguage = textOr(updates.summary.scopeInPlainLanguage);
+    if (updates.summary.solutionOverview !== undefined) summary.solutionOverview = textOr(updates.summary.solutionOverview);
+    summary.goals = mergeStringList(summary.goals, updates.summary.goalsAdd, updates.summary.goalsRemove);
+    project.summary = normalizeSummary(summary);
+    result.projectUpdated = true;
+  }
+
+  project.risks = mergeStringList(project.risks, updates.risksAdd, updates.risksRemove);
+  project.assumptions = mergeStringList(project.assumptions, updates.assumptionsAdd, updates.assumptionsRemove);
+
+  const addRequirements = ensureArray(payload.addRequirements || payload.newRequirements);
+  for (const raw of addRequirements) {
+    const type = normalizeRequirementType(raw?.type) || 'functional';
+    const [created] = normalizeImportedRequirements([raw], type, project.requirements);
+    const requirement = normalizeRequirementRecord({
+      ...created,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      updatedBy: actorUserId,
+    });
+    const smartErrors = getSmartRequirementValidationErrors(requirement);
+    if (requiresSmartValidity(requirement.status) && smartErrors.length) {
+      throw new Error(`Novo requisito ${requirement.title || requirement.id} incompleto para status ${requirement.status}. Campos em falta: ${smartErrors.join(', ')}`);
+    }
+    project.requirements.push(requirement);
+    result.added += 1;
+  }
+
+  const updateRequirements = ensureArray(payload.updateRequirements || payload.requirementUpdates);
+  for (const update of updateRequirements) {
+    const id = normalizeRequirementIdToken(update?.id || update?.requirementId);
+    if (!id) continue;
+    const existing = project.requirements.find((entry) => entry.id === id);
+    if (!existing) {
+      throw new Error(`Requisito ${id} nao encontrado para atualizacao.`);
+    }
+
+    const changes = update?.changes && typeof update.changes === 'object' ? update.changes : update;
+    const normalized = normalizeRequirementRecord({
+      ...existing,
+      ...changes,
+      id: existing.id,
+      type: existing.type,
+      updatedAt: nowIso(),
+      updatedBy: actorUserId,
+    });
+    const smartErrors = getSmartRequirementValidationErrors(normalized);
+    if (requiresSmartValidity(normalized.status) && smartErrors.length) {
+      throw new Error(`Requisito ${id} incompleto para status ${normalized.status}. Campos em falta: ${smartErrors.join(', ')}`);
+    }
+
+    Object.assign(existing, normalized);
+    result.updated += 1;
+  }
+
+  const removeRequirements = ensureArray(payload.removeRequirements || payload.excludeRequirements);
+  for (const removal of removeRequirements) {
+    const id = normalizeRequirementIdToken(typeof removal === 'string' ? removal : (removal?.id || removal?.requirementId));
+    if (!id) continue;
+    const existing = project.requirements.find((entry) => entry.id === id);
+    if (!existing) {
+      throw new Error(`Requisito ${id} nao encontrado para exclusao.`);
+    }
+    const reason = typeof removal === 'string' ? '' : textOr(removal?.reason);
+    existing.status = 'excluded';
+    existing.notes = [existing.notes, reason ? `Excluido por alteracao incremental: ${reason}` : 'Excluido por alteracao incremental.']
+      .filter(Boolean)
+      .join('\n');
+    existing.updatedAt = nowIso();
+    existing.updatedBy = actorUserId;
+    result.excluded += 1;
+  }
+
+  const clarifications = ensureArray(payload.clarifications || payload.newClarifications);
+  for (const entry of clarifications) {
+    const raw = typeof entry === 'string' ? { question: entry } : (entry || {});
+    const question = textOr(raw.question || raw.title || raw.description);
+    if (!question) continue;
+    project.clarificationQuestions.unshift(normalizeClarificationQuestionRecord({
+      ...raw,
+      id: `qst_${crypto.randomUUID()}`,
+      question,
+      status: raw.status || 'open',
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    }));
+    result.clarificationsCreated += 1;
+  }
+
+  project.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions).slice(0, 600);
+  project.requirements = project.requirements.map((entry) => normalizeRequirementRecord(entry));
+
+  return result;
+}
+
+function mergeStringList(current, addList, removeList) {
+  const removeSet = new Set(normalizeStringArray(removeList).map((entry) => normalizeForCompare(entry)));
+  const merged = normalizeStringArray(current).filter((entry) => !removeSet.has(normalizeForCompare(entry)));
+  for (const entry of normalizeStringArray(addList)) {
+    const token = normalizeForCompare(entry);
+    if (token && !merged.some((existing) => normalizeForCompare(existing) === token)) {
+      merged.push(entry);
+    }
+  }
+  return merged;
+}
+
+function normalizeImportedRequirements(rawList, type, existingList) {
+  const normalizedType = normalizeRequirementType(type);
+  const source = ensureArray(rawList);
+  const prefix = REQUIREMENT_TYPE_META[normalizedType]?.prefix || 'REQ';
+  let nextNumber = nextRequirementNumber(existingList, prefix);
+
+  return source.map((entry) => {
+    const generatedId = `${prefix}-${String(nextNumber++).padStart(2, '0')}`;
+    const rawEntry = typeof entry === 'string' ? { title: entry, description: '' } : (entry || {});
+    const fallbackStatus = normalizedType === 'out_of_scope' ? 'excluded' : 'draft';
+    const fallbackPriority = normalizedType === 'undefined' ? 'high' : 'medium';
+
+    return normalizeRequirementRecord({
+      ...rawEntry,
+      id: generatedId,
+      type: normalizedType,
+      status: rawEntry.status || fallbackStatus,
+      priority: rawEntry.priority || fallbackPriority,
+      phase: rawEntry.phase || 'Backlog',
+    });
+  });
+}
+
+function normalizeRequirementRecord(entry) {
+  const normalizedType = normalizeRequirementType(entry?.type) || 'functional';
+  const meta = REQUIREMENT_TYPE_META[normalizedType] || { label: 'Requisito' };
+  const raw = entry || {};
+
+  const need = textOr(raw.need || raw.userNeed || raw.businessNeed || raw.stakeholderNeed || raw.title);
+  const shall = textOr(raw.shall || raw.statement || raw.requirementStatement || raw.description);
+  const condition = textOr(raw.condition || raw.triggerCondition || raw.when || raw.trigger);
+  const measure = textOr(raw.measure || raw.passFail || raw.acceptanceMeasure);
+  const rationale = textOr(raw.rationale || raw.businessNeed || raw.justification || raw.businessValue);
+  const verification = textOr(raw.verification || raw.verificationMethod);
+  const assumption = textOr(raw.assumption || raw.mainAssumption);
+  const architectureParts = extractArchitectureModuleParts({
+    module: raw.module || raw.moduleName || raw.architectureModule || raw.layer || raw.component || raw.domain,
+    submodule: raw.submodule || raw.subModule || raw.moduleArea || raw.feature || raw.componentName,
+  });
+  const stakeholderRequirementLink = textOr(raw.stakeholderRequirementLink || raw.linkedStakeholderRequirement || raw.stakeholderLink || raw.link);
+  const linkedFunctionalRequirement = textOr(raw.linkedFunctionalRequirement || raw.functionalRequirementLink);
+  const relatedRequirementIds = normalizeRequirementIdList(
+    raw.relatedRequirementIds || raw.dependencies || raw.dependsOn || raw.requirementLinks || raw.links
+  );
+
+  if (stakeholderRequirementLink) relatedRequirementIds.push(normalizeRequirementIdToken(stakeholderRequirementLink));
+  if (linkedFunctionalRequirement) relatedRequirementIds.push(normalizeRequirementIdToken(linkedFunctionalRequirement));
+
+  const dedupRelatedRequirementIds = Array.from(new Set(relatedRequirementIds.filter(Boolean)));
+
+  const normalized = {
+    id: textOr(raw.id),
+    type: normalizedType,
+    title: textOr(raw.title || raw.name, shall || `${meta.label} sem titulo`),
+    need,
+    shall,
+    condition,
+    measure,
+    rationale,
+    verification,
+    assumption,
+    module: architectureParts.module,
+    submodule: architectureParts.submodule,
+    description: textOr(raw.description || shall),
+    source: textOr(raw.source || raw.origin),
+    stakeholderRequirementLink,
+    priority: normalizePriority(raw.priority),
+    status: normalizeStatus(raw.status),
+    phase: textOr(raw.phase, 'Backlog'),
+    versionRevision: textOr(raw.versionRevision || raw.version, '1.0'),
+    owner: textOr(raw.owner),
+    riskComplexity: textOr(raw.riskComplexity || raw.risk || raw.complexity),
+    linkedFunctionalRequirement,
+    relatedRequirementIds: dedupRelatedRequirementIds,
+    businessValue: textOr(raw.businessValue),
+    target: textOr(raw.target),
+    reason: textOr(raw.reason),
+    notes: textOr(raw.notes),
+    createdAt: textOr(raw.createdAt, nowIso()),
+    updatedAt: textOr(raw.updatedAt, nowIso()),
+    updatedBy: textOr(raw.updatedBy),
+  };
+
+  if (normalizedType === 'out_of_scope' && !textOr(raw.status)) {
+    normalized.status = 'excluded';
+  }
+  if (normalizedType === 'undefined' && !textOr(raw.priority)) {
+    normalized.priority = 'high';
+  }
+  normalized.relatedRequirementIds = normalizeRequirementIdList(normalized.relatedRequirementIds).filter((id) => id !== normalized.id);
+
+  return normalized;
+}
+
+function getSmartRequirementValidationErrors(requirement) {
+  if (normalizeRequirementType(requirement?.type) !== 'functional') {
+    return [];
+  }
+
+  const errors = [];
+  if (!textOr(requirement?.shall)) errors.push('shall');
+  if (!textOr(requirement?.condition)) errors.push('condition');
+  if (!textOr(requirement?.measure)) errors.push('measure');
+  if (!textOr(requirement?.rationale)) errors.push('rationale');
+  if (!textOr(requirement?.verification)) errors.push('verification');
+  return errors;
+}
+
+function requiresSmartValidity(status) {
+  return new Set(['approved', 'planned', 'in_development', 'validated', 'delivered']).has(String(status || ''));
+}
+
+function nextRequirementNumber(requirements, prefix) {
+  let max = 0;
+  for (const req of ensureArray(requirements)) {
+    const id = String(req?.id || '');
+    if (!id.startsWith(`${prefix}-`)) continue;
+    const parsed = Number(id.split('-')[1]);
+    if (Number.isFinite(parsed)) {
+      max = Math.max(max, parsed);
+    }
+  }
+  return max + 1;
+}
+
+function normalizeRequirementType(type) {
+  const value = String(type || '').trim().toLowerCase();
+  if (value === 'functional' || value === 'functional_requirement' || value === 'fr') return 'functional';
+  if (value === 'non_functional' || value === 'nonfunctional' || value === 'non-functional' || value === 'non_functional_requirement' || value === 'nfr') return 'non_functional';
+  if (value === 'stakeholder' || value === 'stakeholder_requirement' || value === 'sr') return 'stakeholder';
+  if (value === 'test_case' || value === 'testcase' || value === 'test-case' || value === 'acceptance_test') return 'test_case';
+  if (value === 'undefined') return 'undefined';
+  if (value === 'out_of_scope' || value === 'out-of-scope' || value === 'outofscope') return 'out_of_scope';
+  return null;
+}
+
+function normalizePriority(priority) {
+  const value = String(priority || '').trim().toLowerCase();
+  if (['musthave', 'must_have'].includes(value)) return 'high';
+  if (['shouldhave', 'should_have'].includes(value)) return 'medium';
+  if (['couldhave', 'could_have'].includes(value)) return 'low';
+  if (['wonthave', 'wont_have'].includes(value)) return 'low';
+  if (['must-have', 'must', 'moscow-must', 'critical', 'critica', 'critico'].includes(value)) return 'high';
+  if (['should-have', 'should', 'moscow-should'].includes(value)) return 'medium';
+  if (['could-have', 'could', 'moscow-could'].includes(value)) return 'low';
+  if (['wont-have', 'won-t-have', 'wont', 'wonot', 'moscow-wont'].includes(value)) return 'low';
+  if (['alta', 'high', 'h'].includes(value)) return 'high';
+  if (['baixa', 'low', 'l'].includes(value)) return 'low';
+  return 'medium';
+}
+
+function normalizeStatus(status) {
+  const value = String(status || '').trim().toLowerCase();
+  const aliases = {
+    proposed: 'draft',
+    approved: 'approved',
+    implemented: 'in_development',
+    tested: 'validated',
+    rejected: 'excluded',
+    deferred: 'planned',
+  };
+  if (aliases[value]) {
+    return aliases[value];
+  }
+  return REQUIREMENT_STATUS_FLOW.includes(value) ? value : 'draft';
+}
+
+function generateRequirementId(requirements, type) {
+  const meta = REQUIREMENT_TYPE_META[type];
+  if (!meta) {
+    return `REQ-${Math.floor(Math.random() * 10000)}`;
+  }
+
+  const prefix = meta.prefix;
+  let max = 0;
+  for (const req of ensureArray(requirements)) {
+    const id = String(req?.id || '');
+    if (!id.startsWith(`${prefix}-`)) continue;
+    const parsed = Number(id.split('-')[1]);
+    if (Number.isFinite(parsed)) {
+      max = Math.max(max, parsed);
+    }
+  }
+
+  return `${prefix}-${String(max + 1).padStart(2, '0')}`;
+}
+
+function buildStructuredPrompt(project, extraInstructions) {
+  const targetBudget = `${numberOr(project.targetBudgetMin, 5000)}-${numberOr(project.targetBudgetMax, 6000)} ${project.currency || 'EUR'}`;
+  const sourceText = String(project.sourceText || '').trim();
+  const minutes = normalizeMeetingMinutes(project.meetingMinutes).slice(0, 5);
+  const openQuestions = normalizeClarificationQuestions(project.clarificationQuestions)
+    .filter((entry) => ['open', 'sent', 'answered', 'blocked'].includes(entry.status))
+    .slice(0, 40);
+  const openQuestionsContext = openQuestions.length
+    ? openQuestions.map((entry, idx) => {
+      const reqLinks = entry.linkedRequirementIds?.length ? ` | requisitos=${entry.linkedRequirementIds.join(', ')}` : '';
+      const answer = entry.answer ? `\nResposta parcial: ${entry.answer}` : '';
+      return `Q${idx + 1} | id=${entry.id} | status=${entry.status} | alvo=${entry.targetRole} | categoria=${entry.category}${reqLinks}\nPergunta: ${entry.question}${answer}`;
+    }).join('\n\n')
+    : '';
+  const minutesContext = minutes.length
+    ? minutes.map((entry, idx) => `Ata ${idx + 1} (${entry.meetingDate || entry.createdAt}):\n${entry.rawText}`).join('\n\n')
+    : '';
+  const requirementsContext = sourceText || 'Sem texto base. Use apenas os metadados do projeto e indique lacunas com clareza.';
+
+  return `
+Tu és um analista sénior de requisitos e pré-venda técnica/comercial.
+
+Objetivo:
+Converter o documento do cliente num JSON estruturado para gestão de projeto e geração automática de documentação técnica e proposta comercial.
+
+Projeto:
+- Nome: ${project.name}
+- Cliente: ${project.clientName}
+- Idioma: ${project.language || 'pt-PT'}
+- Moeda: ${project.currency || 'EUR'}
+- Taxa horária de referência: ${numberOr(project.hourlyRate, 30)}
+- Faixa orçamental alvo (considerando produtividade com AI): ${targetBudget}
+
+Instruções obrigatórias:
+1) Organiza conteúdo em linguagem clara para não técnicos.
+2) Preenche TODOS os campos do objeto project (name, clientName, description, status, proposalCode, subtitle, currency, hourlyRate, language, targetBudgetMin, targetBudgetMax).
+Se não houver informação explícita, usa defaults coerentes sem deixar campos vazios.
+3) Mantém separação de níveis:
+- stakeholderRequirements
+- functionalRequirements
+- testCases
+- nonFunctionalRequirements
+- undefinedItems
+- outOfScope
+4) Cada functionalRequirement deve seguir o formato lean SMART:
+- id, need, shall, condition, measure, rationale, verification, priority
+- assumption é opcional
+5) Regra de validade funcional:
+- shall explica o que o sistema faz
+- condition define quando aplica
+- measure define critério observável de pass/fail
+- rationale explica porque importa
+- verification explica como provar
+6) Sempre que algo não estiver definido, coloca em undefinedItems com perguntas objetivas.
+7) Tudo que não está incluído no MVP deve ir para outOfScope.
+8) Define plano de desenvolvimento claro com 3 fases principais (F1, F2, F3), sem criar fases extras vagas.
+Cada fase deve ter objetivo, duração, entregáveis, critérios de aceitação e itens com horas/rate/cost.
+9) Evita superestimar horas e mantém coerência entre horas, rate e custo.
+10) Módulos de arquitetura são determinísticos e obrigatórios:
+- Frontend
+- Backend
+- Database
+Usa também submodule para detalhar (ex: Login, Coupons, Reporting, Integrations).
+11) Para cada requisito, indica correlações com outros requisitos usando relatedRequirementIds.
+12) Usa nomes de fases consistentes: "Fase 1 - ...", "Fase 2 - ...", "Fase 3 - ...".
+13) Responde apenas com JSON válido (sem markdown, sem texto fora do JSON).
+
+Esquema mínimo esperado:
+{
+  "project": {
+    "name": "${project.name}",
+    "clientName": "${project.clientName}",
+    "description": "...",
+    "status": "active",
+    "proposalCode": "${project.proposalCode || ''}",
+    "subtitle": "${project.subtitle || 'Proposta Comercial e Tecnica'}",
+    "currency": "${project.currency || 'EUR'}",
+    "hourlyRate": ${numberOr(project.hourlyRate, 30)},
+    "language": "${project.language || 'pt-PT'}",
+    "targetBudgetMin": ${numberOr(project.targetBudgetMin, 5000)},
+    "targetBudgetMax": ${numberOr(project.targetBudgetMax, 6000)}
+  },
+  "summary": {
+    "businessContext": "...",
+    "goals": ["..."],
+    "scopeInPlainLanguage": "...",
+    "solutionOverview": "..."
+  },
+  "stakeholderRequirements": [
+    {
+      "id":"SR-001",
+      "title":"...",
+      "description":"...",
+      "businessValue":"...",
+      "priority":"Alta|Media|Baixa",
+      "status":"proposed|approved|implemented|tested|rejected|deferred",
+      "phase":"Fase 1",
+      "source":"...",
+      "owner":"...",
+      "module":"Frontend|Backend|Database",
+      "submodule":"Nome do submódulo",
+      "relatedRequirementIds":["SR-002","RF-03"]
+    }
+  ],
+  "functionalRequirements": [{
+    "id":"FR-001",
+    "need":"As a [stakeholder/user], I need [need].",
+    "shall":"The system shall [specific function].",
+    "condition":"When [trigger/context/precondition].",
+    "measure":"Passes if [observable measurable result].",
+    "rationale":"Needed because [business/operational reason].",
+    "verification":"Verified by [test/demo/inspection/analysis].",
+    "assumption":"[optional]",
+    "priority":"mustHave|shouldHave|couldHave|wontHave",
+    "status":"proposed|approved|implemented|tested|rejected|deferred",
+    "phase":"Fase 1",
+    "stakeholderRequirementLink":"SR-001",
+    "module":"Frontend|Backend|Database",
+    "submodule":"Nome do submódulo",
+    "relatedRequirementIds":["SR-001","RF-002"]
+  }],
+  "testCases": [
+    {
+      "id":"TC-001",
+      "title":"...",
+      "description":"...",
+      "linkedFunctionalRequirement":"FR-001",
+      "condition":"When [context]",
+      "measure":"Passes if [result]",
+      "verification":"Verified by [test method]",
+      "priority":"Alta|Media|Baixa",
+      "status":"proposed|approved|implemented|tested|rejected|deferred",
+      "phase":"Fase 1",
+      "module":"Frontend|Backend|Database",
+      "submodule":"Nome do submódulo",
+      "relatedRequirementIds":["FR-001","SR-001"]
+    }
+  ],
+  "nonFunctionalRequirements": [
+    {
+      "id":"RNF-001",
+      "title":"...",
+      "target":"...",
+      "reason":"...",
+      "priority":"Alta|Media|Baixa",
+      "status":"proposed|approved|implemented|tested|rejected|deferred",
+      "phase":"Fase 1",
+      "module":"Frontend|Backend|Database",
+      "submodule":"Nome do submódulo",
+      "relatedRequirementIds":["RF-001"]
+    }
+  ],
+  "undefinedItems": ["..."],
+  "outOfScope": ["..."],
+  "integrations": [{"name":"...","direction":"Entrada|Saida|Bidirecional","complexity":"Baixa|Media|Alta","phase":"Fase 1|Fase 2|Fase 3","description":"..."}],
+  "phases": [
+    {"id":"F1","name":"Fase 1 - ...","objective":"...","durationWeeks":4,"deliverables":["..."],"acceptanceCriteria":["..."],"assumptions":["..."],"priceDrivers":["..."],"items":[{"name":"...","hours":10,"rate":${numberOr(project.hourlyRate, 30)},"cost":${numberOr(project.hourlyRate, 30) * 10},"justification":"..."}]},
+    {"id":"F2","name":"Fase 2 - ...","objective":"...","durationWeeks":3,"deliverables":["..."],"acceptanceCriteria":["..."],"assumptions":["..."],"priceDrivers":["..."],"items":[{"name":"...","hours":10,"rate":${numberOr(project.hourlyRate, 30)},"cost":${numberOr(project.hourlyRate, 30) * 10},"justification":"..."}]},
+    {"id":"F3","name":"Fase 3 - ...","objective":"...","durationWeeks":2,"deliverables":["..."],"acceptanceCriteria":["..."],"assumptions":["..."],"priceDrivers":["..."],"items":[{"name":"...","hours":10,"rate":${numberOr(project.hourlyRate, 30)},"cost":${numberOr(project.hourlyRate, 30) * 10},"justification":"..."}]}
+  ],
+  "technicalApproach": {
+    "architectureSummary":"...",
+    "stack":["..."],
+    "security":["..."],
+    "observability":["..."],
+    "deployment":["..."]
+  },
+  "commercialTerms": {
+    "paymentTerms": ["40% na adjudicacao","40% na entrega funcional das fases","20% na entrega final"],
+    "validityDays": 30,
+    "warrantyDays": 30,
+    "exclusions": ["..."],
+    "notes": ["..."]
+  },
+  "risks": ["..."],
+  "assumptions": ["..."]
+}
+
+Contexto bruto do cliente:
+"""
+${requirementsContext}
+"""
+
+Atas de reunião recentes (raw):
+"""
+${minutesContext || 'Sem atas registadas.'}
+"""
+
+Perguntas de clarificação em aberto:
+"""
+${openQuestionsContext || 'Sem perguntas em aberto.'}
+"""
+
+Instruções adicionais:
+${extraInstructions || 'Sem instruções adicionais.'}
+`.trim();
+}
+
+function buildProposalFromProject(project, mode, options = {}) {
+  const requestedModules = normalizeArchitectureModuleList(options.selectedModules);
+  const requestedSet = new Set(requestedModules.map((entry) => entry.toLowerCase()));
+  const reqs = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+  const scopedReqs = requestedSet.size
+    ? reqs.filter((entry) => requestedSet.has(normalizeModuleName(entry.module).toLowerCase()))
+    : reqs;
+  const functional = scopedReqs.filter((entry) => entry.type === 'functional');
+  const nonFunctional = scopedReqs.filter((entry) => entry.type === 'non_functional');
+  const stakeholder = scopedReqs.filter((entry) => entry.type === 'stakeholder');
+  const undefinedItems = scopedReqs.filter((entry) => entry.type === 'undefined');
+  const outOfScopeReq = scopedReqs.filter((entry) => entry.type === 'out_of_scope');
+
+  const summary = normalizeSummary(project.summary);
+  if (!summary.goals.length && stakeholder.length) {
+    summary.goals = stakeholder.map((entry) => entry.title).slice(0, 6);
+  }
+  if (requestedModules.length) {
+    const moduleScopeNote = `Escopo modular selecionado: ${requestedModules.join(', ')}.`;
+    summary.scopeInPlainLanguage = summary.scopeInPlainLanguage
+      ? `${summary.scopeInPlainLanguage}\n\n${moduleScopeNote}`
+      : moduleScopeNote;
+  }
+
+  const phases = normalizePhases(project.phases, numberOr(project.hourlyRate, 30));
+  const technicalApproach = normalizeTechnicalApproach(project.technicalApproach);
+  const commercialTerms = normalizeCommercialTerms(project.commercialTerms);
+
+  const exclusionsFromReq = outOfScopeReq.map((entry) => entry.title || entry.description).filter(Boolean);
+  const assumptionsFromUndefined = undefinedItems.map((entry) => entry.title || entry.description).filter(Boolean);
+
+  const subtitle = mode === 'technical'
+    ? 'Documento Tecnico de Requisitos e Implementacao'
+    : (project.subtitle || 'Proposta Comercial e Tecnica');
+
+  const scopedLabel = requestedModules.length ? ` (Escopo Modular: ${requestedModules.join(', ')})` : '';
+  const scopedSubtitle = `${subtitle}${scopedLabel}`;
+
+  return {
+    generationMode: mode,
+    selectedModules: requestedModules,
+    project: {
+      name: project.name,
+      client: project.clientName,
+      preparedBy: 'YourLab',
+      date: nowIso().slice(0, 10),
+      currency: project.currency || 'EUR',
+      hourlyRate: numberOr(project.hourlyRate, 30),
+      language: project.language || 'pt-PT',
+      proposalCode: project.proposalCode || '',
+      subtitle: scopedSubtitle,
+      documentMode: mode,
+    },
+    summary,
+    requirements: {
+      functional: functional.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        module: normalizeModuleName(entry.module),
+        submodule: normalizeSubmoduleName(entry.submodule),
+        moduleLabel: formatRequirementModuleLabel(entry),
+        description: buildFunctionalDescriptionForProposal(entry),
+        businessValue: entry.businessValue || entry.rationale,
+        priority: priorityLabel(entry.priority),
+        phase: entry.phase || 'Fase 1',
+      })),
+      nonFunctional: nonFunctional.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        module: normalizeModuleName(entry.module),
+        submodule: normalizeSubmoduleName(entry.submodule),
+        moduleLabel: formatRequirementModuleLabel(entry),
+        target: entry.target || entry.description,
+        reason: entry.reason || entry.businessValue || '',
+      })),
+    },
+    integrations: normalizeIntegrations(project.integrations),
+    phases,
+    technicalApproach,
+    commercialTerms: {
+      ...commercialTerms,
+      exclusions: normalizeStringArray([...(commercialTerms.exclusions || []), ...exclusionsFromReq]),
+      notes: normalizeStringArray(commercialTerms.notes || []),
+    },
+    risks: normalizeStringArray(project.risks),
+    assumptions: normalizeStringArray([...(project.assumptions || []), ...assumptionsFromUndefined]),
+    branding: {
+      companyName: 'YourLab',
+      primaryColor: '#4a9eff',
+      accentColor: '#4a9eff',
+      backgroundColor: '#1b1b1b',
+      surfaceColor: '#111111',
+      textColor: '#e0e0e0',
+      mutedColor: '#9a9a9a',
+      logoPath: 'logo.png',
+    },
+  };
+}
+
+function normalizeSummary(summary) {
+  return {
+    businessContext: String(summary?.businessContext || '').trim(),
+    goals: normalizeStringArray(summary?.goals),
+    scopeInPlainLanguage: String(summary?.scopeInPlainLanguage || '').trim(),
+    solutionOverview: String(summary?.solutionOverview || '').trim(),
+  };
+}
+
+function defaultSummary() {
+  return {
+    businessContext: '',
+    goals: [],
+    scopeInPlainLanguage: '',
+    solutionOverview: '',
+  };
+}
+
+function defaultTechnicalApproach() {
+  return {
+    architectureSummary: '',
+    stack: [],
+    security: [],
+    observability: [],
+    deployment: [],
+    architectureMermaid: '',
+  };
+}
+
+function normalizeTechnicalApproach(approach) {
+  return {
+    architectureSummary: String(approach?.architectureSummary || '').trim(),
+    stack: normalizeStringArray(approach?.stack),
+    security: normalizeStringArray(approach?.security),
+    observability: normalizeStringArray(approach?.observability),
+    deployment: normalizeStringArray(approach?.deployment),
+    architectureMermaid: String(approach?.architectureMermaid || '').trim(),
+  };
+}
+
+function normalizeCommercialTerms(terms) {
+  return {
+    paymentTerms: normalizeStringArray(terms?.paymentTerms || DEFAULT_COMMERCIAL_TERMS.paymentTerms),
+    validityDays: numberOr(terms?.validityDays, DEFAULT_COMMERCIAL_TERMS.validityDays),
+    warrantyDays: numberOr(terms?.warrantyDays, DEFAULT_COMMERCIAL_TERMS.warrantyDays),
+    exclusions: normalizeStringArray(terms?.exclusions),
+    notes: normalizeStringArray(terms?.notes),
+  };
+}
+
+function normalizeIntegrations(integrations) {
+  return ensureArray(integrations).map((entry, idx) => ({
+    name: String(entry?.name || `Integracao ${idx + 1}`).trim(),
+    direction: String(entry?.direction || 'Bidirecional').trim(),
+    complexity: String(entry?.complexity || 'Media').trim(),
+    phase: String(entry?.phase || 'Fase 2').trim(),
+    description: String(entry?.description || '').trim(),
+  }));
+}
+
+function normalizePhases(phases, hourlyRate) {
+  const normalized = ensureArray(phases)
+    .map((phase, idx) => {
+      const items = ensureArray(phase?.items).map((item, itemIdx) => {
+        const hours = numberOr(item?.hours, 0);
+        const rate = numberOr(item?.rate, hourlyRate);
+        return {
+          name: String(item?.name || `Atividade ${itemIdx + 1}`).trim(),
+          hours,
+          rate,
+          cost: numberOr(item?.cost, hours * rate),
+          justification: String(item?.justification || '').trim(),
+        };
+      });
+
+      const explicitHours = phase?.hours !== undefined ? numberOr(phase.hours, 0) : null;
+      const explicitCost = phase?.cost !== undefined ? numberOr(phase.cost, 0) : null;
+      const computedHours = items.reduce((sum, item) => sum + numberOr(item.hours, 0), 0);
+      const computedCost = items.reduce((sum, item) => sum + numberOr(item.cost, 0), 0);
+
+      return {
+        id: String(phase?.id || `F${idx + 1}`).trim(),
+        name: String(phase?.name || `Fase ${idx + 1}`).trim(),
+        objective: String(phase?.objective || '').trim(),
+        durationWeeks: numberOr(phase?.durationWeeks, 0),
+        deliverables: normalizeStringArray(phase?.deliverables),
+        acceptanceCriteria: normalizeStringArray(phase?.acceptanceCriteria),
+        assumptions: normalizeStringArray(phase?.assumptions),
+        priceDrivers: normalizeStringArray(phase?.priceDrivers),
+        items,
+        hours: explicitHours !== null ? explicitHours : computedHours,
+        cost: explicitCost !== null ? explicitCost : computedCost,
+      };
+    })
+    .filter((phase) => phase.name);
+
+  if (normalized.length) {
+    return normalized;
+  }
+
+  return defaultPhases(hourlyRate);
+}
+
+function defaultPhases(hourlyRate) {
+  const rate = numberOr(hourlyRate, 30);
+  return [
+    {
+      id: 'F1',
+      name: 'Fase 1 - MVP validavel',
+      objective: 'Criar fluxo principal e validar valor com utilizadores reais.',
+      durationWeeks: 3,
+      deliverables: ['Fluxo principal operacional', 'Painel de acompanhamento inicial', 'Base de dados estruturada'],
+      acceptanceCriteria: ['Fluxo principal testado ponta a ponta', 'Requisitos criticos implementados'],
+      assumptions: ['Escopo controlado para MVP'],
+      priceDrivers: ['Implementacao dos fluxos centrais', 'Configuração base de segurança e dados'],
+      items: [
+        {
+          name: 'Implementacao MVP com apoio de AI',
+          hours: 60,
+          rate,
+          cost: 60 * rate,
+          justification: 'Entrega funcional do fluxo principal com rapidez e baixo risco.',
+        },
+      ],
+      hours: 60,
+      cost: 60 * rate,
+    },
+    {
+      id: 'F2',
+      name: 'Fase 2 - Operacao e relatorios',
+      objective: 'Melhorar rastreabilidade, operação e visibilidade para decisão.',
+      durationWeeks: 2,
+      deliverables: ['Relatorios principais', 'Refino de requisitos', 'Melhorias operacionais'],
+      acceptanceCriteria: ['Indicadores por fase e status'],
+      assumptions: ['Feedback da fase 1 já coletado'],
+      priceDrivers: ['Modelagem de analytics e fluxos operacionais'],
+      items: [
+        {
+          name: 'Dashboards e estabilizacao',
+          hours: 55,
+          rate,
+          cost: 55 * rate,
+          justification: 'Ajustes operacionais e dados para gestão.',
+        },
+      ],
+      hours: 55,
+      cost: 55 * rate,
+    },
+    {
+      id: 'F3',
+      name: 'Fase 3 - Integracoes finais',
+      objective: 'Preparar e conectar integrações de maior valor.',
+      durationWeeks: 3,
+      deliverables: ['Camada de integração', 'Testes integrados', 'Ajustes finais'],
+      acceptanceCriteria: ['Integrações prioritárias homologadas'],
+      assumptions: ['APIs externas disponíveis'],
+      priceDrivers: ['Integrações e testes com sistemas terceiros'],
+      items: [
+        {
+          name: 'Integracoes finais com otimização AI',
+          hours: 65,
+          rate,
+          cost: 65 * rate,
+          justification: 'Consolidação técnica e comercial para versão final.',
+        },
+      ],
+      hours: 65,
+      cost: 65 * rate,
+    },
+  ];
+}
+
+function tryExtractText(fileName, buffer) {
+  const ext = path.extname(fileName || '').toLowerCase();
+  const directTextExt = new Set(['.txt', '.md', '.markdown', '.csv', '.json', '.yaml', '.yml']);
+
+  if (directTextExt.has(ext)) {
+    return buffer.toString('utf-8');
+  }
+
+  const decoded = buffer.toString('utf-8');
+  const printable = decoded.replace(/[\x20-\x7E\n\r\t\u00A0-\u017F]/g, '');
+  const ratio = decoded.length ? 1 - printable.length / decoded.length : 0;
+  if (ratio > 0.9) {
+    return decoded;
+  }
+
+  return '';
+}
+
+function extractJsonBlock(rawText) {
+  const text = String(rawText || '').trim();
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch && fencedMatch[1]) {
+    return fencedMatch[1].trim();
+  }
+  return text;
+}
+
+function parseJsonLenient(rawJsonLikeText) {
+  const directText = String(rawJsonLikeText || '').trim();
+  if (!directText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(directText);
+  } catch {
+    // continue
+  }
+
+  const normalizedQuotes = directText
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+
+  try {
+    return JSON.parse(normalizedQuotes);
+  } catch {
+    return null;
+  }
+}
+
+function buildGeneratedLinksFromDir(rootDir, outputDir, entries) {
+  const links = {
+    presentationPdf: null,
+    fullDocumentPdf: null,
+    presentationHtml: null,
+    fullDocumentHtml: null,
+    fullDocumentMarkdown: null,
+  };
+
+  for (const entry of entries) {
+    const fullPath = path.join(outputDir, entry);
+    const ext = path.extname(entry).toLowerCase();
+    const name = entry.toLowerCase();
+
+    if (ext === '.pdf' && name.includes('apresentacao') && !links.presentationPdf) {
+      links.presentationPdf = toPublicPath(rootDir, fullPath);
+      continue;
+    }
+
+    if (ext === '.pdf' && name.includes('proposta') && !links.fullDocumentPdf) {
+      links.fullDocumentPdf = toPublicPath(rootDir, fullPath);
+      continue;
+    }
+
+    if (ext === '.html' && name.includes('apresentacao') && !links.presentationHtml) {
+      links.presentationHtml = toPublicPath(rootDir, fullPath);
+      continue;
+    }
+
+    if (ext === '.html' && name.includes('proposta') && !links.fullDocumentHtml) {
+      links.fullDocumentHtml = toPublicPath(rootDir, fullPath);
+      continue;
+    }
+
+    if ((ext === '.md' || ext === '.markdown') && !links.fullDocumentMarkdown) {
+      links.fullDocumentMarkdown = toPublicPath(rootDir, fullPath);
+    }
+  }
+
+  return links;
+}
+
+async function generateProposalBundleFallback({ proposal, outputDir, mode, selectedModules }) {
+  const project = proposal?.project || {};
+  const summary = proposal?.summary || {};
+  const requirements = proposal?.requirements || {};
+  const functional = ensureArray(requirements.functional);
+  const nonFunctional = ensureArray(requirements.nonFunctional);
+  const phases = ensureArray(proposal?.phases);
+  const integrations = ensureArray(proposal?.integrations);
+  const risks = normalizeStringArray(proposal?.risks);
+  const assumptions = normalizeStringArray(proposal?.assumptions);
+  const goals = normalizeStringArray(summary.goals);
+  const commercialTerms = proposal?.commercialTerms || {};
+  const technicalApproach = proposal?.technicalApproach || {};
+  const stack = normalizeStringArray(technicalApproach.stack);
+  const security = normalizeStringArray(technicalApproach.security);
+  const observability = normalizeStringArray(technicalApproach.observability);
+  const deployment = normalizeStringArray(technicalApproach.deployment);
+
+  const projectName = textOr(project.name, 'Projeto');
+  const clientName = textOr(project.clientName, 'Cliente');
+  const subtitle = textOr(project.subtitle);
+  const proposalCode = textOr(project.proposalCode);
+  const slug = sanitizeFileName(projectName) || 'projeto';
+  const today = new Date().toISOString().slice(0, 10);
+  const modeLabel = mode === 'technical' ? 'Pacote Tecnico' : 'Proposta Comercial + Tecnica';
+  const moduleInfo = selectedModules?.length
+    ? `Modulos selecionados: ${selectedModules.join(', ')}`
+    : 'Modulos selecionados: Todos';
+
+  const functionalByModule = groupBy(functional, (entry) => `${textOr(entry.module, 'Backend')}|${textOr(entry.submodule, '-')}`);
+  const phaseRows = phases.map((phase, index) => ({
+    idx: index + 1,
+    name: textOr(phase.name || phase.title, `Fase ${index + 1}`),
+    duration: textOr(phase.duration || phase.estimatedDuration, 'N/A'),
+    objective: textOr(phase.objective || phase.description, ''),
+    deliverables: normalizeStringArray(phase.deliverables || phase.outputs),
+  }));
+
+  const mdLines = [];
+  mdLines.push(`# ${projectName} - ${modeLabel}`);
+  mdLines.push('');
+  mdLines.push(`Data: ${today}`);
+  mdLines.push(`Cliente: ${clientName}`);
+  if (proposalCode) mdLines.push(`Codigo da proposta: ${proposalCode}`);
+  if (subtitle) mdLines.push(`Subtitulo: ${subtitle}`);
+  mdLines.push(moduleInfo);
+  mdLines.push('');
+
+  mdLines.push('## Sumario Executivo');
+  mdLines.push(textOr(summary.businessContext, 'Sem contexto informado.'));
+  mdLines.push('');
+
+  mdLines.push('## Objetivos');
+  pushList(mdLines, goals, 'Sem objetivos informados.');
+  mdLines.push('');
+
+  mdLines.push('## Escopo em linguagem de negocio');
+  mdLines.push(textOr(summary.scopeInPlainLanguage, 'Nao informado.'));
+  mdLines.push('');
+
+  mdLines.push('## Visao da Solucao');
+  mdLines.push(textOr(summary.solutionOverview, 'Nao informado.'));
+  mdLines.push('');
+
+  mdLines.push('## Requisitos Funcionais por modulo');
+  if (!functional.length) {
+    mdLines.push('- Nenhum requisito funcional.');
+  } else {
+    for (const [groupKey, items] of functionalByModule.entries()) {
+      const [moduleName, submoduleName] = groupKey.split('|');
+      mdLines.push(`### ${moduleName}${submoduleName && submoduleName !== '-' ? ` / ${submoduleName}` : ''}`);
+      items.forEach((entry) => {
+        mdLines.push(`- **${textOr(entry.id, '-')}: ${textOr(entry.title, 'Sem titulo')}**`);
+        mdLines.push(`  - Prioridade: ${priorityLabel(entry.priority)}`);
+        mdLines.push(`  - Fase: ${textOr(entry.phase, 'N/A')}`);
+        mdLines.push(`  - Descricao: ${textOr(entry.description, 'Sem descricao')}`);
+        if (textOr(entry.businessValue)) mdLines.push(`  - Valor de negocio: ${textOr(entry.businessValue)}`);
+      });
+      mdLines.push('');
+    }
+  }
+
+  mdLines.push('## Requisitos Nao Funcionais');
+  if (!nonFunctional.length) {
+    mdLines.push('- Nenhum requisito nao funcional.');
+  } else {
+    nonFunctional.forEach((entry) => {
+      mdLines.push(`- **${textOr(entry.id, '-')}: ${textOr(entry.title, 'Sem titulo')}**`);
+      mdLines.push(`  - Modulo: ${textOr(entry.moduleLabel || entry.module, 'N/A')}`);
+      mdLines.push(`  - Target: ${textOr(entry.target, 'N/A')}`);
+      if (textOr(entry.reason)) mdLines.push(`  - Justificacao: ${textOr(entry.reason)}`);
+    });
+  }
+  mdLines.push('');
+
+  mdLines.push('## Plano por Fases');
+  if (!phaseRows.length) {
+    mdLines.push('- Sem fases definidas.');
+  } else {
+    phaseRows.forEach((phase) => {
+      mdLines.push(`- **Fase ${phase.idx} - ${phase.name}** (${phase.duration})`);
+      if (phase.objective) mdLines.push(`  - Objetivo: ${phase.objective}`);
+      if (phase.deliverables.length) mdLines.push(`  - Entregaveis: ${phase.deliverables.join('; ')}`);
+    });
+  }
+  mdLines.push('');
+
+  mdLines.push('## Integracoes');
+  pushList(mdLines, integrations.map((item) => textOr(item.name || item.integration || item)), 'Sem integracoes definidas.');
+  mdLines.push('');
+
+  mdLines.push('## Abordagem Tecnica');
+  mdLines.push(`Arquitetura: ${textOr(technicalApproach.architectureSummary, 'Nao informada.')}`);
+  mdLines.push('');
+  mdLines.push('### Stack');
+  pushList(mdLines, stack, 'Nao informado.');
+  mdLines.push('');
+  mdLines.push('### Seguranca');
+  pushList(mdLines, security, 'Nao informado.');
+  mdLines.push('');
+  mdLines.push('### Observabilidade');
+  pushList(mdLines, observability, 'Nao informado.');
+  mdLines.push('');
+  mdLines.push('### Deploy');
+  pushList(mdLines, deployment, 'Nao informado.');
+  mdLines.push('');
+
+  mdLines.push('## Termos Comerciais');
+  mdLines.push(`Validade (dias): ${numberOr(commercialTerms.validityDays, 30)}`);
+  mdLines.push(`Garantia (dias): ${numberOr(commercialTerms.warrantyDays, 30)}`);
+  mdLines.push('### Pagamentos');
+  pushList(mdLines, normalizeStringArray(commercialTerms.paymentTerms), 'Nao definido.');
+  mdLines.push('### Exclusoes');
+  pushList(mdLines, normalizeStringArray(commercialTerms.exclusions), 'Nenhuma exclusao listada.');
+  mdLines.push('### Notas');
+  pushList(mdLines, normalizeStringArray(commercialTerms.notes), 'Sem notas adicionais.');
+  mdLines.push('');
+
+  mdLines.push('## Riscos');
+  pushList(mdLines, risks, 'Sem riscos registados.');
+  mdLines.push('');
+
+  mdLines.push('## Assuncoes');
+  pushList(mdLines, assumptions, 'Sem assuncoes registadas.');
+  mdLines.push('');
+
+  const markdown = mdLines.join('\n');
+
+  const htmlFull = renderFullProposalHtml({
+    proposal,
+    projectName,
+    clientName,
+    subtitle,
+    proposalCode,
+    modeLabel,
+    today,
+    moduleInfo,
+    functional,
+    nonFunctional,
+    goals,
+    risks,
+    assumptions,
+    phaseRows,
+    integrations,
+    technicalApproach,
+    stack,
+    security,
+    observability,
+    deployment,
+    commercialTerms,
+  });
+
+  const htmlPresentation = renderExecutivePresentationHtml({
+    projectName,
+    clientName,
+    subtitle,
+    modeLabel,
+    today,
+    goals,
+    risks,
+    phaseRows,
+    functional,
+    moduleInfo,
+  });
+
+  const markdownPath = path.join(outputDir, `${slug}_proposta_completa.md`);
+  const fullHtmlPath = path.join(outputDir, `${slug}_proposta_completa.html`);
+  const presentationHtmlPath = path.join(outputDir, `${slug}_apresentacao_executiva.html`);
+
+  await fs.writeFile(markdownPath, markdown, 'utf-8');
+  await fs.writeFile(fullHtmlPath, htmlFull, 'utf-8');
+  await fs.writeFile(presentationHtmlPath, htmlPresentation, 'utf-8');
+
+  return '[internal-fallback] Bundle completo HTML/MD gerado sem script externo.';
+}
+
+function renderFullProposalHtml(input) {
+  const {
+    proposal,
+    projectName,
+    clientName,
+    subtitle,
+    proposalCode,
+    modeLabel,
+    today,
+    moduleInfo,
+    functional,
+    nonFunctional,
+    goals,
+    risks,
+    assumptions,
+    phaseRows,
+    integrations,
+    technicalApproach,
+    stack,
+    security,
+    observability,
+    deployment,
+    commercialTerms,
+  } = input;
+
+  const summary = proposal?.summary || {};
+
+  return `<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtmlForDoc(projectName)} - ${escapeHtmlForDoc(modeLabel)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg: #1b1b1b; --surface: #242424; --surface2: #2a2a2a; --ink: #eeede9; --muted: #a09e9b; --line: #333333; --accent: #d4af37; --accent-soft: #e8d5b7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--ink); line-height: 1.5; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .cover { background: linear-gradient(165deg, #111111, #1f1f1f); border: 1px solid #2e2e2e; border-radius: 14px; padding: 36px; margin-bottom: 18px; }
+    .cover h1 { margin: 0 0 8px; font-size: 34px; color: var(--accent-soft); }
+    .cover p { margin: 4px 0; color: var(--muted); }
+    .tag { display: inline-block; margin-top: 10px; border: 1px solid #3a3520; border-radius: 999px; background: rgba(212,175,55,0.1); color: var(--accent); padding: 6px 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+    .card h2 { margin: 0 0 12px; font-size: 18px; color: var(--accent-soft); }
+    .card h3 { margin: 14px 0 8px; font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .full { margin-top: 14px; }
+    ul { margin: 8px 0 0 18px; }
+    li { margin-bottom: 6px; color: var(--ink); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: top; font-size: 13px; }
+    th { color: var(--accent); background: var(--surface2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .pill { display: inline-block; border-radius: 999px; background: rgba(212,175,55,0.15); border: 1px solid rgba(212,175,55,0.35); color: var(--accent-soft); padding: 3px 9px; font-size: 11px; font-weight: 600; }
+    .small { font-size: 12px; color: var(--muted); }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="cover">
+      <h1>${escapeHtmlForDoc(projectName)}</h1>
+      <p>${escapeHtmlForDoc(modeLabel)}</p>
+      ${subtitle ? `<p>${escapeHtmlForDoc(subtitle)}</p>` : ''}
+      <p>Cliente: ${escapeHtmlForDoc(clientName)} | Data: ${escapeHtmlForDoc(today)}</p>
+      ${proposalCode ? `<p>Codigo: ${escapeHtmlForDoc(proposalCode)}</p>` : ''}
+      <span class="tag">${escapeHtmlForDoc(moduleInfo)}</span>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Sumario Executivo</h2>
+        <p>${escapeHtmlForDoc(textOr(summary.businessContext, 'Sem contexto informado.'))}</p>
+        <h3>Objetivos</h3>
+        ${renderListHtml(goals, 'Sem objetivos informados.')}
+      </article>
+      <article class="card">
+        <h2>Escopo e Solucao</h2>
+        <h3>Escopo (negocio)</h3>
+        <p>${escapeHtmlForDoc(textOr(summary.scopeInPlainLanguage, 'Nao informado.'))}</p>
+        <h3>Visao da Solucao</h3>
+        <p>${escapeHtmlForDoc(textOr(summary.solutionOverview, 'Nao informado.'))}</p>
+      </article>
+    </section>
+
+    <section class="card full">
+      <h2>Requisitos Funcionais</h2>
+      ${functional.length ? `
+        <table>
+          <thead><tr><th>ID</th><th>Titulo</th><th>Modulo</th><th>Prioridade</th><th>Fase</th><th>Descricao</th></tr></thead>
+          <tbody>
+            ${functional.map((entry) => `<tr>
+              <td>${escapeHtmlForDoc(textOr(entry.id, '-'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.title, 'Sem titulo'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.moduleLabel || entry.module, 'N/A'))}</td>
+              <td><span class="pill">${escapeHtmlForDoc(priorityLabel(entry.priority))}</span></td>
+              <td>${escapeHtmlForDoc(textOr(entry.phase, 'N/A'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.description, 'Sem descricao'))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="small">Nenhum requisito funcional.</p>'}
+    </section>
+
+    <section class="card full">
+      <h2>Requisitos Nao Funcionais</h2>
+      ${nonFunctional.length ? `
+        <table>
+          <thead><tr><th>ID</th><th>Titulo</th><th>Modulo</th><th>Target</th><th>Justificacao</th></tr></thead>
+          <tbody>
+            ${nonFunctional.map((entry) => `<tr>
+              <td>${escapeHtmlForDoc(textOr(entry.id, '-'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.title, 'Sem titulo'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.moduleLabel || entry.module, 'N/A'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.target, 'N/A'))}</td>
+              <td>${escapeHtmlForDoc(textOr(entry.reason, 'N/A'))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="small">Nenhum requisito nao funcional.</p>'}
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Plano por Fases</h2>
+        ${phaseRows.length ? `<table><thead><tr><th>Fase</th><th>Duracao</th><th>Objetivo</th><th>Entregaveis</th></tr></thead><tbody>${phaseRows.map((phase) => `<tr><td>${escapeHtmlForDoc(phase.name)}</td><td>${escapeHtmlForDoc(phase.duration)}</td><td>${escapeHtmlForDoc(phase.objective || 'N/A')}</td><td>${escapeHtmlForDoc(phase.deliverables.join('; ') || 'N/A')}</td></tr>`).join('')}</tbody></table>` : '<p class="small">Sem fases definidas.</p>'}
+      </article>
+      <article class="card">
+        <h2>Integracoes</h2>
+        ${renderListHtml(integrations.map((item) => textOr(item.name || item.integration || item)), 'Sem integracoes definidas.')}
+        <h3>Riscos</h3>
+        ${renderListHtml(risks, 'Sem riscos registados.')}
+        <h3>Assuncoes</h3>
+        ${renderListHtml(assumptions, 'Sem assuncoes registadas.')}
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Abordagem Tecnica</h2>
+        <p><strong>Arquitetura:</strong> ${escapeHtmlForDoc(textOr(technicalApproach.architectureSummary, 'Nao informada.'))}</p>
+        <h3>Stack</h3>
+        ${renderListHtml(stack, 'Nao informado.')}
+        <h3>Seguranca</h3>
+        ${renderListHtml(security, 'Nao informado.')}
+        <h3>Observabilidade</h3>
+        ${renderListHtml(observability, 'Nao informado.')}
+        <h3>Deploy</h3>
+        ${renderListHtml(deployment, 'Nao informado.')}
+      </article>
+      <article class="card">
+        <h2>Termos Comerciais</h2>
+        <p><strong>Validade:</strong> ${numberOr(commercialTerms.validityDays, 30)} dias</p>
+        <p><strong>Garantia:</strong> ${numberOr(commercialTerms.warrantyDays, 30)} dias</p>
+        <h3>Pagamentos</h3>
+        ${renderListHtml(normalizeStringArray(commercialTerms.paymentTerms), 'Nao definido.')}
+        <h3>Exclusoes</h3>
+        ${renderListHtml(normalizeStringArray(commercialTerms.exclusions), 'Nenhuma exclusao listada.')}
+        <h3>Notas</h3>
+        ${renderListHtml(normalizeStringArray(commercialTerms.notes), 'Sem notas adicionais.')}
+      </article>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function renderExecutivePresentationHtml(input) {
+  const {
+    projectName,
+    clientName,
+    subtitle,
+    modeLabel,
+    today,
+    goals,
+    risks,
+    phaseRows,
+    functional,
+    moduleInfo,
+  } = input;
+
+  const topReqs = functional.slice(0, 8);
+
+  return `<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtmlForDoc(projectName)} - Apresentacao Executiva</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg: #1b1b1b; --surface: #242424; --surface2: #2a2a2a; --ink: #eeede9; --muted: #a09e9b; --accent: #d4af37; --accent-soft: #e8d5b7; --line: #333333; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--ink); }
+    .slide { min-height: 100vh; padding: 64px; display: grid; align-content: center; border-bottom: 1px solid var(--line); }
+    .slide:first-child { background: linear-gradient(165deg, #111111, #1f1f1f); }
+    h1 { margin: 0 0 16px; font-size: 52px; line-height: 1.1; color: var(--accent-soft); }
+    h2 { margin: 0 0 20px; font-size: 38px; color: var(--accent-soft); }
+    h2::after { content: ''; display: block; width: 48px; height: 3px; background: var(--accent); margin-top: 10px; border-radius: 2px; }
+    p, li { font-size: 22px; line-height: 1.5; color: var(--ink); }
+    ul { margin: 10px 0 0 26px; }
+    li { margin-bottom: 10px; }
+    li strong { color: var(--accent); }
+    .accent { color: var(--accent); }
+    .accent-soft { color: var(--accent-soft); }
+    .meta { font-size: 18px; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .box { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--surface); }
+    @media (max-width: 980px) { .slide { padding: 32px; } h1 { font-size: 38px; } h2 { font-size: 30px; } p, li { font-size: 18px; } .grid2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <section class="slide">
+    <h1>${escapeHtmlForDoc(projectName)}</h1>
+    <p class="accent">${escapeHtmlForDoc(modeLabel)}</p>
+    ${subtitle ? `<p>${escapeHtmlForDoc(subtitle)}</p>` : ''}
+    <p class="meta">Cliente: ${escapeHtmlForDoc(clientName)} | Data: ${escapeHtmlForDoc(today)}</p>
+    <p class="meta">${escapeHtmlForDoc(moduleInfo)}</p>
+  </section>
+
+  <section class="slide">
+    <h2>Objetivos do Projeto</h2>
+    ${renderListHtml(goals, 'Sem objetivos informados.')}
+  </section>
+
+  <section class="slide">
+    <h2>Fases de Entrega</h2>
+    ${phaseRows.length ? `<ul>${phaseRows.map((phase) => `<li><strong>${escapeHtmlForDoc(phase.name)}</strong> (${escapeHtmlForDoc(phase.duration)}) - ${escapeHtmlForDoc(phase.objective || 'Objetivo a definir')}</li>`).join('')}</ul>` : '<p>Sem fases definidas.</p>'}
+  </section>
+
+  <section class="slide">
+    <h2>Requisitos Prioritarios</h2>
+    ${topReqs.length ? `<ul>${topReqs.map((entry) => `<li><strong>${escapeHtmlForDoc(textOr(entry.id, '-'))}</strong> - ${escapeHtmlForDoc(textOr(entry.title, 'Sem titulo'))}</li>`).join('')}</ul>` : '<p>Sem requisitos funcionais.</p>'}
+  </section>
+
+  <section class="slide">
+    <h2>Riscos e Mitigacao</h2>
+    ${renderListHtml(risks, 'Sem riscos registados.')}
+  </section>
+</body>
+</html>`;
+}
+
+function renderListHtml(items, emptyMessage) {
+  if (!items || !items.length) {
+    return `<p>${escapeHtmlForDoc(emptyMessage)}</p>`;
+  }
+  return `<ul>${items.map((item) => `<li>${escapeHtmlForDoc(item)}</li>`).join('')}</ul>`;
+}
+
+function pushList(lines, items, emptyMessage) {
+  if (!items || !items.length) {
+    lines.push(`- ${emptyMessage}`);
+    return;
+  }
+  items.forEach((item) => lines.push(`- ${item}`));
+}
+
+function groupBy(items, keyBuilder) {
+  const map = new Map();
+  for (const item of items) {
+    const key = keyBuilder(item);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+  }
+  return map;
+}
+
+function escapeHtmlForDoc(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toPublicPath(rootDir, absolutePath) {
+  if (!absolutePath) return null;
+  const relative = path.relative(rootDir, absolutePath);
+  if (!relative || relative.startsWith('..')) {
+    return null;
+  }
+  return `/${relative.split(path.sep).join('/')}`;
+}
+
+function priorityLabel(priority) {
+  if (priority === 'high') return 'Alta';
+  if (priority === 'low') return 'Baixa';
+  return 'Media';
+}
+
+function buildFunctionalDescriptionForProposal(entry) {
+  const parts = [];
+  const shall = textOr(entry?.shall || entry?.description);
+  const condition = textOr(entry?.condition);
+  const measure = textOr(entry?.measure);
+  const verification = textOr(entry?.verification);
+
+  if (shall) parts.push(shall);
+  if (condition) parts.push(`Condição: ${condition}`);
+  if (measure) parts.push(`Medição: ${measure}`);
+  if (verification) parts.push(`Verificação: ${verification}`);
+
+  return parts.join(' ');
+}
+
+function normalizeStringArray(value) {
+  return ensureArray(value)
+    .map((entry) => String(entry).trim())
+    .filter(Boolean);
+}
+
+function normalizeModuleName(value) {
+  const normalized = normalizeArchitectureModuleToken(value);
+  return normalized || DEFAULT_ARCHITECTURE_MODULE;
+}
+
+function normalizeSubmoduleName(value) {
+  const raw = textOr(value);
+  if (!raw) return '';
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+function formatRequirementModuleLabel(requirement) {
+  const moduleName = normalizeModuleName(requirement?.module);
+  const submoduleName = normalizeSubmoduleName(requirement?.submodule);
+  return submoduleName ? `${moduleName} / ${submoduleName}` : moduleName;
+}
+
+function normalizeArchitectureModuleToken(value) {
+  const normalizedText = normalizeForCompare(value);
+  if (!normalizedText) return null;
+  const hasWord = (word) => new RegExp(`(^|\\s)${word}(\\s|$)`).test(normalizedText);
+
+  if (
+    normalizedText.includes('frontend') ||
+    normalizedText.includes('front end') ||
+    hasWord('ui') ||
+    hasWord('ux') ||
+    normalizedText.includes('client side') ||
+    normalizedText.includes('cliente')
+  ) {
+    return 'Frontend';
+  }
+
+  if (
+    normalizedText.includes('database') ||
+    normalizedText.includes('base de dados') ||
+    normalizedText.includes('banco de dados') ||
+    normalizedText.includes('persistencia') ||
+    normalizedText.includes('schema') ||
+    normalizedText.includes('sql') ||
+    normalizedText === 'db' ||
+    normalizedText.includes('postgres')
+  ) {
+    return 'Database';
+  }
+
+  if (
+    normalizedText.includes('backend') ||
+    normalizedText.includes('back end') ||
+    normalizedText.includes('api') ||
+    normalizedText.includes('server') ||
+    normalizedText.includes('servico') ||
+    normalizedText.includes('integracao')
+  ) {
+    return 'Backend';
+  }
+
+  return null;
+}
+
+function normalizeArchitectureModuleList(values) {
+  const source = Array.isArray(values)
+    ? values
+    : String(values || '')
+      .split(/[,\n;]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  const output = [];
+  const seen = new Set();
+  for (const rawValue of source) {
+    const trimmed = textOr(rawValue);
+    const normalized = normalizeArchitectureModuleToken(trimmed)
+      || (ARCHITECTURE_MODULES.includes(trimmed) ? trimmed : null);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(normalized);
+  }
+  return output;
+}
+
+function extractArchitectureModuleParts(input) {
+  const rawModule = textOr(input?.module);
+  const rawSubmodule = textOr(input?.submodule);
+
+  if (!rawModule && !rawSubmodule) {
+    return { module: DEFAULT_ARCHITECTURE_MODULE, submodule: '' };
+  }
+
+  if (rawSubmodule) {
+    return {
+      module: normalizeModuleName(rawModule || rawSubmodule),
+      submodule: normalizeSubmoduleName(rawSubmodule),
+    };
+  }
+
+  const split = rawModule.split(/[>:/|]/).map((entry) => entry.trim()).filter(Boolean);
+  if (split.length > 1) {
+    return {
+      module: normalizeModuleName(split[0]),
+      submodule: normalizeSubmoduleName(split.slice(1).join(' / ')),
+    };
+  }
+
+  const commaSplit = rawModule.split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (commaSplit.length > 1) {
+    const firstKnown = commaSplit.find((entry) => normalizeArchitectureModuleToken(entry));
+    const moduleName = normalizeModuleName(firstKnown || commaSplit[0]);
+    return { module: moduleName, submodule: '' };
+  }
+
+  const knownDirect = normalizeArchitectureModuleToken(rawModule) || (ARCHITECTURE_MODULES.includes(rawModule) ? rawModule : null);
+  if (knownDirect) {
+    return {
+      module: knownDirect,
+      submodule: '',
+    };
+  }
+
+  return {
+    module: DEFAULT_ARCHITECTURE_MODULE,
+    submodule: normalizeSubmoduleName(rawModule),
+  };
+}
+
+function normalizeForCompare(value) {
+  return textOr(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeRequirementIdToken(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+}
+
+function normalizeRequirementIdList(value) {
+  const flattened = [];
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === 'string' || typeof entry === 'number') {
+        flattened.push(entry);
+      } else if (entry && typeof entry === 'object') {
+        flattened.push(entry.id || entry.requirementId || entry.link || entry.ref || '');
+      }
+    }
+  } else {
+    flattened.push(...String(value || '').split(/[,\n;]/));
+  }
+
+  const output = [];
+  const seen = new Set();
+  for (const rawEntry of flattened) {
+    const token = normalizeRequirementIdToken(rawEntry);
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    output.push(token);
+  }
+  return output;
+}
+
+function normalizeStringListField(value) {
+  if (Array.isArray(value)) {
+    return normalizeStringArray(value);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split('\n')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeQuestionStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return QUESTION_STATUS_FLOW.includes(normalized) ? normalized : 'open';
+}
+
+function normalizeQuestionTargetRole(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['cliente', 'client'].includes(normalized)) return 'client';
+  if (['parceiro', 'partner'].includes(normalized)) return 'partner';
+  if (['both', 'ambos', 'todos'].includes(normalized)) return 'both';
+  return QUESTION_TARGET_FLOW.includes(normalized) ? normalized : 'client';
+}
+
+function normalizeQuestionCategory(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['nfr', 'nonfunctional', 'non_functional'].includes(normalized)) return 'non_functional';
+  if (['funcional', 'fr', 'functional_requirement'].includes(normalized)) return 'functional';
+  if (['integrations', 'integration_api', 'api', 'connector'].includes(normalized)) return 'integration';
+  if (['dados', 'db', 'database'].includes(normalized)) return 'data';
+  if (['regra', 'rules', 'businessrules', 'business_rules'].includes(normalized)) return 'business_rule';
+  if (['interface', 'usability'].includes(normalized)) return 'ux';
+  if (['tempo', 'deadline', 'schedule'].includes(normalized)) return 'timeline';
+  if (['preco', 'budget', 'cost'].includes(normalized)) return 'pricing';
+  if (QUESTION_CATEGORY_FLOW.includes(normalized)) return normalized;
+  return 'other';
+}
+
+function normalizeClarificationQuestionRecord(raw) {
+  const status = normalizeQuestionStatus(raw?.status);
+  const askedAt = textOr(raw?.askedAt);
+  const answer = textOr(raw?.answer);
+  const answeredAt = textOr(raw?.answeredAt);
+  return {
+    id: textOr(raw?.id, `qst_${crypto.randomUUID()}`),
+    question: textOr(raw?.question),
+    context: textOr(raw?.context),
+    targetRole: normalizeQuestionTargetRole(raw?.targetRole),
+    category: normalizeQuestionCategory(raw?.category),
+    priority: normalizePriority(raw?.priority),
+    status,
+    dueDate: textOr(raw?.dueDate),
+    linkedRequirementIds: normalizeRequirementIdList(raw?.linkedRequirementIds || raw?.relatedRequirementIds),
+    answer,
+    askedAt: status === 'sent' ? (askedAt || nowIso()) : askedAt,
+    answeredAt: (status === 'answered' || status === 'resolved') && answer ? (answeredAt || nowIso()) : answeredAt,
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    updatedAt: textOr(raw?.updatedAt, nowIso()),
+    createdBy: textOr(raw?.createdBy),
+    updatedBy: textOr(raw?.updatedBy),
+  };
+}
+
+function normalizeClarificationQuestions(list) {
+  return ensureArray(list)
+    .map((entry) => normalizeClarificationQuestionRecord(entry))
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+}
+
+function normalizeMeetingMinuteRecord(raw) {
+  return {
+    id: textOr(raw?.id, `min_${crypto.randomUUID()}`),
+    title: textOr(raw?.title, 'Reunião com cliente'),
+    meetingDate: textOr(raw?.meetingDate),
+    rawText: typeof raw?.rawText === 'string' ? raw.rawText : String(raw?.rawText || ''),
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    createdBy: textOr(raw?.createdBy),
+  };
+}
+
+function normalizeMeetingMinutes(minutes) {
+  return ensureArray(minutes)
+    .map((entry) => normalizeMeetingMinuteRecord(entry))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function normalizeMinutesPromptRecord(raw) {
+  return {
+    id: textOr(raw?.id, `mpr_${crypto.randomUUID()}`),
+    objective: textOr(raw?.objective, 'requirements_update'),
+    minuteIds: normalizeStringArray(raw?.minuteIds),
+    prompt: textOr(raw?.prompt),
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    createdBy: textOr(raw?.createdBy),
+  };
+}
+
+function normalizeMinutesPromptHistory(history) {
+  return ensureArray(history)
+    .map((entry) => normalizeMinutesPromptRecord(entry))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function buildMinutesUpdatePrompt(project, selectedMinutes, objective, extraInstructions) {
+  const projectName = textOr(project?.name, 'Projeto');
+  const clientName = textOr(project?.clientName, 'Cliente');
+  const requirements = ensureArray(project?.requirements).map((entry) => normalizeRequirementRecord(entry));
+  const clarificationQuestions = normalizeClarificationQuestions(project?.clarificationQuestions)
+    .filter((entry) => ['open', 'sent', 'answered', 'resolved', 'blocked'].includes(entry.status))
+    .slice(0, 40)
+    .map((entry) => ({
+      id: entry.id,
+      question: entry.question,
+      context: entry.context,
+      status: entry.status,
+      targetRole: entry.targetRole,
+      category: entry.category,
+      linkedRequirementIds: entry.linkedRequirementIds,
+      answer: entry.answer,
+      answeredAt: entry.answeredAt,
+    }));
+  const shortRequirements = requirements.slice(0, 80).map((entry) => ({
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    module: normalizeModuleName(entry.module),
+    submodule: normalizeSubmoduleName(entry.submodule),
+    status: entry.status,
+    priority: entry.priority,
+    phase: entry.phase,
+  }));
+  const summary = normalizeSummary(project?.summary);
+
+  const minutesBlock = selectedMinutes
+    .map((minute, idx) => {
+      const header = `Ata ${idx + 1} | id=${minute.id} | data=${minute.meetingDate || 'N/A'} | título=${minute.title}`;
+      return `${header}\n${minute.rawText}`;
+    })
+    .join('\n\n--------------------\n\n');
+
+  const currentSnapshot = JSON.stringify({
+    summary,
+    risks: normalizeStringArray(project?.risks),
+    assumptions: normalizeStringArray(project?.assumptions),
+    requirements: shortRequirements,
+    clarificationQuestions,
+    architectureModules: ARCHITECTURE_MODULES,
+  }, null, 2);
+
+  return `
+Tu és um analista de requisitos a preparar uma atualização incremental do projeto "${projectName}" (cliente "${clientName}").
+
+Objetivo da atualização:
+${objective}
+
+Regras obrigatórias:
+1) Trabalha apenas com alterações incrementais (add/update/remove), não reescrevas tudo.
+2) Mantém módulos de arquitetura determinísticos: Frontend, Backend, Database.
+3) Quando criares novos requisitos, inclui módulo e submodule.
+4) Preserva texto de requisitos já aprovados, a menos que a ata peça mudança explícita.
+5) Tudo que ficou ambiguo deve ir para "clarifications".
+6) Se algo foi removido de escopo, usar removeRequirements com reason claro.
+7) Usa as respostas das perguntas de clarificação como fonte de verdade para atualizar requisitos ligados.
+8) Se uma pergunta respondida cria uma nova regra, cria um requisito novo e relaciona-o com IDs existentes quando possível.
+9) Responde apenas com JSON válido.
+
+Formato de saída:
+{
+  "projectUpdates": {
+    "description": "string opcional",
+    "summary": {
+      "businessContext": "opcional",
+      "goalsAdd": ["..."],
+      "goalsRemove": ["..."],
+      "scopeInPlainLanguage": "opcional",
+      "solutionOverview": "opcional"
+    },
+    "risksAdd": ["..."],
+    "risksRemove": ["..."],
+    "assumptionsAdd": ["..."],
+    "assumptionsRemove": ["..."]
+  },
+  "addRequirements": [
+    {
+      "type": "stakeholder|functional|non_functional|test_case|undefined|out_of_scope",
+      "title": "...",
+      "need": "...",
+      "shall": "...",
+      "condition": "...",
+      "measure": "...",
+      "rationale": "...",
+      "verification": "...",
+      "priority": "high|medium|low",
+      "status": "draft|needs_clarification|approved|planned|in_development|validated|delivered|excluded",
+      "phase": "Fase 1|Fase 2|Fase 3|Backlog",
+      "module": "Frontend|Backend|Database",
+      "submodule": "..."
+    }
+  ],
+  "updateRequirements": [
+    {
+      "id": "RF-01",
+      "changes": {
+        "title": "opcional",
+        "need": "opcional",
+        "shall": "opcional",
+        "condition": "opcional",
+        "measure": "opcional",
+        "rationale": "opcional",
+        "verification": "opcional",
+        "priority": "opcional",
+        "status": "opcional",
+        "phase": "opcional",
+        "module": "Frontend|Backend|Database",
+        "submodule": "opcional"
+      },
+      "reason": "porque mudar"
+    }
+  ],
+  "removeRequirements": [
+    {
+      "id": "RF-99",
+      "reason": "porque remover"
+    }
+  ],
+  "clarifications": ["perguntas objetivas que faltam validar"]
+}
+
+Notas para aplicação no sistema:
+- addRequirements cria novos requisitos.
+- updateRequirements altera requisitos existentes pelo id.
+- removeRequirements marca requisitos como excluded mantendo rastreabilidade.
+- clarifications cria novas perguntas abertas no projeto.
+
+Estado atual resumido:
+${currentSnapshot}
+
+Atas selecionadas (texto raw):
+"""
+${minutesBlock}
+"""
+
+Instruções adicionais:
+${extraInstructions || 'Sem instruções adicionais.'}
+`.trim();
+}
+
+function textOr(value, fallback = '') {
+  const text = String(value === undefined || value === null ? '' : value).trim();
+  return text || fallback;
+}
+
+function sanitizeFileName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_\-.]/g, '');
+}
+
+function numberOr(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(stored, candidate) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, originalHash] = stored.split(':');
+  const hash = crypto.scryptSync(String(candidate), salt, 64).toString('hex');
+
+  const a = Buffer.from(originalHash, 'hex');
+  const b = Buffer.from(hash, 'hex');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+async function fileExists(target) {
+  try {
+    await fs.access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJson(target) {
+  const raw = await fs.readFile(target, 'utf-8');
+  return JSON.parse(raw);
+}
+
+async function writeJson(target, value) {
+  const tempPath = `${target}.tmp`;
+  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+  await fs.rename(tempPath, target);
+}
+
+function expressStaticSafe(platformDir) {
+  return (req, res, next) => {
+    const cleanPath = String(req.path || '').replace(/^\/+/, '');
+    const resolved = path.resolve(platformDir, 'public', cleanPath);
+    const allowedRoot = path.resolve(platformDir, 'public');
+
+    if (!resolved.startsWith(allowedRoot)) {
+      return res.status(403).send('Forbidden');
+    }
+
+    return res.sendFile(resolved, { headers: { 'Cache-Control': 'no-cache' } }, (err) => {
+      if (err) next();
+    });
+  };
+}
+
+module.exports = { registerRequirementsPlatform };

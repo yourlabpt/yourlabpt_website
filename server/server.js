@@ -9,6 +9,7 @@ const OpenAI = require('openai');
 const nodemailer = require('nodemailer');
 const { createAdminAuth } = require('./lib/admin-auth');
 const { createProjectShowcaseStore } = require('./lib/project-showcase-store');
+const { registerRequirementsPlatform } = require('../projects/api');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -122,6 +123,19 @@ app.get('/business-card/contact.vcf', (req, res, next) => {
     res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="contact.vcf"');
     return res.sendFile(filePath);
+});
+
+// Serve logo for the projects platform
+app.get('/api/logo', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'Logos YourLab', '1.png'));
+});
+
+// Register the requirements/projects platform routes (before static to avoid index.html interception)
+registerRequirementsPlatform(app, {
+    rootDir: path.join(__dirname, '..'),
+    platformDir: path.join(__dirname, '..', 'projects'),
+    logoPath: path.join(__dirname, '..', 'Logos YourLab', '1.png'),
+    buildScriptPath: process.env.REQ_PLATFORM_BUILD_SCRIPT,
 });
 
 // Serve static files

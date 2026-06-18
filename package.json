@@ -1,0 +1,8 @@
+{
+  "name": "yourlabpt-website",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "multer": "^2.0.0"
+  }
+}

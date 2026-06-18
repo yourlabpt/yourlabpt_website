@@ -1,0 +1,619 @@
+{
+  "generationMode": "technical",
+  "selectedModules": [
+    "Frontend"
+  ],
+  "project": {
+    "name": "Hoteis&Restaurantes",
+    "client": "Grupo Ferreira",
+    "preparedBy": "YourLab",
+    "date": "2026-05-05",
+    "currency": "EUR",
+    "hourlyRate": 20,
+    "language": "pt-PT",
+    "proposalCode": "YLB-2026-002",
+    "subtitle": "Documento Tecnico de Requisitos e Implementacao (Escopo Modular: Frontend)",
+    "documentMode": "technical"
+  },
+  "summary": {
+    "businessContext": "O Grupo Ferreira pretende criar uma aplicação simples para aproximar os hóspedes dos hotéis aos restaurantes associados. A solução deve transformar a estadia do hóspede numa oportunidade de consumo, permitindo apresentar benefícios, gerar cupões e medir o impacto real nos restaurantes.",
+    "goals": [
+      "Ajudar o hóspede a encontrar rapidamente o restaurante associado ao hotel onde está hospedado.",
+      "Permitir que o hóspede gere um cupão ou benefício válido durante a estadia.",
+      "Permitir que o restaurante valide o cupão de forma simples e segura.",
+      "Permitir que a gestão acompanhe conversão, receita e desempenho por hotel e restaurante.",
+      "Validar o valor da solução com um MVP controlado antes de avançar para integrações e funcionalidades avançadas."
+    ],
+    "scopeInPlainLanguage": "O MVP deve focar-se no fluxo principal: o hóspede entra na aplicação, identifica o hotel, vê o restaurante associado, gera um cupão com QR Code e apresenta esse cupão no restaurante. O restaurante valida o cupão e a gestão acompanha indicadores básicos. Funcionalidades como pagamentos, reservas, delivery, fidelização avançada, notificações, reviews, chat, CRM, gestão completa de menus e integrações obrigatórias com PMS ou POS ficam fora da primeira versão.\n\nEscopo modular selecionado: Frontend.",
+    "solutionOverview": "A solução será uma aplicação web responsiva com três áreas principais: interface do hóspede, painel do restaurante e painel de gestão/administração. O Frontend apresentará os fluxos de utilização. O Backend concentrará autenticação, regras de cupão, validação, permissões e indicadores. A Database guardará hotéis, restaurantes, hóspedes, benefícios, cupões, validações e faturação associada. A arquitetura será preparada para integrações futuras, mas o MVP evitará dependências externas complexas."
+  },
+  "requirements": {
+    "functional": [
+      {
+        "id": "FR-03",
+        "title": "O sistema deve apresentar o nome do hotel ativo e o benefício principal na Home.",
+        "module": "Frontend",
+        "submodule": "Home",
+        "moduleLabel": "Frontend / Home",
+        "description": "O sistema deve apresentar o nome do hotel ativo e o benefício principal na Home. Condição: Quando um hóspede autenticado tiver um hotel ativo associado. Medição: Aprova se a Home mostrar o hotel ativo e o benefício sem exigir navegação adicional. Verificação: Verificado por inspeção de interface e demonstração do fluxo do hóspede.",
+        "businessValue": "É necessário para o hóspede perceber rapidamente que está no contexto correto.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-04",
+        "title": "O sistema deve apresentar uma ação principal para gerar ou ativar o benefício do restaurante associado ao hotel.",
+        "module": "Frontend",
+        "submodule": "CTA de Benefício",
+        "moduleLabel": "Frontend / CTA de Benefício",
+        "description": "O sistema deve apresentar uma ação principal para gerar ou ativar o benefício do restaurante associado ao hotel. Condição: Quando o hóspede estiver autenticado, tiver hotel ativo e existir benefício disponível. Medição: Aprova se o botão principal estiver visível na Home e iniciar o fluxo de geração de cupão. Verificação: Verificado por teste de interface e demonstração ponta a ponta da geração de cupão.",
+        "businessValue": "É necessário porque o fluxo principal do produto deve ser simples e evidente.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-05",
+        "title": "O sistema deve apresentar pelo menos um banner configurável de benefício ou campanha na Home.",
+        "module": "Frontend",
+        "submodule": "Campanhas",
+        "moduleLabel": "Frontend / Campanhas",
+        "description": "O sistema deve apresentar pelo menos um banner configurável de benefício ou campanha na Home. Condição: Quando o administrador tiver configurado uma campanha ativa. Medição: Aprova se o banner ativo aparecer na Home dentro do período configurado. Verificação: Verificado por teste de configuração administrativa e inspeção da Home.",
+        "businessValue": "É necessário para comunicar rapidamente a vantagem disponível ao hóspede.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-06",
+        "title": "O sistema deve listar hotéis ativos configurados no painel administrativo.",
+        "module": "Frontend",
+        "submodule": "Catálogo de Hotéis",
+        "moduleLabel": "Frontend / Catálogo de Hotéis",
+        "description": "O sistema deve listar hotéis ativos configurados no painel administrativo. Condição: Quando o hóspede abrir a secção de hotéis. Medição: Aprova se todos os hotéis ativos forem apresentados e hotéis inativos não aparecerem. Verificação: Verificado por teste com dados ativos e inativos e inspeção da interface.",
+        "businessValue": "É necessário para apresentar a rede de hotéis e apoiar a navegação.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-07",
+        "title": "O sistema deve disponibilizar um link externo configurável para cada hotel ativo.",
+        "module": "Frontend",
+        "submodule": "Links Externos",
+        "moduleLabel": "Frontend / Links Externos",
+        "description": "O sistema deve disponibilizar um link externo configurável para cada hotel ativo. Condição: Quando o hotel tiver website configurado e estiver visível na aplicação. Medição: Aprova se o utilizador conseguir abrir o link configurado a partir do cartão do hotel. Verificação: Verificado por teste de navegação de link e inspeção da configuração.",
+        "businessValue": "É necessário para dar acesso rápido a informações externas do hotel sem gerir todo o conteúdo na aplicação.",
+        "priority": "Baixa",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-09",
+        "title": "O sistema deve listar restaurantes ativos configurados no painel administrativo.",
+        "module": "Frontend",
+        "submodule": "Catálogo de Restaurantes",
+        "moduleLabel": "Frontend / Catálogo de Restaurantes",
+        "description": "O sistema deve listar restaurantes ativos configurados no painel administrativo. Condição: Quando o hóspede abrir a secção de restaurantes. Medição: Aprova se todos os restaurantes ativos forem apresentados e restaurantes inativos não aparecerem. Verificação: Verificado por teste com dados ativos e inativos e inspeção da interface.",
+        "businessValue": "É necessário para promover o restaurante associado e outros restaurantes do grupo.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-10",
+        "title": "O sistema deve disponibilizar link ou ficheiro de menu digital para cada restaurante ativo.",
+        "module": "Frontend",
+        "submodule": "Menu Digital",
+        "moduleLabel": "Frontend / Menu Digital",
+        "description": "O sistema deve disponibilizar link ou ficheiro de menu digital para cada restaurante ativo. Condição: Quando o restaurante tiver menu configurado e estiver visível na aplicação. Medição: Aprova se o utilizador conseguir abrir o menu a partir do cartão do restaurante. Verificação: Verificado por teste de acesso ao link ou ficheiro do menu.",
+        "businessValue": "É necessário para o hóspede avaliar o restaurante antes de usar o benefício.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-13",
+        "title": "O sistema deve gerar e mostrar um QR Code único para cada cupão.",
+        "module": "Frontend",
+        "submodule": "QR Code",
+        "moduleLabel": "Frontend / QR Code",
+        "description": "O sistema deve gerar e mostrar um QR Code único para cada cupão. Condição: Quando um cupão for gerado com sucesso. Medição: Aprova se o QR Code aparecer no ecrã e apontar para os dados corretos de validação do cupão. Verificação: Verificado por teste de geração e leitura de QR Code.",
+        "businessValue": "É necessário para o restaurante validar o benefício de forma prática.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-17",
+        "title": "O sistema deve apresentar cupões gerados, cupões utilizados, taxa de conversão e faturação associada para o restaurante.",
+        "module": "Frontend",
+        "submodule": "Dashboard Restaurante",
+        "moduleLabel": "Frontend / Dashboard Restaurante",
+        "description": "O sistema deve apresentar cupões gerados, cupões utilizados, taxa de conversão e faturação associada para o restaurante. Condição: Quando um utilizador de restaurante abrir o painel operacional. Medição: Aprova se os quatro indicadores estiverem visíveis e coerentes com os dados registados. Verificação: Verificado por teste de dashboard com dados de amostra.",
+        "businessValue": "É necessário para o restaurante perceber o impacto comercial do canal hotel.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-19",
+        "title": "O sistema deve apresentar dashboard consolidado com indicadores de conversão, receita e desempenho.",
+        "module": "Frontend",
+        "submodule": "Dashboard Gestão",
+        "moduleLabel": "Frontend / Dashboard Gestão",
+        "description": "O sistema deve apresentar dashboard consolidado com indicadores de conversão, receita e desempenho. Condição: Quando um utilizador autorizado da gestão aceder ao dashboard. Medição: Aprova se o dashboard apresentar indicadores globais e agrupados por hotel e restaurante. Verificação: Verificado por demonstração do dashboard e teste de cálculo com dados controlados.",
+        "businessValue": "É necessário para avaliar se a aplicação gera valor comercial.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-22",
+        "title": "O sistema deve apresentar ranking simples por pelo menos um indicador de desempenho.",
+        "module": "Frontend",
+        "submodule": "Ranking de Performance",
+        "moduleLabel": "Frontend / Ranking de Performance",
+        "description": "O sistema deve apresentar ranking simples por pelo menos um indicador de desempenho. Condição: Quando existirem dados para múltiplos hotéis ou restaurantes. Medição: Aprova se o dashboard ordenar hotéis ou restaurantes por cupões utilizados, conversão ou receita. Verificação: Verificado por teste de ordenação no dashboard.",
+        "businessValue": "É necessário para identificar unidades com melhor e pior desempenho.",
+        "priority": "Media",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-23",
+        "title": "O sistema deve permitir criar, editar, ativar e desativar hotéis.",
+        "module": "Frontend",
+        "submodule": "Admin Hotéis",
+        "moduleLabel": "Frontend / Admin Hotéis",
+        "description": "O sistema deve permitir criar, editar, ativar e desativar hotéis. Condição: Quando um administrador aceder à gestão de hotéis. Medição: Aprova se o administrador conseguir gerir nome, imagem, website, estado e restaurante associado. Verificação: Verificado por testes CRUD no painel administrativo.",
+        "businessValue": "É necessário para manter a informação de hotéis atualizada sem alterações de código.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-24",
+        "title": "O sistema deve permitir criar, editar, ativar e desativar restaurantes.",
+        "module": "Frontend",
+        "submodule": "Admin Restaurantes",
+        "moduleLabel": "Frontend / Admin Restaurantes",
+        "description": "O sistema deve permitir criar, editar, ativar e desativar restaurantes. Condição: Quando um administrador aceder à gestão de restaurantes. Medição: Aprova se o administrador conseguir gerir nome, imagem, menu digital, estado e associação a hotel. Verificação: Verificado por testes CRUD no painel administrativo.",
+        "businessValue": "É necessário para controlar quais restaurantes aparecem e como se relacionam com os hotéis.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      },
+      {
+        "id": "FR-25",
+        "title": "O sistema deve permitir configurar benefícios, desconto, restaurante aplicável, período de validade e regra de utilização.",
+        "module": "Frontend",
+        "submodule": "Admin Benefícios",
+        "moduleLabel": "Frontend / Admin Benefícios",
+        "description": "O sistema deve permitir configurar benefícios, desconto, restaurante aplicável, período de validade e regra de utilização. Condição: Quando um administrador aceder à gestão de benefícios. Medição: Aprova se o benefício configurado aparecer ao hóspede e gerar cupões conforme as regras definidas. Verificação: Verificado por teste de configuração e teste ponta a ponta de geração de cupão.",
+        "businessValue": "É necessário para ajustar campanhas e benefícios sem intervenção técnica.",
+        "priority": "Alta",
+        "phase": "Fase 1"
+      }
+    ],
+    "nonFunctional": [
+      {
+        "id": "RNF-02",
+        "title": "Simplicidade de uso",
+        "module": "Frontend",
+        "submodule": "Experiência do Hóspede",
+        "moduleLabel": "Frontend / Experiência do Hóspede",
+        "target": "O hóspede deve conseguir gerar um cupão em poucos passos: login, hotel identificado, gerar cupão e apresentar QR Code.",
+        "reason": "Quanto mais simples for o fluxo, maior a probabilidade de adesão dos hóspedes."
+      },
+      {
+        "id": "RNF-07",
+        "title": "Manutenção simples",
+        "module": "Frontend",
+        "submodule": "Painel Administrativo",
+        "moduleLabel": "Frontend / Painel Administrativo",
+        "target": "Hotéis, restaurantes e benefícios devem poder ser geridos por utilizador administrativo sem alterações de código.",
+        "reason": "Reduz dependência técnica e facilita ajustes operacionais após o lançamento."
+      }
+    ]
+  },
+  "integrations": [
+    {
+      "name": "Validação manual ou por código de check-in",
+      "direction": "Entrada",
+      "complexity": "Baixa",
+      "phase": "Fase 1",
+      "description": "Permite associar o hóspede a um hotel sem depender de integração direta com sistema hoteleiro no MVP."
+    },
+    {
+      "name": "Website do hotel",
+      "direction": "Saida",
+      "complexity": "Baixa",
+      "phase": "Fase 1",
+      "description": "Link externo configurável para direcionar o utilizador ao site oficial de cada hotel."
+    },
+    {
+      "name": "Menu digital do restaurante",
+      "direction": "Saida",
+      "complexity": "Baixa",
+      "phase": "Fase 1",
+      "description": "Link externo ou ficheiro simples para o hóspede consultar o menu do restaurante."
+    },
+    {
+      "name": "Exportação de indicadores",
+      "direction": "Saida",
+      "complexity": "Media",
+      "phase": "Fase 2",
+      "description": "Exportação de dados básicos de cupões, conversão e receita para análise interna."
+    },
+    {
+      "name": "Sistema hoteleiro PMS",
+      "direction": "Entrada",
+      "complexity": "Alta",
+      "phase": "Fase 3",
+      "description": "Integração futura para validar automaticamente check-in, check-out e estadia ativa, dependendo da API do fornecedor."
+    },
+    {
+      "name": "Sistema de faturação ou POS",
+      "direction": "Bidirecional",
+      "complexity": "Alta",
+      "phase": "Fase 3",
+      "description": "Integração futura para associar automaticamente consumos e receita aos cupões utilizados, dependendo da API do fornecedor."
+    }
+  ],
+  "phases": [
+    {
+      "id": "F1",
+      "name": "Fase 1 - MVP funcional",
+      "objective": "Construir a primeira versão funcional da aplicação para validar o fluxo principal: hóspede identifica o hotel, gera cupão, restaurante valida e gestão acompanha indicadores básicos.",
+      "durationWeeks": 4,
+      "deliverables": [
+        "Aplicação web responsiva para hóspede",
+        "Login simples do hóspede",
+        "Identificação manual ou por código do hotel",
+        "Home com hotel ativo e benefício disponível",
+        "Lista de hotéis e restaurantes",
+        "Acesso ao site do hotel e ao menu digital do restaurante",
+        "Geração de cupão com QR Code",
+        "Painel do restaurante para validação de cupões",
+        "Dashboard simples de gestão",
+        "Gestão básica de hotéis, restaurantes e benefícios"
+      ],
+      "acceptanceCriteria": [
+        "O hóspede consegue autenticar-se antes de gerar cupão.",
+        "O hóspede consegue associar-se a um hotel por método simples definido no MVP.",
+        "A Home apresenta o hotel ativo e o benefício disponível.",
+        "O hóspede consegue gerar um cupão com QR Code único.",
+        "O restaurante consegue validar o cupão e ver se está válido, expirado, inválido ou utilizado.",
+        "A gestão consegue consultar indicadores básicos de cupões, conversão e receita manual."
+      ],
+      "assumptions": [
+        "A validação da estadia no MVP será manual, por código ou seleção controlada.",
+        "Não haverá integração obrigatória com PMS ou POS nesta fase.",
+        "O menu digital será tratado como link externo ou ficheiro simples.",
+        "A faturação associada ao cupão será inserida manualmente no MVP.",
+        "A aplicação será inicialmente web responsiva, sem app nativa publicada em loja.",
+        "Será utilizado apoio de AI para acelerar criação de componentes, CRUDs, documentação e testes repetitivos."
+      ],
+      "priceDrivers": [
+        "Número de perfis de utilizador: hóspede, restaurante, gestão e administrador.",
+        "Fluxo de cupão com regras de validade e QR Code.",
+        "Necessidade de painéis separados por perfil.",
+        "Dashboard inicial com métricas de negócio.",
+        "Modelação de dados para múltiplos hotéis e restaurantes."
+      ],
+      "items": [
+        {
+          "name": "Fecho de escopo e regras do MVP",
+          "hours": 8,
+          "rate": 20,
+          "cost": 160,
+          "justification": "Consolidar decisões pendentes sobre login, identificação da estadia, regra de cupão e dados iniciais."
+        },
+        {
+          "name": "Arquitetura e modelação de dados",
+          "hours": 12,
+          "rate": 20,
+          "cost": 240,
+          "justification": "Definir estrutura de hotéis, restaurantes, hóspedes, estadias, benefícios, cupões, validações e indicadores."
+        },
+        {
+          "name": "Design funcional e UX base",
+          "hours": 16,
+          "rate": 20,
+          "cost": 320,
+          "justification": "Criar uma experiência simples para hóspede, restaurante, gestão e administrador, usando componentes reaproveitáveis e apoio de AI."
+        },
+        {
+          "name": "Backend do MVP",
+          "hours": 34,
+          "rate": 20,
+          "cost": 680,
+          "justification": "Implementar autenticação, regras de cupão, validade por estadia, gestão de entidades e APIs principais."
+        },
+        {
+          "name": "Frontend do hóspede",
+          "hours": 26,
+          "rate": 20,
+          "cost": 520,
+          "justification": "Implementar Home, hotel ativo, listagens, benefício, geração de cupão e QR Code."
+        },
+        {
+          "name": "Painel do restaurante",
+          "hours": 18,
+          "rate": 20,
+          "cost": 360,
+          "justification": "Criar validação de cupões, estados de validação e indicadores operacionais simples."
+        },
+        {
+          "name": "Dashboard e administração básica",
+          "hours": 26,
+          "rate": 20,
+          "cost": 520,
+          "justification": "Permitir gerir hotéis, restaurantes, benefícios e acompanhar indicadores básicos."
+        },
+        {
+          "name": "Testes funcionais e correções",
+          "hours": 14,
+          "rate": 20,
+          "cost": 280,
+          "justification": "Validar os fluxos principais e corrigir problemas antes da entrega funcional."
+        },
+        {
+          "name": "Deploy inicial e documentação de uso",
+          "hours": 6,
+          "rate": 20,
+          "cost": 120,
+          "justification": "Publicar a aplicação em ambiente acessível e entregar instruções simples de utilização."
+        }
+      ],
+      "hours": 160,
+      "cost": 3200
+    },
+    {
+      "id": "F2",
+      "name": "Fase 2 - Operação e melhoria de dados",
+      "objective": "Melhorar a operação após validação do MVP, reduzindo tarefas manuais e aumentando a qualidade dos dados para a gestão.",
+      "durationWeeks": 3,
+      "deliverables": [
+        "Melhorias no dashboard de gestão",
+        "Filtros por período, hotel e restaurante",
+        "Exportação simples de indicadores",
+        "Regras mais flexíveis de benefícios",
+        "Melhorias na gestão de campanhas",
+        "Ajustes de usabilidade com base no feedback do MVP"
+      ],
+      "acceptanceCriteria": [
+        "A gestão consegue filtrar indicadores por período, hotel e restaurante.",
+        "Os dados principais podem ser exportados para análise externa.",
+        "O administrador consegue configurar benefícios com regras mais flexíveis.",
+        "As melhorias não comprometem o fluxo principal validado no MVP."
+      ],
+      "assumptions": [
+        "A Fase 2 deve iniciar após validação real do MVP.",
+        "As melhorias serão baseadas no feedback dos utilizadores.",
+        "Relatórios financeiros complexos permanecem fora do escopo, salvo nova aprovação.",
+        "O apoio de AI será usado para acelerar ajustes de interface, filtros e exportações simples."
+      ],
+      "priceDrivers": [
+        "Complexidade dos filtros e cruzamentos de dados.",
+        "Necessidade de exportação de relatórios.",
+        "Flexibilidade das regras de benefícios.",
+        "Ajustes operacionais após uso real."
+      ],
+      "items": [
+        {
+          "name": "Análise de feedback do MVP",
+          "hours": 8,
+          "rate": 20,
+          "cost": 160,
+          "justification": "Rever utilização real, problemas encontrados e prioridades antes de evoluir o produto."
+        },
+        {
+          "name": "Melhorias de dashboard e filtros",
+          "hours": 16,
+          "rate": 20,
+          "cost": 320,
+          "justification": "Adicionar filtros e indicadores mais úteis para decisões da gestão."
+        },
+        {
+          "name": "Exportação simples de indicadores",
+          "hours": 10,
+          "rate": 20,
+          "cost": 200,
+          "justification": "Permitir que o cliente utilize dados fora da aplicação em reuniões e análises internas."
+        },
+        {
+          "name": "Regras avançadas de benefícios",
+          "hours": 14,
+          "rate": 20,
+          "cost": 280,
+          "justification": "Permitir benefícios configuráveis por período, restaurante, hotel e regra de utilização."
+        },
+        {
+          "name": "Ajustes de usabilidade e estabilização",
+          "hours": 12,
+          "rate": 20,
+          "cost": 240,
+          "justification": "Melhorar a experiência real de uso e garantir estabilidade após as alterações."
+        }
+      ],
+      "hours": 60,
+      "cost": 1200
+    },
+    {
+      "id": "F3",
+      "name": "Fase 3 - Integrações iniciais e preparação avançada",
+      "objective": "Preparar e implementar uma primeira camada de integrações e automações, mantendo o investimento controlado e validando apenas as ligações mais importantes para o negócio.",
+      "durationWeeks": 2,
+      "deliverables": [
+        "Análise técnica de PMS e POS ou faturação",
+        "Preparação da camada de integração",
+        "Integração inicial com PMS ou importação controlada de estadias, se API estiver disponível",
+        "Integração inicial com POS ou importação controlada de receita, se API estiver disponível",
+        "Melhorias de dashboards com dados integrados",
+        "Monitorização básica de falhas de integração"
+      ],
+      "acceptanceCriteria": [
+        "A aplicação fica preparada para receber dados externos de estadia ou receita.",
+        "Quando existir API viável, a aplicação consegue importar ou sincronizar dados básicos.",
+        "A gestão consegue acompanhar indicadores com menor dependência de introdução manual.",
+        "A aplicação mantém segurança, permissões e rastreabilidade após a preparação das integrações."
+      ],
+      "assumptions": [
+        "O custo e duração desta fase dependem dos sistemas externos escolhidos.",
+        "O cliente fornecerá acessos, documentação e contactos técnicos dos fornecedores.",
+        "Caso os fornecedores não tenham API adequada, será usada alternativa de importação controlada ou o escopo deverá ser revisto.",
+        "Funcionalidades como reservas, fidelização e notificações só devem entrar se forem priorizadas depois desta fase.",
+        "A estimativa considera integração inicial e controlada, não uma integração enterprise completa com múltiplos fornecedores."
+      ],
+      "priceDrivers": [
+        "Disponibilidade e qualidade das APIs externas.",
+        "Necessidade de sincronização e tratamento de erros.",
+        "Testes com sistemas de terceiros.",
+        "Automação de processos inicialmente manuais.",
+        "Maior exigência de monitorização e estabilidade."
+      ],
+      "items": [
+        {
+          "name": "Análise técnica dos sistemas externos",
+          "hours": 10,
+          "rate": 20,
+          "cost": 200,
+          "justification": "Avaliar documentação, acessos, autenticação, limites e viabilidade de integração com PMS e POS."
+        },
+        {
+          "name": "Preparação da camada de integração",
+          "hours": 14,
+          "rate": 20,
+          "cost": 280,
+          "justification": "Criar estrutura técnica para receber dados externos sem refazer a base da aplicação."
+        },
+        {
+          "name": "Integração inicial com PMS ou importação de estadias",
+          "hours": 18,
+          "rate": 20,
+          "cost": 360,
+          "justification": "Automatizar ou semi-automatizar validação de estadia, check-in e check-out, conforme viabilidade técnica."
+        },
+        {
+          "name": "Integração inicial com POS ou importação de receita",
+          "hours": 18,
+          "rate": 20,
+          "cost": 360,
+          "justification": "Associar consumos e receita aos cupões utilizados, reduzindo introdução manual quando possível."
+        },
+        {
+          "name": "Dashboards com dados integrados",
+          "hours": 8,
+          "rate": 20,
+          "cost": 160,
+          "justification": "Adaptar indicadores para considerar dados vindos de integrações ou importações controladas."
+        },
+        {
+          "name": "Testes integrados e monitorização básica",
+          "hours": 12,
+          "rate": 20,
+          "cost": 240,
+          "justification": "Validar fluxos com dados externos e criar mecanismos simples para acompanhar falhas."
+        }
+      ],
+      "hours": 80,
+      "cost": 1600
+    }
+  ],
+  "technicalApproach": {
+    "architectureSummary": "A aplicação será construída como uma plataforma web responsiva com separação clara entre Frontend, Backend e Database. O Frontend servirá a experiência do hóspede, restaurante, gestão e administração. O Backend centralizará autenticação, regras de cupões, validações, permissões e cálculos de indicadores. A Database guardará hotéis, restaurantes, hóspedes, estadias, benefícios, cupões, validações, faturação associada e histórico de ações. O MVP evita integrações complexas obrigatórias, mas prepara a estrutura para PMS e POS em fases futuras.",
+    "stack": [
+      "Frontend web responsivo em Next.js ou tecnologia equivalente",
+      "Backend em Node.js com NestJS ou tecnologia equivalente",
+      "Database PostgreSQL",
+      "ORM Prisma ou equivalente",
+      "Geração de QR Code",
+      "Autenticação por sessão ou token",
+      "Deploy em cloud ou VPS com Docker",
+      "Apoio de AI para acelerar criação de componentes, CRUDs, testes e documentação"
+    ],
+    "security": [
+      "Controlo de acesso por perfil de utilizador",
+      "Separação de dados por restaurante",
+      "Validação de permissões no Backend",
+      "Cupões com identificador único e não previsível",
+      "Registo de eventos principais para auditoria",
+      "Recolha mínima de dados pessoais no MVP"
+    ],
+    "observability": [
+      "Registo de erros da aplicação",
+      "Logs de criação e validação de cupões",
+      "Monitorização básica de disponibilidade",
+      "Métricas de uso por hotel e restaurante",
+      "Histórico de ações administrativas relevantes",
+      "Registo de falhas de integração nas fases futuras"
+    ],
+    "deployment": [
+      "Ambiente de testes para validação do cliente",
+      "Ambiente de produção após aprovação",
+      "Deploy com Docker para facilitar manutenção",
+      "Database com backups periódicos",
+      "Configuração de domínio e HTTPS",
+      "Documentação simples para operação inicial"
+    ],
+    "architectureMermaid": ""
+  },
+  "commercialTerms": {
+    "paymentTerms": [
+      "40% na adjudicacao",
+      "40% na entrega funcional das fases",
+      "20% na entrega final"
+    ],
+    "validityDays": 30,
+    "warrantyDays": 30,
+    "exclusions": [
+      "Pagamento dentro da aplicação.",
+      "Reserva de mesa.",
+      "Delivery.",
+      "Programa de pontos ou fidelização avançada.",
+      "Integração enterprise completa com múltiplos PMS ou POS.",
+      "Campanhas avançadas por perfil do hóspede.",
+      "Notificações push.",
+      "Avaliações ou reviews dos restaurantes.",
+      "Chat entre hóspede e restaurante.",
+      "CRM avançado.",
+      "Relatórios financeiros complexos.",
+      "Gestão completa de menus dentro da aplicação.",
+      "Custos de alojamento, domínio, licenças, APIs pagas ou serviços externos.",
+      "Publicação de app nativa em App Store ou Google Play."
+    ],
+    "notes": [
+      "A proposta assume desenvolvimento inicial como aplicação web responsiva.",
+      "As horas estimadas consideram produtividade com apoio de AI e reutilização de componentes.",
+      "O investimento total estimado pelas três fases é de 6000 EUR, considerando 300 horas a 20 EUR por hora.",
+      "Integrações externas podem alterar prazo e custo conforme documentação e disponibilidade dos fornecedores.",
+      "Alterações substanciais de escopo devem ser avaliadas e orçamentadas separadamente.",
+      "A garantia cobre correção de erros relacionados ao escopo entregue, não novas funcionalidades."
+    ]
+  },
+  "risks": [
+    "A falta de definição sobre o método de identificação da estadia pode alterar o esforço da Fase 1.",
+    "Integrações com PMS ou POS podem ser mais complexas do que o previsto, dependendo dos fornecedores.",
+    "Se o restaurante não validar cupões corretamente, os indicadores de conversão e receita podem ficar incompletos.",
+    "Regras de desconto ou uso do cupão pouco claras podem gerar ambiguidades operacionais.",
+    "A adesão dos hóspedes depende de comunicação clara no hotel e de um fluxo simples na aplicação.",
+    "Dados de faturação inseridos manualmente podem conter erros ou atrasos.",
+    "Alterações no número de hotéis, restaurantes ou perfis de utilizador podem alterar o esforço previsto.",
+    "A estimativa de integrações assume APIs acessíveis ou possibilidade de importação controlada; caso contrário, será necessário reavaliar."
+  ],
+  "assumptions": [
+    "O nome final da aplicação ainda será definido pelo cliente.",
+    "A Fase 1 será construída como MVP web responsivo.",
+    "O idioma inicial será português, salvo decisão em contrário do cliente.",
+    "O método inicial de validação da estadia será manual, por código ou seleção controlada.",
+    "O desconto será configurável, mesmo que o exemplo inicial seja 15%.",
+    "A regra inicial do cupão será de uso único, salvo decisão diferente do cliente.",
+    "A faturação será registada manualmente no MVP.",
+    "Cada restaurante terá acesso apenas aos seus próprios dados.",
+    "A gestão do grupo terá acesso a dados consolidados de todos os hotéis e restaurantes.",
+    "O cliente fornecerá conteúdos básicos como nomes, imagens, websites, menus digitais e benefícios iniciais.",
+    "Custos de infraestrutura, domínio, serviços externos e licenças não estão incluídos nas horas de desenvolvimento.",
+    "Integrações com sistemas externos dependem de documentação, acessos e disponibilidade técnica dos fornecedores.",
+    "A produtividade com apoio de AI permite manter o projeto completo dentro de um intervalo aproximado de 5000 EUR a 6000 EUR, desde que o escopo se mantenha controlado."
+  ],
+  "branding": {
+    "companyName": "YourLab",
+    "primaryColor": "#4a9eff",
+    "accentColor": "#4a9eff",
+    "backgroundColor": "#1b1b1b",
+    "surfaceColor": "#111111",
+    "textColor": "#e0e0e0",
+    "mutedColor": "#9a9a9a",
+    "logoPath": "logo.png"
+  }
+}
