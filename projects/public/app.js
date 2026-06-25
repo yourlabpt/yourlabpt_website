@@ -1,5 +1,60 @@
 const API = '/api/projects';
 const TOKEN_KEY = 'requirements_platform_token';
+const NAV_RAIL_DOCKED_KEY = 'platform_navRail_docked';
+const NAV_RAIL_EXPANDED_KEY = 'platform_navRail_expanded';
+const NAV_RAIL_MORE_OPEN_KEY = 'platform_navRail_more_open';
+
+const PROJECTLESS_TABS = new Set(['projetos', 'definicoes']);
+
+const NAV_ICON_PATHS = {
+  folder: 'M8 4h8l1 2h3v14H4V6h3z',
+  timeline: 'M3 12h6l2-7 3 14 2-7h5',
+  list: 'M8 7h8M8 12h8M8 17h5',
+  file: 'M7 3h7l5 5v13H7zM14 3v5h5',
+  notes: 'M7 4h10v16H7zM9 8h6M9 12h4',
+  help: 'M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-.9.8-1.7 1.2-1.7 2.7M12 17h.01',
+  chart: 'M4 19V5M4 19h16M8 17V9M12 17V6M16 17v-4',
+  plan: 'M4 18h16M7 18V9M12 18V6M17 18v-4',
+  bolt: 'M13 3L4 14h6l-1 7 9-11h-6z',
+  clock: 'M12 6v6l4 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z',
+  settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l.8-4h-7l.8 4a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.8 4h7l.8-4a8 8 0 0 0 1.7-1l2.4 1 2-3.5z',
+  more: 'M6 12h.01M12 12h.01M18 12h.01',
+};
+
+const NAV_GROUPS = [
+  {
+    id: 'main',
+    items: [{ id: 'projetos', label: 'Projetos', icon: 'folder' }],
+  },
+  {
+    id: 'work',
+    label: 'Trabalho',
+    requiresProject: true,
+    items: [
+      { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
+      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
+    ],
+  },
+  {
+    id: 'more',
+    label: 'Mais',
+    requiresProject: true,
+    collapsible: true,
+    items: [
+      { id: 'projeto', label: 'Visão', icon: 'chart' },
+      { id: 'fases', label: 'Fases', icon: 'plan' },
+      { id: 'gerar', label: 'Gerar', icon: 'bolt' },
+      { id: 'atividade', label: 'Log', icon: 'clock' },
+    ],
+  },
+  {
+    id: 'system',
+    items: [{ id: 'definicoes', label: 'Definições', icon: 'settings' }],
+  },
+];
+
+/** Flat lookup for tab metadata */
+const NAV_PAGES = NAV_GROUPS.flatMap((g) => g.items);
 
 const state = {
   token: localStorage.getItem(TOKEN_KEY) || '',
@@ -9,18 +64,29 @@ const state = {
   projects: [],
   selectedProjectId: null,
   selectedProject: null,
+  traceMap: null,
+  deliverySelectedStageId: 'requirements',
   selectedRequirementId: null,
   generationModulesSelected: [],
   selectedMinuteIds: [],
   questionFilters: {
     status: '',
     targetRole: '',
+    byCurrentStage: true,
+  },
+  activeTab: 'projetos',
+  tabFilters: {
+    deliveryStageId: '',
+    contentView: '',
+    keepModule: false,
   },
   filters: {
     search: '',
     type: '',
     status: '',
     module: '',
+    phase: '',
+    priority: '',
     onlySmartIssues: false,
   },
 };
@@ -37,13 +103,27 @@ const els = {
   userChip: document.getElementById('userChip'),
   logoutBtn: document.getElementById('logoutBtn'),
   themeToggleBtn: document.getElementById('themeToggleBtn'),
+  appLayout: document.getElementById('appLayout'),
+  navRail: document.getElementById('navRail'),
+  navRailItems: document.getElementById('navRailItems'),
+  navRailExpandBtn: document.getElementById('navRailExpandBtn'),
+  navRailDockBtn: document.getElementById('navRailDockBtn'),
+  navRailOpenBtn: document.getElementById('navRailOpenBtn'),
+  navRailBackdrop: document.getElementById('navRailBackdrop'),
+  currentProjectChip: document.getElementById('currentProjectChip'),
   refreshProjectsBtn: document.getElementById('refreshProjectsBtn'),
+  projectsPageGrid: document.getElementById('projectsPageGrid'),
   projectList: document.getElementById('projectList'),
   noProject: document.getElementById('noProject'),
   projectWorkspace: document.getElementById('projectWorkspace'),
-  createProjectPanel: document.getElementById('createProjectPanel'),
   createProjectForm: document.getElementById('createProjectForm'),
-  usersPanel: document.getElementById('usersPanel'),
+  openSettingsBtn: document.getElementById('openSettingsBtn'),
+  settingsThemeToggleBtn: document.getElementById('settingsThemeToggleBtn'),
+  settingsUsersCard: document.getElementById('settingsUsersCard'),
+  settingsProjectSection: document.getElementById('settingsProjectSection'),
+  settingsProjectHint: document.getElementById('settingsProjectHint'),
+  settingsProjectBody: document.getElementById('settingsProjectBody'),
+  phaseContextBar: document.getElementById('phaseContextBar'),
   usersList: document.getElementById('usersList'),
   createUserForm: document.getElementById('createUserForm'),
   newUserRole: document.getElementById('newUserRole'),
@@ -76,6 +156,7 @@ const els = {
   meetingMinuteDate: document.getElementById('meetingMinuteDate'),
   meetingMinuteTitle: document.getElementById('meetingMinuteTitle'),
   meetingMinuteRaw: document.getElementById('meetingMinuteRaw'),
+  meetingMinuteImpactScope: document.getElementById('meetingMinuteImpactScope'),
   minutesPromptObjective: document.getElementById('minutesPromptObjective'),
   minutesPromptExtraInstructions: document.getElementById('minutesPromptExtraInstructions'),
   buildMinutesPromptBtn: document.getElementById('buildMinutesPromptBtn'),
@@ -84,6 +165,9 @@ const els = {
   importRequirementChangesBtn: document.getElementById('importRequirementChangesBtn'),
   minutesHistoryList: document.getElementById('minutesHistoryList'),
   minutesPromptHistoryList: document.getElementById('minutesPromptHistoryList'),
+  minutePropagationPanel: document.getElementById('minutePropagationPanel'),
+  analyzeMinutePropagationBtn: document.getElementById('analyzeMinutePropagationBtn'),
+  generateMinutePropagationPromptBtn: document.getElementById('generateMinutePropagationPromptBtn'),
   addQuestionForm: document.getElementById('addQuestionForm'),
   questionText: document.getElementById('questionText'),
   questionContext: document.getElementById('questionContext'),
@@ -91,6 +175,7 @@ const els = {
   questionCategory: document.getElementById('questionCategory'),
   questionPriority: document.getElementById('questionPriority'),
   questionStatus: document.getElementById('questionStatus'),
+  questionDeliveryStage: document.getElementById('questionDeliveryStage'),
   questionDueDate: document.getElementById('questionDueDate'),
   questionLinkedRequirementIds: document.getElementById('questionLinkedRequirementIds'),
   questionFilterStatus: document.getElementById('questionFilterStatus'),
@@ -366,6 +451,8 @@ function normalizeSubmoduleName(value) {
 }
 
 function formatModuleLabel(requirement) {
+  const tags = Array.isArray(requirement?.moduleTags) ? requirement.moduleTags.filter(Boolean) : [];
+  if (tags.length) return tags.join(', ');
   const moduleName = normalizeModuleName(requirement?.module);
   const submodule = normalizeSubmoduleName(requirement?.submodule);
   return submodule ? `${moduleName} / ${submodule}` : moduleName;
@@ -452,8 +539,7 @@ function setReadonlyByRole() {
   els.saveRequirementDetailsBtn.disabled = readonly;
   els.deleteRequirementDetailsBtn.disabled = readonly;
 
-  els.createProjectPanel.classList.toggle('hidden', readonly);
-  els.usersPanel.classList.toggle('hidden', readonly);
+  if (els.settingsUsersCard) els.settingsUsersCard.classList.toggle('hidden', !isSuperAdmin());
 }
 
 function setMonetaryVisibilityByRole() {
@@ -492,33 +578,303 @@ function renderUsersPanel() {
 }
 
 function renderProjects() {
+  renderProjectsPage();
   const selected = state.selectedProjectId;
   if (!state.projects.length) {
-    els.projectList.innerHTML = '<div class="simple-item"><small>Sem projetos ainda.</small></div>';
+    if (els.projectList) {
+      els.projectList.innerHTML = '<div class="simple-item"><small>Sem projetos ainda.</small></div>';
+    }
+    renderCurrentProjectChip();
     return;
   }
 
-  els.projectList.innerHTML = state.projects.map((project) => {
-    const active = selected === project.id ? 'active' : '';
+  if (els.projectList) {
+    els.projectList.innerHTML = state.projects.map((project) => {
+      const active = selected === project.id ? 'active' : '';
+      return `
+        <article class="project-item ${active}" data-project-id="${escapeHtml(project.id)}">
+          <h4>${escapeHtml(project.name)}</h4>
+          <p>${escapeHtml(project.clientName)} • ${escapeHtml(project.status || 'active')}</p>
+        </article>
+      `;
+    }).join('');
+  }
+  renderCurrentProjectChip();
+}
+
+function renderProjectsPage() {
+  const grid = els.projectsPageGrid;
+  if (!grid) return;
+  const selected = state.selectedProjectId;
+
+  if (!state.projects.length) {
+    grid.innerHTML = `
+      <div class="projects-empty read-card">
+        <h4>Ainda não há projectos</h4>
+        <p class="muted-text">Use o formulário abaixo para criar o primeiro projecto.</p>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = state.projects.map((project) => {
+    const active = selected === project.id ? 'is-active' : '';
+    const reqCount = Array.isArray(project.requirements) ? project.requirements.length : (project.requirementCount || 0);
     return `
-      <article class="project-item ${active}" data-project-id="${escapeHtml(project.id)}">
-        <h4>${escapeHtml(project.name)}</h4>
-        <p>${escapeHtml(project.clientName)} • ${escapeHtml(project.status || 'active')}</p>
+      <article class="project-card ${active}" data-project-id="${escapeHtml(project.id)}">
+        <div class="project-card-head">
+          <h4>${escapeHtml(project.name)}</h4>
+          <span class="project-card-status">${escapeHtml(project.status || 'active')}</span>
+        </div>
+        <p class="project-card-client">${escapeHtml(project.clientName || '—')}</p>
+        <div class="project-card-meta">
+          <span>${reqCount} requisitos</span>
+          <span>${escapeHtml(project.proposalCode || project.id)}</span>
+        </div>
+        <button type="button" class="btn tiny primary project-card-open" data-project-id="${escapeHtml(project.id)}">Abrir projecto</button>
       </article>
     `;
   }).join('');
 }
 
-function renderProjectDetails() {
+function renderCurrentProjectChip() {
+  const chip = els.currentProjectChip;
+  if (!chip) return;
   const project = state.selectedProject;
   if (!project) {
-    els.noProject.classList.remove('hidden');
-    els.projectWorkspace.classList.add('hidden');
+    chip.classList.add('hidden');
+    chip.innerHTML = '';
+    return;
+  }
+  chip.classList.remove('hidden');
+  chip.innerHTML = `
+    <strong>${escapeHtml(project.name)}</strong>
+    <button type="button" class="btn tiny ghost" data-goto-tab="projetos" title="Trocar projecto">↔</button>
+  `;
+}
+
+function navIconSvg(iconKey) {
+  const path = NAV_ICON_PATHS[iconKey] || NAV_ICON_PATHS.folder;
+  return `<svg class="nav-rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function isNavGroupVisible(group) {
+  if (group.requiresProject && !state.selectedProject) return false;
+  return true;
+}
+
+function isNavPageRequiresProject(pageId) {
+  const page = NAV_PAGES.find((p) => p.id === pageId);
+  if (!page) return false;
+  const group = NAV_GROUPS.find((g) => g.items.some((item) => item.id === pageId));
+  return Boolean(group?.requiresProject);
+}
+
+function renderNavItem(item, { compact = false } = {}) {
+  const active = state.activeTab === item.id;
+  return `
+    <button type="button"
+      class="nav-rail-item ${active ? 'active' : ''}"
+      data-nav-tab="${escapeHtml(item.id)}"
+      title="${escapeHtml(item.label)}"
+      aria-label="${escapeHtml(item.label)}"
+      aria-current="${active ? 'page' : 'false'}">
+      ${navIconSvg(item.icon)}
+      <span class="nav-rail-label">${escapeHtml(item.label)}</span>
+    </button>
+  `;
+}
+
+const COLLAPSED_QUICK_NAV = ['projetos', 'deliveryos', 'requisitos', 'definicoes'];
+
+function findNavItem(pageId) {
+  for (const group of NAV_GROUPS) {
+    const item = group.items.find((entry) => entry.id === pageId);
+    if (item) return item;
+  }
+  return null;
+}
+
+function renderNavRail() {
+  const container = els.navRailItems;
+  if (!container) return;
+
+  const expanded = localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === 'true';
+  const moreOpen = localStorage.getItem(NAV_RAIL_MORE_OPEN_KEY) === 'true';
+  const active = state.activeTab;
+  const activeInMore = NAV_GROUPS.find((g) => g.id === 'more')?.items.some((i) => i.id === active);
+
+  let html = '';
+
+  if (!expanded) {
+    for (const pageId of COLLAPSED_QUICK_NAV) {
+      const item = findNavItem(pageId);
+      if (!item) continue;
+      if (isNavPageRequiresProject(pageId) && !state.selectedProject) continue;
+      html += renderNavItem(item);
+    }
+    if (state.selectedProject) {
+      const moreActive = activeInMore || ['projeto', 'documentos', 'atas', 'perguntas', 'fases', 'gerar', 'atividade'].includes(active);
+      html += `
+        <button type="button" class="nav-rail-item nav-rail-more ${moreActive ? 'active' : ''}" data-nav-more-toggle title="Mais páginas" aria-label="Mais páginas">
+          ${navIconSvg('more')}
+          <span class="nav-rail-label">Mais</span>
+        </button>
+      `;
+    }
+    container.innerHTML = html;
+    return;
+  }
+
+  for (const group of NAV_GROUPS) {
+    if (!isNavGroupVisible(group)) continue;
+
+    if (group.label && group.id === 'work') {
+      html += `<div class="nav-rail-group-label">${escapeHtml(group.label)}</div>`;
+    }
+
+    if (group.collapsible && expanded) {
+      const open = moreOpen || activeInMore;
+      html += `<details class="nav-rail-group" ${open ? 'open' : ''} data-nav-group="more">
+        <summary class="nav-rail-group-summary">${escapeHtml(group.label)}</summary>
+        <div class="nav-rail-group-items">
+          ${group.items.map((item) => renderNavItem(item)).join('')}
+        </div>
+      </details>`;
+      continue;
+    }
+
+    html += group.items.map((item) => renderNavItem(item)).join('');
+  }
+
+  container.innerHTML = html;
+}
+
+function applyNavRailLayout() {
+  const layout = els.appLayout;
+  const rail = els.navRail;
+  if (!layout || !rail) return;
+
+  const docked = localStorage.getItem(NAV_RAIL_DOCKED_KEY) !== 'false';
+  const expanded = localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === 'true';
+  const overlayOpen = layout.classList.contains('nav-rail-open');
+
+  layout.classList.toggle('is-docked', docked);
+  layout.classList.toggle('is-overlay', !docked);
+  layout.classList.toggle('is-expanded', expanded);
+  layout.classList.toggle('is-collapsed', !expanded);
+
+  if (els.navRailExpandBtn) {
+    els.navRailExpandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    els.navRailExpandBtn.title = expanded ? 'Recolher menu' : 'Expandir menu';
+    const path = els.navRailExpandBtn.querySelector('path');
+    if (path) path.setAttribute('d', expanded ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6');
+  }
+
+  if (els.navRailDockBtn) {
+    els.navRailDockBtn.setAttribute('aria-pressed', docked ? 'true' : 'false');
+    els.navRailDockBtn.title = docked ? 'Modo sobreposto (libertar espaço)' : 'Fixar barra lateral';
+    els.navRailDockBtn.querySelector('.nav-icon-docked')?.classList.toggle('hidden', !docked);
+    els.navRailDockBtn.querySelector('.nav-icon-overlay')?.classList.toggle('hidden', docked);
+  }
+
+  els.navRailOpenBtn?.classList.toggle('hidden', docked || overlayOpen);
+  els.navRailBackdrop?.classList.toggle('hidden', docked || !overlayOpen);
+
+  if (docked) {
+    layout.classList.remove('nav-rail-open');
+    rail.style.transform = '';
+    rail.style.left = '';
+    rail.style.top = '';
+  }
+}
+
+function setNavRailOverlayOpen(open) {
+  els.appLayout?.classList.toggle('nav-rail-open', open);
+  els.navRailBackdrop?.classList.toggle('hidden', !open);
+  els.navRailOpenBtn?.classList.toggle('hidden', open);
+  applyNavRailLayout();
+}
+
+function initNavRail() {
+  if (localStorage.getItem(NAV_RAIL_DOCKED_KEY) === null) {
+    localStorage.setItem(NAV_RAIL_DOCKED_KEY, 'true');
+  }
+  if (localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === null) {
+    localStorage.setItem(NAV_RAIL_EXPANDED_KEY, 'false');
+  }
+
+  applyNavRailLayout();
+  renderNavRail();
+
+  els.navRailExpandBtn?.addEventListener('click', () => {
+    const expanded = localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === 'true';
+    localStorage.setItem(NAV_RAIL_EXPANDED_KEY, expanded ? 'false' : 'true');
+    applyNavRailLayout();
+    renderNavRail();
+  });
+
+  els.navRailDockBtn?.addEventListener('click', () => {
+    const docked = localStorage.getItem(NAV_RAIL_DOCKED_KEY) !== 'false';
+    localStorage.setItem(NAV_RAIL_DOCKED_KEY, docked ? 'false' : 'true');
+    if (!docked) setNavRailOverlayOpen(false);
+    applyNavRailLayout();
+    renderNavRail();
+  });
+
+  els.navRailOpenBtn?.addEventListener('click', () => setNavRailOverlayOpen(true));
+  els.navRailBackdrop?.addEventListener('click', () => setNavRailOverlayOpen(false));
+
+  els.navRailItems?.addEventListener('click', (event) => {
+    const moreBtn = event.target.closest('[data-nav-more-toggle]');
+    if (moreBtn) {
+      localStorage.setItem(NAV_RAIL_EXPANDED_KEY, 'true');
+      localStorage.setItem(NAV_RAIL_MORE_OPEN_KEY, 'true');
+      applyNavRailLayout();
+      renderNavRail();
+      return;
+    }
+
+    const btn = event.target.closest('[data-nav-tab]');
+    if (!btn) return;
+    switchToTab(btn.dataset.navTab);
+    if (els.appLayout?.classList.contains('is-overlay')) {
+      setNavRailOverlayOpen(false);
+    }
+  });
+
+  els.navRailItems?.addEventListener('toggle', (event) => {
+    const details = event.target.closest('details[data-nav-group="more"]');
+    if (!details) return;
+    localStorage.setItem(NAV_RAIL_MORE_OPEN_KEY, details.open ? 'true' : 'false');
+  });
+
+  window.addEventListener('resize', () => applyNavRailLayout());
+}
+
+function renderProjectDetails() {
+  renderSettingsAvailability();
+  renderNavRail();
+  const project = state.selectedProject;
+
+  els.projectWorkspace.classList.remove('hidden');
+
+  if (!project) {
+    const allowed = PROJECTLESS_TABS.has(state.activeTab);
+    if (!allowed) {
+      state.activeTab = 'projetos';
+    }
+    els.noProject.classList.toggle('hidden', state.activeTab !== 'projetos');
+    document.querySelectorAll('.tab-panel').forEach((p) => {
+      const show = p.dataset.panel === state.activeTab || (state.activeTab === 'projetos' && p.dataset.panel === 'projetos');
+      p.classList.toggle('hidden', !show);
+    });
+    renderPhaseContextBar();
+    renderProjectsPage();
     return;
   }
 
   els.noProject.classList.add('hidden');
-  els.projectWorkspace.classList.remove('hidden');
 
   els.projectName.value = project.name || '';
   els.projectClient.value = project.clientName || '';
@@ -559,6 +915,11 @@ function renderProjectDetails() {
   renderImplementationPlan(project);
   renderRiskAssumptionView(project);
   renderGenerated(project);
+  if (window.PdosUI) window.PdosUI.renderAll(project);
+  document.querySelectorAll('.tab-panel').forEach((p) => {
+    p.classList.toggle('hidden', p.dataset.panel !== state.activeTab);
+  });
+  renderPhaseContextBar();
   requestAnimationFrame(() => refreshAutoResize(els.projectWorkspace));
 }
 
@@ -630,23 +991,51 @@ function renderMembers(project) {
 }
 
 function renderDocuments(project) {
-  const docs = Array.isArray(project.documents) ? project.documents : [];
+  if (window.DocumentsUI?.renderDocumentsPage) {
+    window.DocumentsUI.renderDocumentsPage(project);
+    return;
+  }
+  let docs = Array.isArray(project.documents) ? project.documents : [];
+  const stageFilter = String(state.tabFilters?.deliveryStageId || '').trim();
+  if (stageFilter && state.activeTab === 'documentos') {
+    const resolve = window.PhaseContent?.resolveDocumentStageId || ((d) => d.deliveryStageId || 'discovery');
+    docs = docs.filter((d) => resolve(d) === stageFilter);
+  }
   if (!docs.length) {
-    els.documentsList.innerHTML = '<div class="simple-item"><small>Sem documentos carregados.</small></div>';
+    els.documentsList.innerHTML = `<div class="simple-item"><small>${stageFilter ? 'Sem documentos nesta fase.' : 'Sem documentos carregados.'}</small></div>`;
     return;
   }
 
-  els.documentsList.innerHTML = docs.map((doc) => `
-    <div class="simple-item">
-      <strong>${escapeHtml(doc.originalName)}</strong>
-      <small>${new Date(doc.uploadedAt).toLocaleString('pt-PT')} • ${(doc.size / 1024).toFixed(1)} KB ${doc.hasExtractedText ? '• texto extraído' : ''}</small>
+  els.documentsList.innerHTML = docs.map((doc) => {
+    const name = doc.title || doc.originalName;
+    const stage = doc.deliveryStageId ? stageLabel(doc.deliveryStageId) : '';
+    const typeLabel = doc.docType || 'anexo';
+    return `
+    <div class="simple-item doc-list-item">
+      <button type="button" class="nav-link-btn" data-open-doc="${escapeHtml(doc.id)}">
+        <strong>${escapeHtml(name)}</strong>
+      </button>
+      <small>${new Date(doc.uploadedAt || doc.createdAt).toLocaleString('pt-PT')} · ${typeLabel}${stage ? ` · ${escapeHtml(stage)}` : ''} ${doc.hasExtractedText || doc.contentMarkdown ? '· texto' : ''}</small>
       <a href="/api/projects/projects/${encodeURIComponent(project.id)}/documents/${encodeURIComponent(doc.id)}/download" target="_blank" rel="noopener">Download</a>
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  els.documentsList.querySelectorAll('[data-open-doc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const doc = docs.find((d) => d.id === btn.dataset.openDoc);
+      if (doc) window.RequirementsUI?.openDocumentViewer?.(doc, project);
+    });
+  });
 }
 
 function renderMeetingMinutes(project) {
-  const minutes = Array.isArray(project.meetingMinutes) ? project.meetingMinutes : [];
+  let minutes = Array.isArray(project.meetingMinutes) ? project.meetingMinutes : [];
+  const stageFilter = String(state.tabFilters?.deliveryStageId || '').trim();
+  if (stageFilter && state.activeTab === 'atas') {
+    const resolve = window.PhaseContent?.resolveMeetingStageId || ((m) => m.targetStageId || m.impactScope || 'requirements');
+    minutes = minutes.filter((m) => resolve(m) === stageFilter);
+  }
   const promptHistory = Array.isArray(project.minutesPromptHistory) ? project.minutesPromptHistory : [];
 
   if (els.meetingMinuteDate && !els.meetingMinuteDate.value) {
@@ -677,6 +1066,8 @@ function renderMeetingMinutes(project) {
   els.minutesHistoryList.innerHTML = minutes.slice(0, 80).map((entry) => {
     const checked = selectedSet.has(entry.id) ? 'checked' : '';
     const meetingDateLabel = entry.meetingDate || new Date(entry.createdAt).toISOString().slice(0, 10);
+    const impactLabel = impactScopeLabel(entry.impactScope || 'requirements');
+    const stageLabelText = stageLabel(entry.targetStageId || entry.impactScope || 'requirements');
     return `
       <div class="simple-item">
         <label class="checkline">
@@ -685,8 +1076,9 @@ function renderMeetingMinutes(project) {
         </label>
         <div class="minute-meta">
           <small>${escapeHtml(meetingDateLabel)}</small>
+          <span class="impact-badge">${escapeHtml(impactLabel)}</span>
+          <small>Fase: ${escapeHtml(stageLabelText)}</small>
           <small>${new Date(entry.createdAt).toLocaleString('pt-PT')}</small>
-          <small>ID: ${escapeHtml(entry.id)}</small>
         </div>
         <details class="collapsible">
           <summary>Ver texto raw</summary>
@@ -708,16 +1100,111 @@ function renderMeetingMinutes(project) {
       </div>
     `).join('')
     : '<div class="simple-item"><small>Sem histórico de prompts.</small></div>';
+  renderMinutePropagationPanel();
+}
+
+function renderMinutePropagationPanel(plan) {
+  const panel = els.minutePropagationPanel;
+  if (!panel) return;
+  const minuteIds = syncSelectedMinutesFromList();
+  if (!minuteIds.length) {
+    panel.innerHTML = '<p class="muted-text">Seleccione uma ou mais atas no histórico (checkbox) para ver o plano de propagação.</p>';
+    return;
+  }
+  if (!plan) {
+    panel.innerHTML = '<p class="muted-text">Clique em «Analisar impacto nas fases» para calcular quais etapas da linha dourada são afectadas.</p>';
+    return;
+  }
+  const renderStageList = (title, ids) => {
+    if (!ids?.length) return `<div class="propagation-block"><h5>${escapeHtml(title)}</h5><p class="muted-text">Nenhuma</p></div>`;
+    return `
+      <div class="propagation-block">
+        <h5>${escapeHtml(title)}</h5>
+        <ul class="propagation-stages">${ids.map((id) => `
+          <li>
+            <strong>${escapeHtml(stageLabel(id))}</strong>
+            <button type="button" class="btn tiny ghost" data-set-stage="${escapeHtml(id)}" data-goto-tab="deliveryos">Ver fase</button>
+          </li>
+        `).join('')}</ul>
+      </div>
+    `;
+  };
+  panel.innerHTML = `
+    <h4>Plano de propagação (${minuteIds.length} ata(s))</h4>
+    ${plan.hints?.length ? `<p class="muted-text">${escapeHtml(plan.hints.join(' '))}</p>` : ''}
+    <div class="propagation-grid">
+      ${renderStageList('Fase principal', plan.primaryStageIds)}
+      ${renderStageList('Rever para trás', plan.upstreamStageIds)}
+      ${renderStageList('Actualizar para a frente', plan.downstreamStageIds)}
+    </div>
+  `;
+}
+
+async function handleAnalyzeMinutePropagation() {
+  if (!state.selectedProject) return;
+  const minuteIds = syncSelectedMinutesFromList();
+  if (!minuteIds.length) {
+    showToast('Seleccione pelo menos uma ata.', 'error');
+    return;
+  }
+  try {
+    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/propagation-plan`, {
+      method: 'POST',
+      body: { minuteIds },
+    });
+    renderMinutePropagationPanel(payload.plan);
+    showToast('Plano de propagação calculado.', 'ok');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function handleGenerateMinutePropagationPrompt() {
+  if (!state.selectedProject) return;
+  const minuteIds = syncSelectedMinutesFromList();
+  if (!minuteIds.length) {
+    showToast('Seleccione pelo menos uma ata.', 'error');
+    return;
+  }
+  try {
+    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/propagation-prompt`, {
+      method: 'POST',
+      body: { minuteIds },
+    });
+    if (payload.plan) renderMinutePropagationPanel(payload.plan);
+    if (payload.project) {
+      state.selectedProject = payload.project;
+      renderProjectDetails();
+    }
+    if (els.minutesPromptOutput && payload.prompt) {
+      els.minutesPromptOutput.value = payload.prompt;
+    }
+    showToast('Prompt de propagação gerado — revisão humana criada.', 'ok');
+    switchToTab('deliveryos');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+function questionStageOptions(selected) {
+  const stages = state.config?.stageOrder || ['requirements'];
+  return stages.map((stageId) =>
+    `<option value="${escapeHtml(stageId)}" ${stageId === (selected || 'requirements') ? 'selected' : ''}>${escapeHtml(stageLabel(stageId))}</option>`
+  ).join('');
 }
 
 function getFilteredClarificationQuestions(project) {
   const questions = Array.isArray(project?.clarificationQuestions) ? project.clarificationQuestions : [];
   const statusFilter = String(state.questionFilters.status || '').trim();
   const targetFilter = String(state.questionFilters.targetRole || '').trim();
+  const stageFilter = state.questionFilters.byCurrentStage && state.activeTab === 'perguntas'
+    ? String(state.tabFilters?.deliveryStageId || state.deliverySelectedStageId || '').trim()
+    : '';
 
   return questions.filter((entry) => {
     if (statusFilter && entry.status !== statusFilter) return false;
     if (targetFilter && entry.targetRole !== targetFilter) return false;
+    if (stageFilter && entry.deliveryStageId !== stageFilter) return false;
     return true;
   });
 }
@@ -726,6 +1213,9 @@ function renderClarificationQuestions(project) {
   const allQuestions = Array.isArray(project?.clarificationQuestions) ? project.clarificationQuestions : [];
   const filtered = getFilteredClarificationQuestions(project);
   const tbody = els.questionsTable.querySelector('tbody');
+  if (els.questionDeliveryStage && state.deliverySelectedStageId) {
+    els.questionDeliveryStage.value = state.deliverySelectedStageId;
+  }
   if (els.questionFilterStatus) {
     const value = state.questionFilters.status || '';
     if (Array.from(els.questionFilterStatus.options).some((opt) => opt.value === value)) {
@@ -745,10 +1235,10 @@ function renderClarificationQuestions(project) {
     partner: allQuestions.filter((entry) => entry.targetRole === 'partner').length,
     both: allQuestions.filter((entry) => entry.targetRole === 'both').length,
   };
-  els.questionsMeta.textContent = `${filtered.length} pergunta(s) no filtro (de ${allQuestions.length}) • Em aberto: ${unresolved} • Resolvidas: ${answered} • Client: ${byTarget.client} • Partner: ${byTarget.partner} • Both: ${byTarget.both}`;
+  els.questionsMeta.textContent = `${filtered.length} pergunta(s) no filtro (de ${allQuestions.length}) • Fase activa: ${stageLabel(state.deliverySelectedStageId || 'requirements')} • Em aberto: ${unresolved} • Resolvidas: ${answered} • Client: ${byTarget.client} • Partner: ${byTarget.partner} • Both: ${byTarget.both}`;
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="9">${allQuestions.length ? 'Nenhuma pergunta corresponde ao filtro.' : 'Sem perguntas registadas.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10">${allQuestions.length ? 'Nenhuma pergunta corresponde ao filtro.' : 'Sem perguntas registadas.'}</td></tr>`;
     return;
   }
 
@@ -773,6 +1263,7 @@ function renderClarificationQuestions(project) {
             ${contextText}
             <div class="muted">Due: ${escapeHtml(dueDate || 'N/A')}</div>
           </td>
+          <td data-label="Fase">${escapeHtml(stageLabel(entry.deliveryStageId || 'requirements'))}</td>
           <td data-label="Destino">${escapeHtml(entry.targetRole || 'client')}</td>
           <td data-label="Status">${escapeHtml(entry.status || 'open')}</td>
           <td data-label="Prioridade">${escapeHtml(entry.priority || 'medium')}</td>
@@ -794,6 +1285,9 @@ function renderClarificationQuestions(project) {
           <textarea data-field="context" rows="3" placeholder="Contexto" ${disabled}>${escapeHtml(entry.context || '')}</textarea>
           <span class="field-title">Data limite</span>
           <input data-field="dueDate" type="date" value="${escapeHtml(dueDate)}" ${disabled} />
+        </td>
+        <td data-label="Fase">
+          <select data-field="deliveryStageId" ${disabled}>${questionStageOptions(entry.deliveryStageId)}</select>
         </td>
         <td data-label="Destino">
           <select data-field="targetRole" ${disabled}>${targetOptionsHtml}</select>
@@ -1030,6 +1524,10 @@ function renderImplementationPlan(project) {
 }
 
 function renderRequirements(project) {
+  if (window.RequirementsUI?.renderGroupedRequirements) {
+    window.RequirementsUI.renderGroupedRequirements(project);
+    return;
+  }
   const items = Array.isArray(project.requirements) ? project.requirements : [];
   const filtered = getFilteredRequirements(items);
   const prepared = filtered;
@@ -1238,20 +1736,22 @@ async function loadProjects(selectId) {
   if (selectId) {
     state.selectedProjectId = selectId;
   } else if (state.selectedProjectId && state.projects.some((p) => p.id === state.selectedProjectId)) {
-    // keep
+    // keep current selection
   } else {
-    state.selectedProjectId = state.projects[0]?.id || null;
+    state.selectedProjectId = null;
   }
 
   if (state.selectedProjectId) {
-    await loadProjectById(state.selectedProjectId);
+    await loadProjectById(state.selectedProjectId, { switchTab: false });
   } else {
     state.selectedProject = null;
+    renderProjects();
     renderProjectDetails();
+    switchToTab(state.activeTab || 'projetos');
   }
 }
 
-async function loadProjectById(projectId) {
+async function loadProjectById(projectId, options = {}) {
   state.selectedProjectId = projectId;
   const payload = await apiRequest(`/projects/${encodeURIComponent(projectId)}`);
   state.selectedProject = payload.project;
@@ -1260,8 +1760,168 @@ async function loadProjectById(projectId) {
   }
   renderProjects();
   renderProjectDetails();
+  if (options.switchTab !== false) {
+    switchToTab('deliveryos');
+  }
   await loadActivity();
 }
+
+function stageLabel(stageId) {
+  const focus = state.config?.stageFocus?.[stageId];
+  if (focus) return focus.split('—')[0].trim();
+  const flow = (state.config?.deliveryStageFlow || []).find((entry) => entry.id === stageId);
+  return flow?.label || stageId;
+}
+
+function impactScopeLabel(scopeId) {
+  const entry = (state.config?.meetingImpactScopes || []).find((item) => item.id === scopeId);
+  return entry?.label || scopeId;
+}
+
+function renderSettingsAvailability() {
+  const hasProject = Boolean(state.selectedProject);
+  if (els.settingsProjectHint) {
+    els.settingsProjectHint.classList.toggle('hidden', hasProject);
+  }
+  if (els.settingsProjectBody) {
+    els.settingsProjectBody.classList.toggle('hidden', !hasProject);
+  }
+  const levelSelect = document.getElementById('deliveryLevelSelect');
+  if (levelSelect && hasProject) {
+    levelSelect.value = state.selectedProject.deliveryLevel || 'standard';
+  }
+}
+
+function renderPhaseContextBar() {
+  const bar = els.phaseContextBar;
+  if (!bar) return;
+
+  const hideBar = !state.selectedProject
+    || state.activeTab === 'definicoes'
+    || state.activeTab === 'projetos'
+    || state.activeTab === 'deliveryos';
+
+  if (hideBar) {
+    bar.classList.add('hidden');
+    bar.innerHTML = '';
+    return;
+  }
+
+  const stageId = state.deliverySelectedStageId || 'requirements';
+  const stageName = stageLabel(stageId);
+  const hasStageFilter = Boolean(state.tabFilters?.deliveryStageId);
+
+  bar.classList.remove('hidden');
+  bar.innerHTML = `
+    <div class="phase-context-strip">
+      <div class="phase-context-strip-left">
+        <span class="phase-context-pill">${escapeHtml(stageName)}</span>
+        ${hasStageFilter ? '<span class="phase-context-tag">filtro activo</span>' : '<span class="phase-context-tag is-muted">fase seleccionada</span>'}
+      </div>
+      <button type="button" class="phase-context-go" data-goto-tab="deliveryos" data-set-stage="${escapeHtml(stageId)}">
+        Ver conteúdo na Linha de Entrega
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  `;
+}
+
+function navigateToRequirement(requirementId) {
+  if (!requirementId || !state.selectedProject) return;
+  state.selectedRequirementId = requirementId;
+  switchToTab('requisitos');
+  renderRequirements(state.selectedProject);
+  if (window.RequirementsUI?.openRequirementModal) {
+    window.RequirementsUI.openRequirementModal(requirementId, state.selectedProject);
+    return;
+  }
+  const row = els.requirementsTable.querySelector(`tr[data-requirement-id="${requirementId}"]`);
+  if (row) {
+    row.classList.add('row-highlight');
+    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    row.click();
+  }
+}
+
+function navigateToFilteredTab(tabId, filters = {}) {
+  state.tabFilters = state.tabFilters || {};
+  if (filters.deliveryStageId) {
+    state.tabFilters.deliveryStageId = filters.deliveryStageId;
+    state.deliverySelectedStageId = filters.deliveryStageId;
+  }
+  if (filters.module) {
+    state.filters.module = filters.module;
+    state.tabFilters.keepModule = true;
+  }
+  if (filters.phase) state.filters.phase = filters.phase;
+  if (filters.contentView) {
+    state.tabFilters.contentView = filters.contentView;
+  } else if (filters.deliveryStageId && tabId !== 'documentos') {
+    state.tabFilters.contentView = '';
+  }
+  if (filters.clearStage) {
+    state.tabFilters.deliveryStageId = '';
+  }
+  if (tabId === 'perguntas') {
+    state.questionFilters.byCurrentStage = Boolean(filters.deliveryStageId);
+  }
+  if (tabId === 'atas' && filters.deliveryStageId) {
+    state.tabFilters.deliveryStageId = filters.deliveryStageId;
+  }
+  switchToTab(tabId);
+}
+
+function switchToTab(tabId) {
+  const target = tabId || 'projetos';
+  if (isNavPageRequiresProject(target) && !state.selectedProject) {
+    showToast('Seleccione ou crie um projecto primeiro.', 'error');
+    state.activeTab = 'projetos';
+  } else {
+    state.activeTab = target;
+  }
+
+  const activeId = state.activeTab;
+  const tabs = document.getElementById('sectionTabs');
+  tabs?.querySelectorAll('.tab-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === activeId);
+  });
+  document.querySelectorAll('.tab-panel').forEach((p) => {
+    p.classList.toggle('hidden', p.dataset.panel !== activeId);
+  });
+
+  els.noProject?.classList.toggle('hidden', state.selectedProject || activeId !== 'projetos');
+  renderNavRail();
+  renderSettingsAvailability();
+  renderPhaseContextBar();
+
+  if (activeId === 'definicoes') {
+    renderUsersPanel();
+    setReadonlyByRole();
+  }
+  if (activeId === 'projetos') {
+    renderProjectsPage();
+  }
+  if (state.selectedProject && activeId === 'requisitos') {
+    renderRequirements(state.selectedProject);
+  }
+  if (state.selectedProject && activeId === 'documentos') {
+    renderDocuments(state.selectedProject);
+  }
+  if (state.selectedProject && activeId === 'atas') {
+    renderMeetingMinutes(state.selectedProject);
+  }
+  if (state.selectedProject && activeId === 'perguntas') {
+    renderClarificationQuestions(state.selectedProject);
+  }
+  if (state.selectedProject && activeId === 'atas') {
+    renderMinutePropagationPanel();
+  }
+}
+
+window.switchToTab = switchToTab;
+window.navigateToRequirement = navigateToRequirement;
+window.navigateToFilteredTab = navigateToFilteredTab;
+window.renderPhaseContextBar = renderPhaseContextBar;
 
 async function loadActivity() {
   const project = state.selectedProject;
@@ -1354,6 +2014,7 @@ async function handleLogin(event) {
 }
 
 async function bootstrapAppAfterLogin() {
+  window.state = state;
   await loadCurrentUser();
   await loadUsers();
   await loadProjects();
@@ -1365,6 +2026,10 @@ async function bootstrapAppAfterLogin() {
   setMonetaryVisibilityByRole();
   syncBudgetAccessControl();
   renderUsersPanel();
+  window.PdosUI?.wirePdosEvents();
+  window.PdosUI?.wireTraceEvents();
+  initNavRail();
+  switchToTab(state.selectedProject ? state.activeTab : 'projetos');
 }
 
 async function handleLogout() {
@@ -1549,6 +2214,7 @@ async function handleAddMeetingMinute(event) {
         meetingDate: els.meetingMinuteDate.value,
         title: els.meetingMinuteTitle.value,
         rawText: els.meetingMinuteRaw.value,
+        impactScope: els.meetingMinuteImpactScope?.value || 'requirements',
       },
     });
 
@@ -1630,6 +2296,7 @@ async function handleAddQuestion(event) {
         category: els.questionCategory.value,
         priority: els.questionPriority.value,
         status: els.questionStatus.value || 'open',
+        deliveryStageId: els.questionDeliveryStage?.value || state.deliverySelectedStageId || 'requirements',
         dueDate: els.questionDueDate.value,
         linkedRequirementIds: splitRequirementIds(els.questionLinkedRequirementIds.value),
       },
@@ -1653,6 +2320,7 @@ function readQuestionPatchFromRow(row) {
     status: row.querySelector('[data-field="status"]')?.value || 'open',
     priority: row.querySelector('[data-field="priority"]')?.value || 'medium',
     category: row.querySelector('[data-field="category"]')?.value || 'other',
+    deliveryStageId: row.querySelector('[data-field="deliveryStageId"]')?.value || 'requirements',
     dueDate: row.querySelector('[data-field="dueDate"]')?.value || '',
     linkedRequirementIds: splitRequirementIds(row.querySelector('[data-field="linkedRequirementIds"]')?.value || ''),
     answer: row.querySelector('[data-field="answer"]')?.value || '',
@@ -1970,6 +2638,37 @@ function wireEvents() {
   els.logoutBtn.addEventListener('click', handleLogout);
   els.themeToggleBtn.addEventListener('click', toggleTheme);
   els.refreshProjectsBtn.addEventListener('click', () => loadProjects(state.selectedProjectId).catch((e) => showToast(e.message, 'error')));
+  els.openSettingsBtn?.addEventListener('click', () => switchToTab('definicoes'));
+  els.settingsThemeToggleBtn?.addEventListener('click', toggleTheme);
+  els.analyzeMinutePropagationBtn?.addEventListener('click', handleAnalyzeMinutePropagation);
+  els.generateMinutePropagationPromptBtn?.addEventListener('click', handleGenerateMinutePropagationPrompt);
+  document.addEventListener('click', (event) => {
+    const filterBtn = event.target.closest('[data-goto-filter-tab]');
+    if (filterBtn && !filterBtn.disabled) {
+      event.preventDefault();
+      navigateToFilteredTab(filterBtn.getAttribute('data-goto-filter-tab'), {
+        deliveryStageId: filterBtn.getAttribute('data-goto-filter-stage'),
+      });
+      return;
+    }
+    const gotoBtn = event.target.closest('[data-goto-tab]');
+    if (gotoBtn) {
+      event.preventDefault();
+      const tabId = gotoBtn.getAttribute('data-goto-tab');
+      const stageId = gotoBtn.getAttribute('data-set-stage');
+      if (stageId) state.deliverySelectedStageId = stageId;
+      switchToTab(tabId);
+      if (state.selectedProject && window.PdosUI?.renderAll) {
+        window.PdosUI.renderAll(state.selectedProject);
+      }
+      return;
+    }
+    const reqLink = event.target.closest('[data-goto-requirement]');
+    if (reqLink) {
+      event.preventDefault();
+      navigateToRequirement(reqLink.getAttribute('data-goto-requirement'));
+    }
+  });
   els.createProjectForm.addEventListener('submit', handleCreateProject);
   els.createUserForm.addEventListener('submit', handleCreateUser);
   els.newUserRole?.addEventListener('change', syncBudgetAccessControl);
@@ -1991,10 +2690,17 @@ function wireEvents() {
   els.saveRequirementDetailsBtn.addEventListener('click', handleSaveRequirementDetails);
   els.deleteRequirementDetailsBtn.addEventListener('click', handleDeleteRequirementDetails);
 
-  els.projectList.addEventListener('click', (event) => {
+  els.projectList?.addEventListener('click', (event) => {
     const item = event.target.closest('[data-project-id]');
     if (!item) return;
     const projectId = item.getAttribute('data-project-id');
+    loadProjectById(projectId).catch((error) => showToast(error.message, 'error'));
+  });
+
+  els.projectsPageGrid?.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-project-id]');
+    if (!card) return;
+    const projectId = card.getAttribute('data-project-id');
     loadProjectById(projectId).catch((error) => showToast(error.message, 'error'));
   });
 
@@ -2009,6 +2715,7 @@ function wireEvents() {
     const target = event.target;
     if (target && target.matches('input[type="checkbox"][data-minute-id]')) {
       syncSelectedMinutesFromList();
+      renderMinutePropagationPanel();
     }
   });
   els.reqModule.addEventListener('change', () => {

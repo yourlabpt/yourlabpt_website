@@ -138,6 +138,10 @@ registerRequirementsPlatform(app, {
     buildScriptPath: process.env.REQ_PLATFORM_BUILD_SCRIPT,
 });
 
+// Block direct access to sensitive platform data/uploads
+app.use('/projects/data', (req, res) => res.status(403).json({ error: 'Forbidden' }));
+app.use('/projects/uploads', (req, res) => res.status(403).json({ error: 'Forbidden' }));
+
 // Serve static files
 app.use(express.static(path.join(__dirname, '..')));
 

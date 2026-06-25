@@ -3,10 +3,11 @@ const path = require('path');
 const fs = require('fs').promises;
 const { execFileSync } = require('child_process');
 const multer = require('multer');
+const deliveryOs = require('./lib/delivery-os');
+const phaseContent = require('./lib/phase-content');
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 const sessions = new Map();
-let writeQueue = Promise.resolve();
 
 const DEFAULT_COMMERCIAL_TERMS = {
   paymentTerms: [
@@ -45,6 +46,33 @@ const DEFAULT_ARCHITECTURE_MODULE = 'Backend';
 const QUESTION_STATUS_FLOW = ['open', 'sent', 'answered', 'resolved', 'blocked'];
 const QUESTION_TARGET_FLOW = ['client', 'partner', 'both'];
 const QUESTION_CATEGORY_FLOW = ['scope', 'functional', 'non_functional', 'integration', 'data', 'business_rule', 'ux', 'security', 'timeline', 'pricing', 'other'];
+const DELIVERY_STAGE_FLOW = [
+  { id: 'idea', label: 'Idea' },
+  { id: 'discovery', label: 'Discovery' },
+  { id: 'requirements', label: 'Requirements' },
+  { id: 'architecture', label: 'Architecture' },
+  { id: 'roadmap', label: 'Roadmap' },
+  { id: 'implementation', label: 'Implementation' },
+  { id: 'validation', label: 'Validation' },
+  { id: 'delivery', label: 'Delivery' },
+  { id: 'operations', label: 'Operations' },
+];
+const DELIVERY_LEVELS = ['simple', 'standard', 'complete'];
+const ARTIFACT_TYPES = [
+  'note', 'requirement', 'architecture', 'architecture_object', 'data_entity', 'api_endpoint',
+  'roadmap', 'test', 'deliverable', 'monitoring', 'other',
+];
+const TRACE_RELATIONSHIP_TYPES = [
+  'derives_from',
+  'satisfies',
+  'implements',
+  'tests',
+  'documents',
+  'depends_on',
+  'affects',
+  'supersedes',
+  'monitors',
+];
 
 function registerRequirementsPlatform(app, options) {
   const {
@@ -66,48 +94,21 @@ function registerRequirementsPlatform(app, options) {
   const uploadsDir = path.join(platformDir, 'uploads');
   const storePath = path.join(dataDir, 'store.json');
 
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: 25 * 1024 * 1024,
-    },
-  });
+  let storeQueue = Promise.resolve();
+  let storeInitialized = false;
 
-  async function ensureStore() {
-    await fs.mkdir(dataDir, { recursive: true });
-    await fs.mkdir(uploadsDir, { recursive: true });
+  function withStoreLock(task) {
+    const run = storeQueue.then(task);
+    storeQueue = run.catch(() => {});
+    return run;
+  }
 
-    if (!(await fileExists(storePath))) {
-      const passwordHash = hashPassword(process.env.REQ_PLATFORM_SUPER_ADMIN_PASSWORD || 'change-me-now');
-      const seedStore = {
-        version: 1,
-        meta: {
-          createdAt: nowIso(),
-          updatedAt: nowIso(),
-        },
-        users: [
-          {
-            id: `usr_${crypto.randomUUID()}`,
-            name: 'Super Admin',
-            email: (process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local').toLowerCase(),
-            role: 'super_admin',
-            passwordHash,
-            isActive: true,
-            createdAt: nowIso(),
-            updatedAt: nowIso(),
-          },
-        ],
-        projects: [],
-        activity: [],
-      };
-
-      await writeJson(storePath, seedStore);
-      return seedStore;
-    }
-
-    const store = await readJson(storePath);
+  function normalizeStoreRecord(store) {
     store.version = 1;
-    store.meta = store.meta || { createdAt: nowIso(), updatedAt: nowIso() };
+    store.meta = store.meta || { createdAt: nowIso(), updatedAt: nowIso(), schemaVersion: 2 };
+    const previousSchema = Number.isFinite(Number(store.meta.schemaVersion)) ? Number(store.meta.schemaVersion) : 2;
+    let needsPersist = previousSchema < 3;
+    store.meta.schemaVersion = Math.max(previousSchema, 3);
     store.users = Array.isArray(store.users) ? store.users : [];
     store.projects = Array.isArray(store.projects) ? store.projects : [];
     store.activity = Array.isArray(store.activity) ? store.activity : [];
@@ -128,14 +129,24 @@ function registerRequirementsPlatform(app, options) {
         createdAt: nowIso(),
         updatedAt: nowIso(),
       });
+      needsPersist = true;
     }
 
     store.projects = store.projects.map((project) => {
       const normalized = { ...project };
+      normalized.deliveryLevel = normalizeDeliveryLevel(project.deliveryLevel);
       normalized.requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
       normalized.clarificationQuestions = normalizeClarificationQuestions(project.clarificationQuestions || project.questions);
       normalized.meetingMinutes = normalizeMeetingMinutes(project.meetingMinutes);
       normalized.minutesPromptHistory = normalizeMinutesPromptHistory(project.minutesPromptHistory);
+      normalized.documents = phaseContent.normalizeProjectDocuments(project.documents);
+      normalized.stages = normalizeProjectStages(project.stages, normalized.deliveryLevel);
+      normalized.artifacts = normalizeArtifacts(project.artifacts);
+      normalized.approvals = normalizeApprovals(project.approvals);
+      normalized.impactReports = normalizeImpactReports(project.impactReports);
+      Object.assign(normalized, deliveryOs.normalizeProjectV3Fields(project));
+      normalized.requirements = normalized.requirements.map((entry) => deliveryOs.enrichRequirementWithModuleTags(entry));
+      normalized.traceLinks = normalizeTraceLinks(project.traceLinks, normalized.requirements, normalized.artifacts, normalized);
       normalized.generated = ensureArray(project.generated).map((entry) => ({
         ...entry,
         selectedModules: normalizeArchitectureModuleList(entry?.selectedModules),
@@ -143,24 +154,88 @@ function registerRequirementsPlatform(app, options) {
       return normalized;
     });
 
-    await writeJson(storePath, store);
-    return store;
+    return { store, needsPersist: needsPersist || previousSchema < 3 };
   }
 
+  async function ensureStoreInitialized() {
+    if (storeInitialized) {
+      return;
+    }
+
+    await withStoreLock(async () => {
+      if (storeInitialized) {
+        return;
+      }
+
+      await fs.mkdir(dataDir, { recursive: true });
+      await fs.mkdir(uploadsDir, { recursive: true });
+
+      if (!(await fileExists(storePath))) {
+        const passwordHash = hashPassword(process.env.REQ_PLATFORM_SUPER_ADMIN_PASSWORD || 'change-me-now');
+        const seedStore = {
+          version: 1,
+          meta: {
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+            schemaVersion: 3,
+          },
+          users: [
+            {
+              id: `usr_${crypto.randomUUID()}`,
+              name: 'Super Admin',
+              email: (process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local').toLowerCase(),
+              role: 'super_admin',
+              passwordHash,
+              isActive: true,
+              createdAt: nowIso(),
+              updatedAt: nowIso(),
+            },
+          ],
+          projects: [],
+          activity: [],
+        };
+
+        await writeJson(storePath, seedStore);
+        storeInitialized = true;
+        return;
+      }
+
+      const store = await readJson(storePath);
+      const { store: normalizedStore, needsPersist } = normalizeStoreRecord(store);
+      if (needsPersist) {
+        normalizedStore.meta.updatedAt = nowIso();
+        await writeJson(storePath, normalizedStore);
+      }
+      storeInitialized = true;
+    });
+  }
+
+  async function ensureStore() {
+    await ensureStoreInitialized();
+    return readJson(storePath);
+  }
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 25 * 1024 * 1024,
+    },
+  });
+
   async function readStore() {
-    await ensureStore();
+    await ensureStoreInitialized();
     return readJson(storePath);
   }
 
   async function updateStore(mutator) {
-    writeQueue = writeQueue.then(async () => {
-      const store = await readStore();
+    return withStoreLock(async () => {
+      await ensureStoreInitialized();
+      const store = await readJson(storePath);
       await mutator(store);
+      store.meta = store.meta || {};
       store.meta.updatedAt = nowIso();
       await writeJson(storePath, store);
     });
-
-    return writeQueue;
   }
 
   function appendActivity(store, entry) {
@@ -297,15 +372,28 @@ function registerRequirementsPlatform(app, options) {
       sourceText: project.sourceText || '',
       aiPrompt: project.aiPrompt || '',
       aiRawJson: project.aiRawJson || '',
-      documents: ensureArray(project.documents).map((doc) => ({
+      deliveryLevel: normalizeDeliveryLevel(project.deliveryLevel),
+      stages: normalizeProjectStages(project.stages, normalizeDeliveryLevel(project.deliveryLevel)),
+      artifacts: normalizeArtifacts(project.artifacts),
+      traceLinks: normalizeTraceLinks(project.traceLinks, project.requirements, project.artifacts, project),
+      approvals: normalizeApprovals(project.approvals),
+      impactReports: normalizeImpactReports(project.impactReports),
+      documents: phaseContent.normalizeProjectDocuments(project.documents).map((doc) => ({
         id: doc.id,
+        title: doc.title,
         originalName: doc.originalName,
         storedName: doc.storedName,
         uploadedAt: doc.uploadedAt,
         uploadedBy: doc.uploadedBy,
+        updatedAt: doc.updatedAt,
         contentType: doc.contentType,
         size: doc.size,
-        hasExtractedText: Boolean(doc.extractedText),
+        hasExtractedText: Boolean(doc.extractedText || doc.contentMarkdown),
+        deliveryStageId: doc.deliveryStageId,
+        docType: doc.docType,
+        origin: doc.origin,
+        diagramFormat: doc.diagramFormat,
+        contentMarkdown: doc.contentMarkdown,
       })),
       generated: ensureArray(project.generated).map((entry) => ({
         ...entry,
@@ -313,6 +401,7 @@ function registerRequirementsPlatform(app, options) {
       })),
       meetingMinutes: normalizeMeetingMinutes(project.meetingMinutes),
       minutesPromptHistory: normalizeMinutesPromptHistory(project.minutesPromptHistory),
+      ...deliveryOs.normalizeProjectV3Fields(project),
     };
 
     if (includeBudget) {
@@ -356,9 +445,26 @@ function registerRequirementsPlatform(app, options) {
       statusFlow: REQUIREMENT_STATUS_FLOW,
       types: REQUIREMENT_TYPE_META,
       architectureModules: ARCHITECTURE_MODULES,
+      deliveryLevels: DELIVERY_LEVELS,
+      deliveryStageFlow: DELIVERY_STAGE_FLOW,
+      artifactTypes: ARTIFACT_TYPES,
+      traceRelationshipTypes: TRACE_RELATIONSHIP_TYPES,
       questionStatusFlow: QUESTION_STATUS_FLOW,
       questionTargetFlow: QUESTION_TARGET_FLOW,
       questionCategoryFlow: QUESTION_CATEGORY_FLOW,
+      moduleTags: deliveryOs.MODULE_TAGS,
+      informationTypes: deliveryOs.INFORMATION_TYPES,
+      agentTypes: deliveryOs.AGENT_TYPES,
+      onionLayers: deliveryOs.ONION_LAYERS,
+      stageFocus: deliveryOs.STAGE_FOCUS,
+      stageNextHint: deliveryOs.STAGE_NEXT_HINT,
+      stageOrder: deliveryOs.STAGE_ORDER,
+      platformConcepts: deliveryOs.PLATFORM_CONCEPTS,
+      stageConceptKeys: deliveryOs.STAGE_CONCEPT_KEYS,
+      stageTabLinks: deliveryOs.STAGE_TAB_LINKS,
+      tabStageAffinity: deliveryOs.TAB_STAGE_AFFINITY,
+      meetingImpactScopes: deliveryOs.MEETING_IMPACT_SCOPES,
+      traceNodeTypes: deliveryOs.TRACE_NODE_TYPES,
       defaultAdminEmail: process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local',
       note: 'Se for primeiro acesso, use a password definida em REQ_PLATFORM_SUPER_ADMIN_PASSWORD ou change-me-now.',
     });
@@ -549,10 +655,27 @@ function registerRequirementsPlatform(app, options) {
         sourceText: '',
         aiPrompt: '',
         aiRawJson: '',
+        deliveryLevel: normalizeDeliveryLevel(body.deliveryLevel),
+        stages: normalizeProjectStages(body.stages, normalizeDeliveryLevel(body.deliveryLevel)),
+        artifacts: [],
+        traceLinks: [],
+        approvals: [],
+        impactReports: [],
         documents: [],
         generated: [],
         meetingMinutes: [],
         minutesPromptHistory: [],
+        capabilities: [],
+        requirementClusters: [],
+        clientRequests: [],
+        businessObjectives: [],
+        promptRuns: [],
+        humanReviews: [],
+        versionSnapshots: [],
+        alternativeResponses: [],
+        informationEntries: [],
+        nextDecision: '',
+        ideaBriefMarkdown: '',
       };
 
       await updateStore(async (store) => {
@@ -608,6 +731,8 @@ function registerRequirementsPlatform(app, options) {
           'commercialTerms',
           'phases',
           'sourceText',
+          'deliveryLevel',
+          'stages',
         ];
 
         for (const field of writableFields) {
@@ -626,6 +751,8 @@ function registerRequirementsPlatform(app, options) {
         project.technicalApproach = normalizeTechnicalApproach(project.technicalApproach);
         project.commercialTerms = normalizeCommercialTerms(project.commercialTerms);
         project.phases = normalizePhases(project.phases, project.hourlyRate);
+        project.deliveryLevel = normalizeDeliveryLevel(project.deliveryLevel);
+        project.stages = normalizeProjectStages(project.stages, project.deliveryLevel);
 
         project.updatedAt = nowIso();
 
@@ -640,6 +767,202 @@ function registerRequirementsPlatform(app, options) {
       const store = await readStore();
       const updated = store.projects.find((entry) => entry.id === projectId);
       return res.json({ project: sanitizeProject(updated, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/projects/:projectId/trace-map', authMiddleware, loadProjectForUser, async (req, res) => {
+    const project = req.loadedProject;
+    const requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+    const artifacts = normalizeArtifacts(project.artifacts);
+    const links = normalizeTraceLinks(project.traceLinks, requirements, artifacts, project);
+
+    return res.json({
+      nodes: [
+        ...requirements.map((reqItem) => ({
+          id: reqItem.id,
+          nodeType: 'requirement',
+          type: reqItem.type,
+          title: reqItem.title,
+          status: reqItem.status,
+          module: normalizeModuleName(reqItem.module),
+        })),
+        ...artifacts.map((artifact) => ({
+          id: artifact.id,
+          nodeType: 'artifact',
+          type: artifact.type,
+          title: artifact.name,
+          status: artifact.status,
+          stageId: artifact.stageId,
+        })),
+      ],
+      links,
+    });
+  });
+
+  app.post('/api/projects/projects/:projectId/artifacts', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const payload = req.body || {};
+      const artifactInput = {
+        id: payload.id,
+        type: payload.type,
+        name: payload.name,
+        description: payload.description,
+        bodyMarkdown: payload.bodyMarkdown,
+        status: payload.status,
+        stageId: payload.stageId,
+        version: payload.version,
+        relatedRequirementIds: payload.relatedRequirementIds,
+        metadata: payload.metadata,
+        createdBy: req.auth.user.id,
+      };
+      const artifact = normalizeArtifactRecord(artifactInput);
+
+      if (!artifact.name) {
+        return res.status(400).json({ message: 'name e obrigatorio.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        project.artifacts = normalizeArtifacts(project.artifacts);
+        project.artifacts = project.artifacts.filter((entry) => entry.id !== artifact.id);
+        project.artifacts.push(artifact);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_artifact_upserted',
+          details: { artifactId: artifact.id, type: artifact.type, stageId: artifact.stageId },
+        });
+      });
+
+      const store = await readStore();
+      const updated = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ artifact, project: sanitizeProject(updated, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/trace-links', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const payload = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+        const artifacts = normalizeArtifacts(project.artifacts);
+        const traceLink = normalizeTraceLinkRecord({
+          id: payload.id,
+          sourceType: payload.sourceType,
+          sourceId: payload.sourceId,
+          targetType: payload.targetType,
+          targetId: payload.targetId,
+          relationshipType: payload.relationshipType,
+          confidence: payload.confidence,
+          validatedByHuman: payload.validatedByHuman,
+          createdBy: req.auth.user.id,
+        }, requirements, artifacts);
+
+        if (!traceLink.sourceId || !traceLink.targetId) {
+          throw new Error('sourceId e targetId sao obrigatorios.');
+        }
+
+        project.traceLinks = normalizeTraceLinks(project.traceLinks, requirements, artifacts, project);
+        project.traceLinks = project.traceLinks.filter((entry) => entry.id !== traceLink.id);
+        project.traceLinks.push(traceLink);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_trace_link_upserted',
+          details: {
+            traceLinkId: traceLink.id,
+            sourceType: traceLink.sourceType,
+            sourceId: traceLink.sourceId,
+            targetType: traceLink.targetType,
+            targetId: traceLink.targetId,
+            relationshipType: traceLink.relationshipType,
+          },
+        });
+      });
+
+      const store = await readStore();
+      const updated = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ traceLinks: normalizeTraceLinks(updated.traceLinks, updated.requirements, updated.artifacts, updated) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/impact-report', authMiddleware, loadProjectForUser, async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const sourceType = textOr(req.body?.sourceType, 'requirement');
+      const sourceId = textOr(req.body?.sourceId);
+      const includeUpstream = req.body?.includeUpstream === true;
+
+      if (!sourceId) {
+        return res.status(400).json({ message: 'sourceId e obrigatorio.' });
+      }
+
+      let generatedReport = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) {
+          throw new Error('Projeto nao encontrado.');
+        }
+
+        const requirements = ensureArray(project.requirements).map((entry) => normalizeRequirementRecord(entry));
+        const artifacts = normalizeArtifacts(project.artifacts);
+        const traceLinks = normalizeTraceLinks(project.traceLinks, requirements, artifacts, project);
+
+        if (!hasTraceableNode(requirements, artifacts, sourceType, sourceId, project)) {
+          throw new Error('sourceId nao corresponde a nenhum requisito/artefacto do projeto.');
+        }
+
+        const impacted = calculateTraceImpact(traceLinks, sourceType, sourceId, includeUpstream);
+        generatedReport = normalizeImpactReportRecord({
+          sourceType,
+          sourceId,
+          includeUpstream,
+          impacted,
+          generatedBy: req.auth.user.id,
+          summary: `Impacto calculado para ${sourceType}:${sourceId}`,
+        });
+
+        project.impactReports = normalizeImpactReports(project.impactReports);
+        project.impactReports.unshift(generatedReport);
+        project.impactReports = project.impactReports.slice(0, 50);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId: project.id,
+          action: 'project_impact_report_generated',
+          details: {
+            reportId: generatedReport.id,
+            sourceType,
+            sourceId,
+            affectedCount: impacted.length,
+          },
+        });
+      });
+
+      return res.json({ report: generatedReport });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -773,6 +1096,8 @@ function registerRequirementsPlatform(app, options) {
           title: title || `Reunião com cliente ${meetingDate || nowIso().slice(0, 10)}`,
           meetingDate,
           rawText,
+          impactScope: req.body?.impactScope,
+          targetStageId: req.body?.targetStageId,
           createdAt: nowIso(),
           createdBy: req.auth.user.id,
         });
@@ -791,6 +1116,104 @@ function registerRequirementsPlatform(app, options) {
       const store = await readStore();
       const project = store.projects.find((entry) => entry.id === projectId);
       return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/meeting-minutes/propagation-plan', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === req.params.projectId);
+      if (!project) return res.status(404).json({ message: 'Projeto nao encontrado.' });
+
+      const requestedIds = normalizeStringArray(req.body?.minuteIds);
+      const minutes = normalizeMeetingMinutes(project.meetingMinutes);
+      const selected = requestedIds.length
+        ? minutes.filter((entry) => requestedIds.includes(entry.id))
+        : minutes.slice(0, 1);
+      if (!selected.length) {
+        return res.status(400).json({ message: 'Seleccione pelo menos uma ata.' });
+      }
+
+      const plan = deliveryOs.buildMinutePropagationPlan(selected);
+      return res.json({ plan, minutes: selected });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/meeting-minutes/propagation-prompt', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const requestedIds = normalizeStringArray(req.body?.minuteIds);
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      if (!project) return res.status(404).json({ message: 'Projeto nao encontrado.' });
+
+      const minutes = normalizeMeetingMinutes(project.meetingMinutes);
+      const selected = requestedIds.length
+        ? minutes.filter((entry) => requestedIds.includes(entry.id))
+        : minutes.slice(0, 1);
+      if (!selected.length) {
+        return res.status(400).json({ message: 'Seleccione pelo menos uma ata.' });
+      }
+
+      const plan = deliveryOs.buildMinutePropagationPlan(selected);
+      const prompt = deliveryOs.buildMinutePropagationPrompt(project, selected, plan);
+      let promptRun = null;
+      let review = null;
+
+      await updateStore(async (mutableStore) => {
+        const mutableProject = mutableStore.projects.find((entry) => entry.id === projectId);
+        if (!mutableProject) throw new Error('Projeto nao encontrado.');
+
+        promptRun = deliveryOs.normalizePromptRun({
+          id: `prun_${crypto.randomUUID().slice(0, 12)}`,
+          agentType: 'impact_regeneration',
+          stageId: plan.primaryStageIds[0] || 'requirements',
+          moduleTag: '',
+          prompt,
+          status: 'pending',
+          createdAt: nowIso(),
+          createdBy: req.auth.user.id,
+        });
+        mutableProject.promptRuns = ensureArray(mutableProject.promptRuns);
+        mutableProject.promptRuns.unshift(promptRun);
+
+        review = deliveryOs.normalizeHumanReview({
+          type: 'meeting_minute_propagation',
+          title: `Propagação de ${selected.length} ata(s) na linha de entrega`,
+          summaryMarkdown: plan.hints.join(' ') || 'Analisar impacto nas fases afectadas.',
+          bodyMarkdown: prompt,
+          sourceType: 'prompt_run',
+          sourceId: promptRun.id,
+          promptRunId: promptRun.id,
+          status: 'pending',
+          suggestedChanges: { plan, minuteIds: selected.map((m) => m.id) },
+          readingTimeMinutes: Math.max(2, Math.ceil(prompt.length / 900)),
+        });
+        mutableProject.humanReviews = ensureArray(mutableProject.humanReviews);
+        mutableProject.humanReviews.unshift(review);
+        mutableProject.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'meeting_minute_propagation_prompt',
+          details: { minuteIds: selected.map((m) => m.id), stages: plan.allAffectedStageIds },
+        });
+      });
+
+      const updatedStore = await readStore();
+      const updated = updatedStore.projects.find((entry) => entry.id === projectId);
+      return res.json({
+        prompt,
+        plan,
+        promptRun,
+        review,
+        project: sanitizeProject(updated, req.auth.user),
+      });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -891,8 +1314,10 @@ function registerRequirementsPlatform(app, options) {
           throw new Error('Projeto nao encontrado.');
         }
 
-        const document = {
+        const deliveryStageId = phaseContent.normalizeDeliveryStageId(req.body?.deliveryStageId, 'discovery');
+        const document = phaseContent.normalizeProjectDocument({
           id: `doc_${crypto.randomUUID()}`,
+          title: req.body?.title || req.file.originalname,
           originalName: req.file.originalname,
           storedName,
           absolutePath,
@@ -901,7 +1326,10 @@ function registerRequirementsPlatform(app, options) {
           contentType: req.file.mimetype,
           size: req.file.size,
           extractedText: extractedText || '',
-        };
+          deliveryStageId,
+          docType: req.body?.docType || 'attachment',
+          origin: 'upload',
+        });
 
         project.documents = ensureArray(project.documents);
         project.documents.push(document);
@@ -958,7 +1386,166 @@ function registerRequirementsPlatform(app, options) {
       return res.status(404).json({ message: 'Documento nao encontrado.' });
     }
 
-    return res.download(document.absolutePath, document.originalName);
+    if (document.absolutePath) {
+      return res.download(document.absolutePath, document.originalName || document.title);
+    }
+
+    const content = document.contentMarkdown || document.extractedText || '';
+    res.setHeader('Content-Type', document.contentType || 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="${sanitizeFileName(document.title || document.originalName || 'documento.txt')}"`);
+    return res.send(content);
+  });
+
+  app.post('/api/projects/projects/:projectId/documents/text', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const body = req.body || {};
+      const contentMarkdown = String(body.contentMarkdown || body.content || '').trim();
+      if (!contentMarkdown) {
+        return res.status(400).json({ message: 'Conteúdo do documento em falta.' });
+      }
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        const document = phaseContent.createPhaseDiagramDocument({
+          title: body.title || 'Documento',
+          contentMarkdown,
+          diagramFormat: body.diagramFormat || '',
+          deliveryStageId: body.deliveryStageId,
+          origin: body.origin || 'manual',
+          userId: req.auth.user.id,
+        });
+        if (body.docType) document.docType = body.docType;
+
+        project.documents = ensureArray(project.documents);
+        project.documents.push(document);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'project_document_created',
+          details: { documentId: document.id, docType: document.docType, deliveryStageId: document.deliveryStageId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/documents/:documentId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const documentId = req.params.documentId;
+      const patch = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        project.documents = ensureArray(project.documents);
+        const document = project.documents.find((entry) => entry.id === documentId);
+        if (!document) throw new Error('Documento nao encontrado.');
+
+        const normalized = phaseContent.normalizeProjectDocument({
+          ...document,
+          ...patch,
+          id: document.id,
+          updatedAt: nowIso(),
+        });
+        Object.assign(document, normalized);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'project_document_updated',
+          details: { documentId: document.id },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/prompt-runs/:runId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const runId = req.params.runId;
+      const patch = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        project.promptRuns = ensureArray(project.promptRuns);
+        const run = project.promptRuns.find((entry) => entry.id === runId);
+        if (!run) throw new Error('Execução IA nao encontrada.');
+
+        if (patch.summaryMarkdown !== undefined) run.summaryMarkdown = String(patch.summaryMarkdown);
+        if (patch.rawOutput !== undefined) run.rawOutput = String(patch.rawOutput);
+        if (patch.status !== undefined) run.status = String(patch.status);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'prompt_run_updated',
+          details: { runId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/information-entries/:entryId', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const entryId = req.params.entryId;
+      const patch = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        project.informationEntries = ensureArray(project.informationEntries);
+        const entry = project.informationEntries.find((item) => item.id === entryId);
+        if (!entry) throw new Error('Entrada de informação nao encontrada.');
+
+        if (patch.bodyMarkdown !== undefined) entry.bodyMarkdown = String(patch.bodyMarkdown);
+        if (patch.type !== undefined) entry.type = String(patch.type);
+        if (patch.status !== undefined) entry.status = String(patch.status);
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'information_entry_updated',
+          details: { entryId },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
   });
 
   app.post('/api/projects/projects/:projectId/build-prompt', authMiddleware, requireRole('super_admin'), async (req, res) => {
@@ -1143,6 +1730,8 @@ function registerRequirementsPlatform(app, options) {
         }
 
         const patch = req.body || {};
+        const prevModule = requirement.module;
+        const prevPhase = requirement.phase;
         const normalized = normalizeRequirementRecord({
           ...requirement,
           ...patch,
@@ -1157,6 +1746,21 @@ function registerRequirementsPlatform(app, options) {
           throw new Error(`Requisito funcional incompleto para status ${normalized.status}. Campos em falta: ${smartErrors.join(', ')}`);
         }
 
+        if (patch.module !== undefined || patch.phase !== undefined) {
+          const movedModule = normalizeModuleName(normalized.module) !== normalizeModuleName(prevModule);
+          const movedPhase = textOr(normalized.phase, 'Backlog') !== textOr(prevPhase, 'Backlog');
+          if (movedModule || movedPhase) {
+            normalized.movementHistory = ensureArray(requirement.movementHistory);
+            normalized.movementHistory.unshift({
+              at: nowIso(),
+              by: req.auth.user.id,
+              from: { module: prevModule, phase: prevPhase },
+              to: { module: normalized.module, phase: normalized.phase },
+            });
+            normalized.movementHistory = normalized.movementHistory.slice(0, 50);
+          }
+        }
+
         Object.assign(requirement, normalized);
         project.updatedAt = nowIso();
 
@@ -1164,7 +1768,11 @@ function registerRequirementsPlatform(app, options) {
           actorUserId: req.auth.user.id,
           projectId,
           action: 'requirement_updated',
-          details: { requirementId: requirement.id },
+          details: {
+            requirementId: requirement.id,
+            module: requirement.module,
+            phase: requirement.phase,
+          },
         });
       });
 
@@ -1250,6 +1858,7 @@ function registerRequirementsPlatform(app, options) {
           category: req.body?.category,
           priority: req.body?.priority,
           status: req.body?.status,
+          deliveryStageId: req.body?.deliveryStageId || req.body?.stageId,
           dueDate: req.body?.dueDate,
           linkedRequirementIds: req.body?.linkedRequirementIds,
           answer: req.body?.answer,
@@ -1483,6 +2092,22 @@ function registerRequirementsPlatform(app, options) {
     } catch (error) {
       return res.status(500).json({ message: `Erro ao gerar bundle: ${error.message}` });
     }
+  });
+
+  deliveryOs.registerDeliveryOsRoutes(app, {
+    authMiddleware,
+    requireRole,
+    loadProjectForUser,
+    readStore,
+    updateStore,
+    appendActivity,
+    sanitizeProject,
+    normalizeArtifacts,
+    normalizeTraceLinks,
+    normalizeApprovals,
+    normalizeMeetingMinutes,
+    normalizeRequirementRecord,
+    numberOr,
   });
 
   ensureStore().catch((error) => {
@@ -1775,6 +2400,8 @@ function normalizeRequirementRecord(entry) {
     assumption,
     module: architectureParts.module,
     submodule: architectureParts.submodule,
+    moduleTags: deliveryOs.enrichRequirementWithModuleTags({ module: architectureParts.module, moduleTags: raw.moduleTags }).moduleTags,
+    bodyMarkdown: textOr(raw.bodyMarkdown || raw.notes),
     description: textOr(raw.description || shall),
     source: textOr(raw.source || raw.origin),
     stakeholderRequirementLink,
@@ -1790,6 +2417,8 @@ function normalizeRequirementRecord(entry) {
     target: textOr(raw.target),
     reason: textOr(raw.reason),
     notes: textOr(raw.notes),
+    deliveryStageId: phaseContent.normalizeDeliveryStageId(raw.deliveryStageId, 'requirements'),
+    movementHistory: ensureArray(raw.movementHistory).slice(0, 50),
     createdAt: textOr(raw.createdAt, nowIso()),
     updatedAt: textOr(raw.updatedAt, nowIso()),
     updatedBy: textOr(raw.updatedBy),
@@ -3182,6 +3811,17 @@ function normalizeQuestionCategory(value) {
   return 'other';
 }
 
+function normalizeDeliveryStageId(value, fallback = 'requirements') {
+  const stageId = textOr(value, fallback).toLowerCase();
+  return deliveryOs.STAGE_ORDER.includes(stageId) ? stageId : fallback;
+}
+
+function normalizeMeetingImpactScope(value, fallback = 'requirements') {
+  const scope = textOr(value, fallback).toLowerCase();
+  const allowed = deliveryOs.MEETING_IMPACT_SCOPES.map((entry) => entry.id);
+  return allowed.includes(scope) ? scope : fallback;
+}
+
 function normalizeClarificationQuestionRecord(raw) {
   const status = normalizeQuestionStatus(raw?.status);
   const askedAt = textOr(raw?.askedAt);
@@ -3195,6 +3835,7 @@ function normalizeClarificationQuestionRecord(raw) {
     category: normalizeQuestionCategory(raw?.category),
     priority: normalizePriority(raw?.priority),
     status,
+    deliveryStageId: normalizeDeliveryStageId(raw?.deliveryStageId || raw?.stageId),
     dueDate: textOr(raw?.dueDate),
     linkedRequirementIds: normalizeRequirementIdList(raw?.linkedRequirementIds || raw?.relatedRequirementIds),
     answer,
@@ -3214,11 +3855,15 @@ function normalizeClarificationQuestions(list) {
 }
 
 function normalizeMeetingMinuteRecord(raw) {
+  const impactScope = normalizeMeetingImpactScope(raw?.impactScope, 'requirements');
+  const scopeMeta = deliveryOs.MEETING_IMPACT_SCOPES.find((entry) => entry.id === impactScope);
   return {
     id: textOr(raw?.id, `min_${crypto.randomUUID()}`),
     title: textOr(raw?.title, 'Reunião com cliente'),
     meetingDate: textOr(raw?.meetingDate),
     rawText: typeof raw?.rawText === 'string' ? raw.rawText : String(raw?.rawText || ''),
+    impactScope,
+    targetStageId: textOr(raw?.targetStageId, scopeMeta?.stageId || impactScope),
     createdAt: textOr(raw?.createdAt, nowIso()),
     createdBy: textOr(raw?.createdBy),
   };
@@ -3245,6 +3890,298 @@ function normalizeMinutesPromptHistory(history) {
   return ensureArray(history)
     .map((entry) => normalizeMinutesPromptRecord(entry))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function normalizeDeliveryLevel(level) {
+  const normalized = textOr(level, 'standard').toLowerCase();
+  return DELIVERY_LEVELS.includes(normalized) ? normalized : 'standard';
+}
+
+function normalizeProjectStages(stages, deliveryLevel = 'standard') {
+  const level = normalizeDeliveryLevel(deliveryLevel);
+  const byId = new Map(
+    ensureArray(stages)
+      .map((entry) => ({
+        id: textOr(entry?.id).toLowerCase(),
+        label: textOr(entry?.label),
+        status: textOr(entry?.status, 'not_started'),
+        required: entry?.required !== false,
+        requiresHumanApproval: entry?.requiresHumanApproval === true,
+      }))
+      .filter((entry) => entry.id)
+      .map((entry) => [entry.id, entry])
+  );
+
+  return DELIVERY_STAGE_FLOW.map((base) => {
+    const current = byId.get(base.id) || {};
+    const requiredByLevel = base.id !== 'operations' || level === 'complete';
+    return {
+      id: base.id,
+      label: current.label || base.label,
+      status: ['not_started', 'in_progress', 'pending_review', 'approved', 'blocked', 'done'].includes(current.status)
+        ? current.status
+        : 'not_started',
+      required: current.required !== undefined ? current.required : requiredByLevel,
+      requiresHumanApproval: current.requiresHumanApproval === true
+        || ['requirements', 'architecture', 'validation', 'delivery'].includes(base.id),
+    };
+  });
+}
+
+function normalizeArtifactRecord(raw) {
+  const type = textOr(raw?.type, 'other').toLowerCase();
+  const status = textOr(raw?.status, 'draft').toLowerCase();
+  return {
+    id: textOr(raw?.id, `art_${crypto.randomUUID()}`),
+    type: ARTIFACT_TYPES.includes(type) ? type : 'other',
+    name: textOr(raw?.name),
+    description: textOr(raw?.description),
+    bodyMarkdown: textOr(raw?.bodyMarkdown || raw?.description),
+    status: ['draft', 'in_progress', 'pending_review', 'approved', 'deprecated'].includes(status)
+      ? status
+      : 'draft',
+    stageId: textOr(raw?.stageId, 'requirements').toLowerCase(),
+    version: numberOr(raw?.version, 1),
+    relatedRequirementIds: normalizeStringArray(raw?.relatedRequirementIds),
+    metadata: raw?.metadata && typeof raw.metadata === 'object' && !Array.isArray(raw.metadata)
+      ? raw.metadata
+      : {},
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    updatedAt: textOr(raw?.updatedAt, nowIso()),
+    createdBy: textOr(raw?.createdBy),
+    updatedBy: textOr(raw?.updatedBy),
+  };
+}
+
+function normalizeArtifacts(list) {
+  return ensureArray(list)
+    .map((entry) => normalizeArtifactRecord(entry))
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+}
+
+function hasTraceableNode(requirements, artifacts, nodeType, nodeId, project) {
+  const targetId = textOr(nodeId);
+  const type = textOr(nodeType, 'requirement').toLowerCase();
+  if (!targetId) return false;
+
+  if (type === 'artifact') {
+    return normalizeArtifacts(artifacts).some((entry) => entry.id === targetId);
+  }
+
+  if (type === 'capability') {
+    return ensureArray(project?.capabilities).some((entry) => entry.id === targetId);
+  }
+  if (type === 'cluster') {
+    return ensureArray(project?.requirementClusters).some((entry) => entry.id === targetId);
+  }
+  if (type === 'client_request') {
+    return ensureArray(project?.clientRequests).some((entry) => entry.id === targetId);
+  }
+  if (type === 'business_objective') {
+    return ensureArray(project?.businessObjectives).some((entry) => entry.id === targetId);
+  }
+
+  if (['stakeholder_requirement', 'technical_requirement', 'requirement'].includes(type)) {
+    return ensureArray(requirements).map((entry) => normalizeRequirementRecord(entry)).some((entry) => entry.id === targetId);
+  }
+
+  if (['architecture_object', 'data_entity', 'api_endpoint', 'test_case', 'deliverable', 'monitoring_signal'].includes(type)) {
+    return normalizeArtifacts(artifacts).some((entry) => entry.id === targetId || entry.name === targetId);
+  }
+
+  return ensureArray(requirements).map((entry) => normalizeRequirementRecord(entry)).some((entry) => entry.id === targetId);
+}
+
+function normalizeTraceNodeType(rawType) {
+  const type = textOr(rawType, 'requirement').toLowerCase();
+  const allowed = new Set([
+    'requirement', 'artifact', 'client_request', 'business_objective', 'capability', 'cluster',
+    'stakeholder_requirement', 'technical_requirement', 'architecture_object', 'data_entity',
+    'api_endpoint', 'test_case', 'deliverable', 'monitoring_signal',
+  ]);
+  if (allowed.has(type)) return type;
+  return type === 'artifact' ? 'artifact' : 'requirement';
+}
+
+function normalizeTraceLinkRecord(raw, requirements, artifacts, project) {
+  const relationshipType = textOr(raw?.relationshipType, 'depends_on').toLowerCase();
+  const sourceType = normalizeTraceNodeType(raw?.sourceType);
+  const targetType = normalizeTraceNodeType(raw?.targetType);
+
+  const sourceId = textOr(raw?.sourceId);
+  const targetId = textOr(raw?.targetId);
+  if (!hasTraceableNode(requirements, artifacts, sourceType, sourceId, project)) {
+    if (!raw?.autoDerived) {
+      return {
+        id: textOr(raw?.id, `trc_${crypto.randomUUID()}`),
+        sourceType,
+        sourceId: '',
+        targetType,
+        targetId,
+        relationshipType: TRACE_RELATIONSHIP_TYPES.includes(relationshipType) ? relationshipType : 'depends_on',
+        confidence: Math.max(0, Math.min(1, numberOr(raw?.confidence, 0.8))),
+        validatedByHuman: raw?.validatedByHuman === true,
+        autoDerived: raw?.autoDerived === true,
+        createdAt: textOr(raw?.createdAt, nowIso()),
+        createdBy: textOr(raw?.createdBy),
+      };
+    }
+  }
+  if (!hasTraceableNode(requirements, artifacts, targetType, targetId, project)) {
+    if (!raw?.autoDerived) {
+      return {
+        id: textOr(raw?.id, `trc_${crypto.randomUUID()}`),
+        sourceType,
+        sourceId,
+        targetType,
+        targetId: '',
+        relationshipType: TRACE_RELATIONSHIP_TYPES.includes(relationshipType) ? relationshipType : 'depends_on',
+        confidence: Math.max(0, Math.min(1, numberOr(raw?.confidence, 0.8))),
+        validatedByHuman: raw?.validatedByHuman === true,
+        autoDerived: raw?.autoDerived === true,
+        createdAt: textOr(raw?.createdAt, nowIso()),
+        createdBy: textOr(raw?.createdBy),
+      };
+    }
+  }
+
+  return {
+    id: textOr(raw?.id, `trc_${crypto.randomUUID()}`),
+    sourceType,
+    sourceId,
+    targetType,
+    targetId,
+    relationshipType: TRACE_RELATIONSHIP_TYPES.includes(relationshipType) ? relationshipType : 'depends_on',
+    confidence: Math.max(0, Math.min(1, numberOr(raw?.confidence, 0.8))),
+    validatedByHuman: raw?.validatedByHuman === true,
+    autoDerived: raw?.autoDerived === true,
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    createdBy: textOr(raw?.createdBy),
+  };
+}
+
+function normalizeTraceLinks(links, requirements, artifacts, project) {
+  const map = new Map();
+  for (const entry of ensureArray(links)) {
+    const normalized = normalizeTraceLinkRecord(entry, requirements, artifacts, project);
+    if (!normalized.sourceId || !normalized.targetId) continue;
+    const dedupeKey = `${normalized.sourceType}:${normalized.sourceId}|${normalized.relationshipType}|${normalized.targetType}:${normalized.targetId}`;
+    if (!map.has(dedupeKey)) {
+      map.set(dedupeKey, normalized);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function normalizeApprovalRecord(raw) {
+  return {
+    id: textOr(raw?.id, `apr_${crypto.randomUUID()}`),
+    stageId: textOr(raw?.stageId),
+    status: ['pending', 'approved', 'changes_requested', 'rejected'].includes(textOr(raw?.status).toLowerCase())
+      ? textOr(raw?.status).toLowerCase()
+      : 'pending',
+    note: textOr(raw?.note),
+    requestedBy: textOr(raw?.requestedBy),
+    reviewedBy: textOr(raw?.reviewedBy),
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    updatedAt: textOr(raw?.updatedAt, nowIso()),
+  };
+}
+
+function normalizeApprovals(list) {
+  return ensureArray(list)
+    .map((entry) => normalizeApprovalRecord(entry))
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+}
+
+function normalizeImpactReportRecord(raw) {
+  return {
+    id: textOr(raw?.id, `imp_${crypto.randomUUID()}`),
+    sourceType: textOr(raw?.sourceType, 'requirement').toLowerCase() === 'artifact' ? 'artifact' : 'requirement',
+    sourceId: textOr(raw?.sourceId),
+    includeUpstream: raw?.includeUpstream === true,
+    impacted: ensureArray(raw?.impacted).map((entry) => ({
+      nodeType: textOr(entry?.nodeType, 'requirement').toLowerCase() === 'artifact' ? 'artifact' : 'requirement',
+      id: textOr(entry?.id),
+      viaRelationship: textOr(entry?.viaRelationship),
+      direction: textOr(entry?.direction, 'downstream'),
+    })).filter((entry) => entry.id),
+    summary: textOr(raw?.summary),
+    generatedAt: textOr(raw?.generatedAt, nowIso()),
+    generatedBy: textOr(raw?.generatedBy),
+  };
+}
+
+function normalizeImpactReports(list) {
+  return ensureArray(list)
+    .map((entry) => normalizeImpactReportRecord(entry))
+    .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+}
+
+function calculateTraceImpact(traceLinks, sourceType, sourceId, includeUpstream) {
+  const edges = ensureArray(traceLinks)
+    .map((edge) => ({
+      sourceType: textOr(edge?.sourceType, 'requirement').toLowerCase() === 'artifact' ? 'artifact' : 'requirement',
+      sourceId: textOr(edge?.sourceId),
+      targetType: textOr(edge?.targetType, 'requirement').toLowerCase() === 'artifact' ? 'artifact' : 'requirement',
+      targetId: textOr(edge?.targetId),
+      relationshipType: textOr(edge?.relationshipType, 'depends_on'),
+    }))
+    .filter((edge) => edge.sourceId && edge.targetId);
+  const makeKey = (nodeType, id) => `${nodeType}:${id}`;
+  const outgoing = new Map();
+  const incoming = new Map();
+
+  for (const edge of edges) {
+    const fromKey = makeKey(edge.sourceType, edge.sourceId);
+    const toKey = makeKey(edge.targetType, edge.targetId);
+    if (!outgoing.has(fromKey)) outgoing.set(fromKey, []);
+    if (!incoming.has(toKey)) incoming.set(toKey, []);
+    outgoing.get(fromKey).push(edge);
+    incoming.get(toKey).push(edge);
+  }
+
+  const rootKey = makeKey(sourceType === 'artifact' ? 'artifact' : 'requirement', sourceId);
+  const queue = [{ key: rootKey, direction: 'downstream' }];
+  const seen = new Set([rootKey]);
+  const impacted = [];
+
+  while (queue.length) {
+    const current = queue.shift();
+    const currentOutgoing = outgoing.get(current.key) || [];
+    for (const edge of currentOutgoing) {
+      const nextKey = makeKey(edge.targetType, edge.targetId);
+      if (seen.has(nextKey)) continue;
+      seen.add(nextKey);
+      queue.push({ key: nextKey, direction: 'downstream' });
+      impacted.push({
+        nodeType: edge.targetType,
+        id: edge.targetId,
+        viaRelationship: edge.relationshipType,
+        direction: 'downstream',
+      });
+    }
+
+    if (!includeUpstream) continue;
+    const currentIncoming = incoming.get(current.key) || [];
+    for (const edge of currentIncoming) {
+      const prevKey = makeKey(edge.sourceType, edge.sourceId);
+      if (seen.has(prevKey)) continue;
+      seen.add(prevKey);
+      queue.push({ key: prevKey, direction: 'upstream' });
+      impacted.push({
+        nodeType: edge.sourceType,
+        id: edge.sourceId,
+        viaRelationship: edge.relationshipType,
+        direction: 'upstream',
+      });
+    }
+  }
+
+  return impacted;
 }
 
 function buildMinutesUpdatePrompt(project, selectedMinutes, objective, extraInstructions) {
@@ -3448,9 +4385,20 @@ async function readJson(target) {
 }
 
 async function writeJson(target, value) {
-  const tempPath = `${target}.tmp`;
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
-  await fs.rename(tempPath, target);
+  const dir = path.dirname(target);
+  await fs.mkdir(dir, { recursive: true });
+  const tempPath = `${target}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+    await fs.rename(tempPath, target);
+  } catch (error) {
+    try {
+      await fs.unlink(tempPath);
+    } catch {
+      // ignore cleanup errors
+    }
+    throw error;
+  }
 }
 
 function expressStaticSafe(platformDir) {

@@ -1,23 +1,29 @@
-# Requirements Platform (Single Folder)
+# Projects Platform (Product Delivery OS)
 
-Plataforma unificada para:
-- receber documento de requisitos do cliente,
-- gerar pre-prompt AI para estruturar requisitos,
-- importar JSON estruturado (stakeholder / funcionais / não funcionais / indefinidos / fora de escopo),
-- importar JSON estruturado com framework completo de systems engineering para requisitos funcionais,
-- usar modelo SMART lean para requisitos funcionais (`need`, `shall`, `condition`, `measure`, `rationale`, `verification`, `priority`),
-- manter nível separado de casos de teste/aceitação ligados aos requisitos funcionais,
-- gerir progresso por requisito e fase,
-- permitir acesso por perfil (super admin, client, partner),
-- gerar documentação técnica e proposta comercial+técnica.
+Plataforma unificada para gestão de projectos com systems engineering, agentes AI human-in-the-loop e rastreabilidade completa.
+
+## Capacidades
+
+- Receber documentos de requisitos do cliente (`.txt`, `.md`, etc.)
+- Gerar pre-prompts AI estruturados por capability/context pack
+- Importar JSON estruturado (stakeholder / funcionais / não funcionais / testes / indefinidos / fora de escopo)
+- Modelo SMART lean para requisitos funcionais
+- Product Delivery OS: timeline, capabilities, clusters, trace links, impact reports
+- Markdown-first: conteúdo editável como texto, renderizado visualmente
+- Gerir progresso por requisito e fase
+- Acesso por perfil (super admin, client, partner)
+- Gerar documentação técnica e proposta comercial
 
 ## Path no website
 
 Depois de iniciar o `server.js`, o acesso é:
-- `/requirements-platform`
+- `/projects`
 
 Arquivos estáticos da app:
-- `/requirements-platform/static/*`
+- `/projects/static/*`
+
+API:
+- `/api/projects/*`
 
 ## Credenciais iniciais
 
@@ -29,17 +35,18 @@ Definidas por variáveis de ambiente (opcional):
 
 - `super_admin`: acesso total a todos os projetos e edição completa.
 - `client` e `partner`: acesso apenas aos projetos associados, visão de progresso e documentos.
-- pastas de dados internos (`requirements_platform/data`, `requirements_platform/uploads`) bloqueadas por rota 403.
+- pastas de dados internos (`projects/data`, `projects/uploads`) bloqueadas por rota 403.
 
 ## Estrutura local
 
 - `public/`: frontend da plataforma
 - `api.js`: rotas e regras de negócio
+- `lib/`: utilitários (markdown, etc.)
 - `data/store.json`: armazenamento local (gerado automaticamente)
 - `uploads/`: documentos enviados
 
 ## Observações
 
 - Extração automática de texto funciona melhor com `.txt` / `.md`.
-- Para `.pdf`/`.docx`, pode ser necessário colar manualmente o texto base na área de “Texto base de requisitos”.
-- A geração de PDFs depende do ambiente de navegador do Puppeteer (igual ao restante projeto).
+- Para `.pdf`/`.docx`, pode ser necessário colar manualmente o texto base.
+- A geração de PDFs depende de script externo (`REQ_PLATFORM_BUILD_SCRIPT`) ou fallback HTML/MD.
