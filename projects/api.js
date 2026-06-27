@@ -441,7 +441,23 @@ function registerRequirementsPlatform(app, options) {
   }
 
   app.get('/projects', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     res.sendFile(path.join(platformDir, 'public', 'index.html'));
+  });
+
+  app.get('/api/projects/version', async (req, res) => {
+    const versionPath = path.join(platformDir, 'public', 'build-version.txt');
+    let gitSha = '';
+    try {
+      gitSha = String(await fs.readFile(versionPath, 'utf8')).trim();
+    } catch {
+      gitSha = '';
+    }
+    return res.json({
+      gitSha: gitSha || 'unknown',
+      platform: 'projects',
+    });
   });
 
   app.use('/projects/static', expressStaticSafe(platformDir));

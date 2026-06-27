@@ -42,8 +42,11 @@ const NAV_GROUPS = [
     collapsible: true,
     items: [
       { id: 'projeto', label: 'Visão', icon: 'chart' },
+      { id: 'documentos', label: 'Documentos', icon: 'file' },
+      { id: 'perguntas', label: 'Perguntas', icon: 'help' },
       { id: 'fases', label: 'Fases', icon: 'plan' },
       { id: 'gerar', label: 'Gerar', icon: 'bolt' },
+      { id: 'atas', label: 'Atas', icon: 'notes' },
       { id: 'atividade', label: 'Log', icon: 'clock' },
     ],
   },

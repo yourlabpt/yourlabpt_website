@@ -409,6 +409,31 @@ Then deployments are just: `/opt/yourlab/deploy.sh`
 
 **Important:** Project data is committed in git. After working locally, commit and push `projects/data/store.json` (and any new uploads or generated proposals) before running `deploy-pull.sh` on the server. A plain `git pull` may fail or merge if the server modified `store.json` at runtime — use `deploy-pull.sh` instead.
 
+**Site still shows the old UI (e.g. atas inside each delivery phase)?**
+
+The new UI is in git on branch `master` (not `main`). On the server:
+
+```bash
+cd /opt/yourlab/website   # or ~/yourlabpt_website — use YOUR clone path
+git remote -v
+git branch
+./scripts/deploy-pull.sh
+curl -s http://127.0.0.1:3000/api/projects/version
+# Should return {"gitSha":"<short-commit>","platform":"projects"}
+```
+
+If `gitSha` is old or `unknown`:
+
+1. Confirm `WorkingDirectory` in `yourlab.service` points to **this** repo's `server/` folder (not a second clone elsewhere).
+2. Confirm you fetched `origin/master` (deploy script uses `master`, not `main`).
+3. Hard refresh the browser on `/projects` (Ctrl+Shift+R). Cloudflare may cache HTML — purge cache for `yourlabpt.com/projects*` in the Cloudflare dashboard if needed.
+4. Check the live file on disk: `grep "label: 'Atas'" projects/public/delivery-os-ui.js` should return **nothing** (old UI had atas per phase).
+
+```bash
+sudo systemctl status yourlab
+sudo journalctl -u yourlab -n 30
+```
+
 ---
 
 ## Troubleshooting
