@@ -14,6 +14,15 @@
     return normalizeStageId(minute?.targetStageId || minute?.impactScope, 'requirements');
   }
 
+  // Atas are global — one ata can impact multiple phases.
+  function meetingImpactedStageIds(minute) {
+    const ids = (Array.isArray(minute?.impactedStageIds) ? minute.impactedStageIds : [])
+      .map((id) => normalizeStageId(id, ''))
+      .filter((id) => stageOrder().includes(id));
+    if (ids.length) return Array.from(new Set(ids));
+    return [resolveMeetingStageId(minute)];
+  }
+
   function resolveRequirementStageId(req) {
     return normalizeStageId(req?.deliveryStageId, 'requirements');
   }
@@ -25,7 +34,7 @@
   function getStageContentSummary(project, stageId) {
     const sid = normalizeStageId(stageId, 'requirements');
     const requirements = (project?.requirements || []).filter((r) => resolveRequirementStageId(r) === sid);
-    const minutes = (project?.meetingMinutes || []).filter((m) => resolveMeetingStageId(m) === sid);
+    const minutes = (project?.meetingMinutes || []).filter((m) => meetingImpactedStageIds(m).includes(sid));
     const documents = (project?.documents || []).filter((d) => resolveDocumentStageId(d) === sid);
     const questions = (project?.clarificationQuestions || []).filter(
       (q) => normalizeStageId(q?.deliveryStageId, 'requirements') === sid
@@ -154,6 +163,7 @@
   window.PhaseContent = {
     normalizeStageId,
     resolveMeetingStageId,
+    meetingImpactedStageIds,
     resolveRequirementStageId,
     resolveDocumentStageId,
     getStageContentSummary,

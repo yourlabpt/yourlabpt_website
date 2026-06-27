@@ -36,45 +36,13 @@
       || [];
   }
 
-  function renderStageConceptBanner(stageId) {
+  function renderStageConceptBanner() {
     const el = $('pdosConceptBanner');
-    if (!el) return;
-    const keys = getStageConceptKeys(stageId);
-    const concepts = getPlatformConcepts();
-    if (!keys.length) {
-      el.innerHTML = '';
-      return;
-    }
-    el.innerHTML = `
-      <div class="pdos-concept-banner">
-        <p class="pdos-concept-banner-lead">Nesta fase trabalhas principalmente com:</p>
-        <dl class="pdos-concept-list">
-          ${keys.map((key) => {
-            const c = concepts[key];
-            if (!c) return '';
-            return `
-              <div class="pdos-concept-item">
-                <dt>${escapeHtml(c.title)}</dt>
-                <dd>
-                  ${escapeHtml(c.short)}
-                  ${c.example ? `<span class="pdos-concept-example">${escapeHtml(c.example)}</span>` : ''}
-                </dd>
-              </div>`;
-          }).join('')}
-        </dl>
-      </div>`;
+    if (el) el.innerHTML = '';
   }
 
   function renderPlatformGlossary() {
-    const el = $('pdosPlatformGlossary');
-    if (!el) return;
-    const concepts = getPlatformConcepts();
-    el.innerHTML = Object.entries(concepts).map(([, c]) => `
-      <div class="pdos-glossary-item">
-        <strong>${escapeHtml(c.title)}</strong>
-        <p>${escapeHtml(c.short)}${c.example ? ` <em>${escapeHtml(c.example)}</em>` : ''}</p>
-      </div>
-    `).join('');
+    /* Conteúdo movido para HelpUI (drawer global) */
   }
 
   const pdosState = {
@@ -84,7 +52,19 @@
     selectedCapabilityId: '',
     selectedClusterId: '',
     pendingPromptRun: null,
+    activeJob: null,
+    activeJobStep: '',
   };
+
+  const AGENT_TYPE_LABELS = {
+    requirement_grouping: 'Agrupar requisitos',
+  };
+  function agentTypeLabel(agentType) {
+    return AGENT_TYPE_LABELS[agentType] || agentType;
+  }
+  // Agentes que suportam divisao em lotes no cliente (espelha BATCHABLE_AGENTS).
+  const BATCHABLE_AGENT_TYPES = ['requirement_grouping'];
+  const AGENT_JOB_THRESHOLD = 25;
 
   function ensureArray(value) {
     return Array.isArray(value) ? value : [];
@@ -164,22 +144,19 @@
     const desc = projectDescription(project);
     const goals = (project.summary?.goals || []).slice(0, 2);
     el.innerHTML = `
-      <div class="pdos-header-grid">
+      <div class="pdos-header-grid pdos-header-compact">
         <div class="pdos-header-main">
           <p class="pdos-header-eyebrow">${escapeHtml(project.clientName || 'Cliente')}</p>
           <h2>${escapeHtml(project.name)}</h2>
-          ${desc ? `<p class="pdos-header-desc">${escapeHtml(shortText(desc, 420))}</p>` : '<p class="pdos-header-desc muted-text">Sem descrição — adiciona contexto do projecto.</p>'}
-          ${goals.length ? `<ul class="pdos-header-goals">${goals.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ul>` : ''}
         </div>
         <div class="pdos-header-side">
           <div class="pdos-header-meta">
             <span class="chip">${escapeHtml(project.status || 'active')}</span>
             <span class="chip accent">${escapeHtml(project.deliveryLevel || 'standard')}</span>
           </div>
-          ${project.nextDecision ? `<p class="pdos-next-decision"><strong>Próxima decisão:</strong> ${escapeHtml(project.nextDecision)}</p>` : ''}
-          <div class="pdos-header-actions">
-            <button class="btn primary" id="pdosRelinkBtn" type="button" title="Reaplica de forma determinística as ligações entre ideia, requisitos, arquitetura, desenvolvimento e monitorização. Gera um log para revisão.">Reaplicar ligações entre fases</button>
-            <button class="btn" id="pdosGenProposalBtn" type="button" title="Gera uma proposta comercial com estimativa a partir da arquitetura, requisitos e informação atual do projeto.">Gerar proposta comercial</button>
+          <div class="pdos-header-actions" role="group" aria-label="Acções do projecto">
+            <button class="btn pdos-header-btn" id="pdosRelinkBtn" type="button" title="Reaplica ligações entre fases e gera log para revisão">Reaplicar ligações</button>
+            <button class="btn primary pdos-header-btn" id="pdosGenProposalBtn" type="button" title="Gera proposta comercial a partir do projecto actual">Gerar proposta</button>
           </div>
         </div>
       </div>
@@ -255,9 +232,11 @@
         renderGoldenTimeline(project);
         renderStageGuidance(project);
         renderCurrentFocus(project);
-        renderStageConceptBanner(window.state.deliverySelectedStageId);
+        renderStageConceptBanner();
+        renderHumanReviewsSection(project);
         renderCardFeed(project);
         renderTracePanel(project);
+        window.DiagramsUI?.renderShell?.(project);
         window.renderPhaseContextBar?.();
       });
     });
@@ -286,38 +265,82 @@
   }
 
   function renderStageGuidance(project) {
+    // Navigation is handled by the golden timeline only — no bottom guidance bar.
     const el = $('pdosStageGuidance');
+    if (el) el.innerHTML = '';
+  }
+
+  function renderCurrentFocus(project) {
+    // Pending reviews are shown in the dedicated human-review panel.
+    const el = $('pdosCurrentFocus');
+    if (el) el.innerHTML = '';
+  }
+
+  function agentFriendlyLabel(agentType) {
+    const map = {
+      reverse_idea: 'Visão da ideia',
+      discovery_research: 'Descoberta',
+      roadmap_plan: 'Roadmap',
+      implementation_stack: 'Stack técnica',
+      implementation_tasks: 'Tarefas',
+      commercial_proposal: 'Proposta comercial',
+      requirement_grouping: 'Agrupamento',
+      diagram_to_requirements: 'Diagrama → Requisitos',
+      requirements_to_architecture: 'Arquitectura',
+      capability_requirements: 'Requisitos',
+      stage_transition: 'Transição de fase',
+      meeting_classification: 'Classificação de ata',
+    };
+    return map[agentType] || agentType || 'Agente IA';
+  }
+
+  function renderHumanReviewsSection(project) {
+    const el = $('pdosHumanReviews');
     if (!el) return;
-    const stageId = window.state?.deliverySelectedStageId || resolveProcessStageId(project, getStages(project));
-    const stages = getStages(project);
-    const idx = getStageOrder().indexOf(stageId);
-    const focus = window.state?.config?.stageFocus?.[stageId] || '';
-    const nextHint = window.state?.config?.stageNextHint?.[stageId] || '';
-    const prev = idx > 0 ? stages[idx - 1] : null;
-    const next = idx >= 0 && idx < stages.length - 1 ? stages[idx + 1] : null;
-
+    const pending = (project.humanReviews || []).filter((r) => r.status === 'pending');
+    if (!pending.length) {
+      el.innerHTML = '';
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
     el.innerHTML = `
-      <div class="pdos-guidance-grid">
-        <div class="pdos-guidance-focus">
-          <span class="pdos-section-label">Foco neste estágio</span>
-          <p>${escapeHtml(focus)}</p>
-        </div>
-        <div class="pdos-guidance-next">
-          <span class="pdos-section-label">Como proceder</span>
-          <p>${escapeHtml(nextHint)}</p>
-          <div class="pdos-guidance-actions">
-            ${prev ? `<button type="button" class="btn tiny" data-transition-back="${escapeHtml(prev.id)}" data-transition-to="${escapeHtml(stageId)}">← Desde ${escapeHtml(prev.label)}</button>` : ''}
-            ${next ? `<button type="button" class="btn tiny primary" data-transition-fwd="${escapeHtml(stageId)}" data-transition-to="${escapeHtml(next.id)}">Avançar → ${escapeHtml(next.label)}</button>` : ''}
+      <section class="pdos-reviews-panel" aria-label="Revisões humanas">
+        <header class="pdos-reviews-head">
+          <div>
+            <span class="pdos-section-label">Revisão humana</span>
+            <p class="pdos-reviews-sub">Confirme ou rejeite as alterações propostas pela IA antes de aplicar ao projecto.</p>
           </div>
+          <span class="pdos-reviews-count">${pending.length} pendente(s)</span>
+        </header>
+        <div class="pdos-reviews-grid">
+          ${pending.map((r) => {
+            const promptRun = (project.promptRuns || []).find((pr) => pr.id === r.promptRunId || pr.id === r.sourceId);
+            const agent = promptRun ? agentFriendlyLabel(promptRun.agentType) : '';
+            const changes = r.decisionsCount || r.suggestedChanges?.sections?.length || 0;
+            return `
+              <article class="hr-card">
+                <div class="hr-card-top">
+                  <span class="hr-card-status">Aguarda decisão</span>
+                  <span class="hr-card-meta-line">${r.readingTimeMinutes || 5} min · ${changes} alteração(ões)</span>
+                </div>
+                <h4 class="hr-card-title">${escapeHtml(r.title || 'Revisão pendente')}</h4>
+                <p class="hr-card-summary">${escapeHtml(shortText(r.summaryMarkdown || '', 160))}</p>
+                ${agent ? `<span class="hr-card-agent">${escapeHtml(agent)}</span>` : ''}
+                <div class="hr-card-actions">
+                  <button type="button" class="btn tiny primary" data-view-review="${escapeHtml(r.id)}">Abrir revisão</button>
+                  <button type="button" class="btn tiny" data-approve-review="${escapeHtml(r.id)}">Aprovar</button>
+                </div>
+              </article>`;
+          }).join('')}
         </div>
-      </div>
-    `;
+      </section>`;
 
-    el.querySelectorAll('[data-transition-fwd]').forEach((btn) => {
-      btn.addEventListener('click', () => runStageTransition(btn.dataset.transitionFwd, btn.dataset.transitionTo, 'forward', project));
+    el.querySelectorAll('[data-view-review]').forEach((btn) => {
+      btn.addEventListener('click', () => openReviewDrawer(project, btn.dataset.viewReview));
     });
-    el.querySelectorAll('[data-transition-back]').forEach((btn) => {
-      btn.addEventListener('click', () => runStageTransition(btn.dataset.transitionTo, btn.dataset.transitionBack, 'backward', project));
+    el.querySelectorAll('[data-approve-review]').forEach((btn) => {
+      btn.addEventListener('click', () => resolveReview(btn.dataset.approveReview, 'approved'));
     });
   }
 
@@ -358,6 +381,10 @@
   }
 
   async function runStageTransition(fromStageId, toStageId, direction, project) {
+    if (direction === 'forward' && fromStageId === 'requirements' && toStageId === 'architecture') {
+      closeTransitionModal();
+      return runArchitecturePackGeneration(project);
+    }
     try {
       const res = await apiRequest(`/projects/${project.id}/prompt-runs`, {
         method: 'POST',
@@ -383,26 +410,6 @@
     return list.map((id) =>
       `<button type="button" class="req-link-chip" data-goto-requirement="${escapeHtml(id)}">${escapeHtml(id)}</button>`
     ).join(' ');
-  }
-
-  function renderCurrentFocus(project) {
-    const el = $('pdosCurrentFocus');
-    if (!el) return;
-    const stageId = window.state?.deliverySelectedStageId || 'requirements';
-    const stages = getStages(project);
-    const stage = stages.find((s) => s.id === stageId);
-    const focus = window.state?.config?.stageFocus?.[stageId] || 'Avançar o projecto fase a fase';
-    const pendingReviews = (project.humanReviews || []).filter((r) => r.status === 'pending').length;
-    el.innerHTML = `
-      <div class="pdos-focus-inner">
-        <div class="pdos-focus-top">
-          <span class="pdos-focus-label">A trabalhar agora</span>
-          <strong class="pdos-focus-stage">${escapeHtml(stage?.label || stageId)}</strong>
-        </div>
-        <p class="pdos-focus-text">${escapeHtml(focus)}</p>
-        ${pendingReviews ? `<span class="pdos-focus-badge">${pendingReviews} revisão(ões) pendente(s)</span>` : ''}
-      </div>
-    `;
   }
 
   function renderModuleNav() {
@@ -431,124 +438,6 @@
       .trim();
   }
 
-  function isArchitectureArtifact(artifact) {
-    const type = String(artifact?.type || '').toLowerCase();
-    const stageId = String(artifact?.stageId || '').toLowerCase();
-    return stageId === 'architecture'
-      || type === 'architecture'
-      || type === 'architecture_object'
-      || type === 'data_entity'
-      || type === 'api_endpoint';
-  }
-
-  function renderArchitectureFeed(project) {
-    const arts = (project.artifacts || []).filter(isArchitectureArtifact);
-    const pack = arts.find((a) => a.type === 'architecture');
-    const objects = arts.filter((a) => a.type === 'architecture_object');
-    const entities = arts.filter((a) => a.type === 'data_entity');
-    const endpoints = arts.filter((a) => a.type === 'api_endpoint');
-    const summary = project.technicalApproach?.architectureSummary;
-    const mermaidSrc = project.technicalApproach?.architectureMermaid || pack?.metadata?.architectureMermaid || '';
-
-    let html = `
-      <article class="pdos-card pdos-arch-explorer">
-        <h4>Explorador de arquitectura</h4>
-        <p>Visão geral da aplicação — clique nos componentes ou requisitos para ir mais fundo.</p>
-        ${summary ? `<p class="muted-text"><strong>Resumo:</strong> ${escapeHtml(summary)}</p>` : ''}
-        <div class="pdos-card-actions">
-          <button type="button" class="btn tiny primary" data-agent="requirements_to_architecture">Gerar pacote de arquitectura</button>
-          <button type="button" class="btn tiny" data-goto-tab="requisitos">Ver requisitos</button>
-          <button type="button" class="btn tiny" data-agent="diagram_to_requirements">Diagrama → Requisitos</button>
-        </div>
-      </article>
-    `;
-
-    if (mermaidSrc) {
-      html += `
-        <article class="pdos-card pdos-arch-diagram">
-          <h4>Diagrama</h4>
-          <div class="pdos-mermaid-wrap" data-render-mermaid="1"></div>
-          <p class="muted-text">Referências a requisitos no diagrama são clicáveis quando aparecem como IDs (ex.: FR-01).</p>
-        </article>
-      `;
-    }
-
-    const archDocs = (project.documents || []).filter(
-      (d) => (d.deliveryStageId || 'architecture') === 'architecture' || d.docType === 'diagram'
-    );
-    if (archDocs.length) {
-      html += `
-        <article class="pdos-card">
-          <h4>Documentos e diagramas da fase</h4>
-          <ul class="review-items">
-            ${archDocs.map((d) => `
-              <li>
-                <button type="button" class="nav-link-btn" data-open-phase-doc="${escapeHtml(d.id)}">
-                  ${escapeHtml(d.title || d.originalName)} <small class="muted-text">(${escapeHtml(d.docType || 'doc')})</small>
-                </button>
-              </li>
-            `).join('')}
-          </ul>
-        </article>
-      `;
-    }
-
-    if (!arts.length) {
-      html += `<article class="pdos-card pdos-card-empty"><p>Sem arquitectura publicada. Submeta o output da IA e aprove a revisão humana.</p></article>`;
-      return html;
-    }
-
-    html += `
-      <article class="pdos-card pdos-card-summary">
-        <h4>Resumo da arquitectura</h4>
-        <div class="pdos-summary-grid">
-          <div><strong>${objects.length || (pack?.metadata?.architectureObjects?.length || 0)}</strong><span>Componentes</span></div>
-          <div><strong>${entities.length || (pack?.metadata?.dataEntities?.length || 0)}</strong><span>Entidades</span></div>
-          <div><strong>${endpoints.length || (pack?.metadata?.apiEndpoints?.length || 0)}</strong><span>Endpoints</span></div>
-        </div>
-      </article>
-    `;
-
-    if (pack) {
-      html += `
-        <article class="pdos-card pdos-card-arch">
-          <h4>${escapeHtml(pack.name)}</h4>
-          <p>${escapeHtml(shortText(pack.description || pack.bodyMarkdown, 160))}</p>
-          <div class="pdos-card-actions">
-            <button type="button" class="btn tiny" data-open-artifact="${escapeHtml(pack.id)}">Ver pacote completo</button>
-          </div>
-        </article>
-      `;
-    }
-
-    if (objects.length) {
-      html += `<article class="pdos-card"><h4>Componentes / Serviços</h4><ul class="review-items arch-object-list">${objects.map((a) => {
-        const reqLinks = formatRequirementLinks(a.relatedRequirementIds || a.metadata?.requirementIds);
-        return `<li class="arch-object-item">
-          <button type="button" class="arch-object-btn" data-open-artifact="${escapeHtml(a.id)}">
-            <strong>${escapeHtml(a.name)}</strong>
-            ${a.metadata?.componentType ? `<span class="muted-text">(${escapeHtml(a.metadata.componentType)})</span>` : ''}
-          </button>
-          ${reqLinks ? `<div class="arch-req-links">${reqLinks}</div>` : ''}
-        </li>`;
-      }).join('')}</ul></article>`;
-    }
-    if (entities.length) {
-      html += `<article class="pdos-card"><h4>Entidades de dados</h4><ul class="review-items">${entities.map((a) => {
-        const reqLinks = formatRequirementLinks(a.relatedRequirementIds || a.metadata?.requirementIds);
-        return `<li><button type="button" class="arch-object-btn" data-open-artifact="${escapeHtml(a.id)}"><strong>${escapeHtml(a.name)}</strong></button>${reqLinks ? `<div class="arch-req-links">${reqLinks}</div>` : ''}</li>`;
-      }).join('')}</ul></article>`;
-    }
-    if (endpoints.length) {
-      html += `<article class="pdos-card"><h4>API Endpoints</h4><ul class="review-items">${endpoints.map((a) => {
-        const reqLinks = formatRequirementLinks(a.relatedRequirementIds || a.metadata?.requirementIds);
-        return `<li><button type="button" class="arch-object-btn" data-open-artifact="${escapeHtml(a.id)}"><code>${escapeHtml(a.name)}</code></button>${reqLinks ? `<div class="arch-req-links">${reqLinks}</div>` : ''}</li>`;
-      }).join('')}${endpoints.length > 10 ? `<li class="muted-text">…</li>` : ''}</ul></article>`;
-    }
-
-    return html;
-  }
-
   function openArtifactDrawer(project, artifactId) {
     const art = (project.artifacts || []).find((a) => a.id === artifactId);
     const drawer = $('pdosDetailDrawer');
@@ -568,8 +457,20 @@
     renderMarkdownPreview(art.bodyMarkdown || art.description || '', $('pdosArtifactBody'));
   }
 
-  function renderPhaseStatTile({ tab, label, count, stageId, hint, view }) {
+  function renderPhaseStatTile({ tab, label, count, stageId, hint, view, scrollTarget }) {
     const empty = !count;
+    if (scrollTarget) {
+      return `
+        <button type="button"
+          class="pdos-stat-tile${empty ? ' is-empty' : ''}"
+          data-scroll-target="${escapeHtml(scrollTarget)}"
+          ${empty ? 'disabled' : ''}
+          title="${escapeHtml(hint || `Ver ${label}`)}">
+          <span class="pdos-stat-tile-count">${count}</span>
+          <span class="pdos-stat-tile-label">${escapeHtml(label)}</span>
+        </button>
+      `;
+    }
     return `
       <button type="button"
         class="pdos-stat-tile${empty ? ' is-empty' : ''}"
@@ -581,28 +482,6 @@
         <span class="pdos-stat-tile-count">${count}</span>
         <span class="pdos-stat-tile-label">${escapeHtml(label)}</span>
       </button>
-    `;
-  }
-
-  function renderPhaseContentStrip(project, stageId) {
-    const summary = window.PhaseContent?.getStageContentSummary(project, stageId);
-    if (!summary) return '';
-    const { counts } = summary;
-    const tiles = [
-      { tab: 'requisitos', label: 'Requisitos', count: counts.requirements },
-      { tab: 'atas', label: 'Atas', count: counts.minutes },
-      { tab: 'documentos', label: 'Anexos', count: counts.documents, view: 'uploads' },
-      { tab: 'perguntas', label: 'Clarificações', count: counts.questions },
-      { tab: 'documentos', label: 'Artefactos IA', count: counts.aiArtifacts, view: 'aiArtifacts' },
-    ];
-    return `
-      <article class="pdos-card pdos-phase-content-card">
-        <span class="pdos-section-label">Conteúdo desta fase</span>
-        <p class="pdos-phase-content-hint muted-text">Clica num card para abrir a secção filtrada desta fase.</p>
-        <div class="pdos-stat-tiles">
-          ${tiles.map((t) => renderPhaseStatTile({ ...t, stageId })).join('')}
-        </div>
-      </article>
     `;
   }
 
@@ -629,22 +508,18 @@
     `;
   }
 
-  function renderPhaseInlineContent(project, stageId) {
+  function renderPhaseContentBlock(project, stageId) {
     const summary = window.PhaseContent?.getStageContentSummary(project, stageId);
     if (!summary) return '';
-    const { items } = summary;
-    const sections = [];
+    const { counts, items } = summary;
 
-    const minuteRows = (items.minutes || []).map((m) => renderPhaseItemRow({
-      id: m.id,
-      kind: 'minute',
-      title: m.title || `Ata ${(m.meetingDate || m.createdAt || '').slice(0, 10)}`,
-      meta: (m.meetingDate || m.createdAt || '').slice(0, 10),
-      currentStageId: window.PhaseContent.resolveMeetingStageId(m),
-      project,
-      canMove: true,
-    })).join('');
-    sections.push({ label: 'Atas', count: (items.minutes || []).length, body: minuteRows, addTab: 'atas' });
+    const tiles = [
+      { tab: 'requisitos', label: 'Requisitos', count: counts.requirements },
+      { tab: 'documentos', label: 'Anexos', count: counts.documents, view: 'uploads' },
+      { tab: 'perguntas', label: 'Clarificações', count: counts.questions },
+    ];
+
+    const sections = [];
 
     const docRows = (items.documents || []).map((d) => renderPhaseItemRow({
       id: d.id,
@@ -679,10 +554,12 @@
     `).join('');
 
     return `
-      <article class="pdos-card pdos-phase-inline-card">
+      <article class="pdos-card pdos-phase-content-card">
         <span class="pdos-section-label">Conteúdo desta fase</span>
-        <p class="muted-text pdos-phase-content-hint">Atas, documentos e perguntas vivem dentro da fase. Mudar a fase de uma ata ou documento move-o e passa a vê-lo apenas nessa fase.</p>
-        ${sectionsHtml}
+        <div class="pdos-stat-tiles">
+          ${tiles.map((t) => renderPhaseStatTile({ ...t, stageId })).join('')}
+        </div>
+        ${sectionsHtml ? `<div class="pdos-phase-sections">${sectionsHtml}</div>` : ''}
       </article>
     `;
   }
@@ -695,8 +572,7 @@
     const openQuestions = (project.clarificationQuestions || []).filter((q) => ['open', 'sent', 'blocked'].includes(q.status));
     const risks = (project.risks || []);
 
-    let html = renderPhaseContentStrip(project, stageId);
-    html += renderPhaseInlineContent(project, stageId);
+    let html = renderPhaseContentBlock(project, stageId);
 
     if (stageId === 'requirements') {
       html += `
@@ -708,14 +584,15 @@
             <div><strong>${openQuestions.length}</strong><span>dúvidas abertas</span></div>
             <div><strong>${risks.length}</strong><span>riscos</span></div>
           </div>
-          <p class="pdos-card-hint muted-text">Funcionalidade = o que o produto faz. Grupo = requisitos relacionados dentro dessa funcionalidade.</p>
           <div class="pdos-card-actions">
-            <button type="button" class="btn tiny primary" data-agent="requirement_grouping" title="Agrupa requisitos soltos em funcionalidades e grupos">Agrupar requisitos com IA</button>
-            <button type="button" class="btn tiny" data-agent="reverse_idea">Gerar resumo da ideia</button>
-            <button type="button" class="btn tiny" data-unlinked-reqs>Ver sem funcionalidade</button>
+            <button type="button" class="btn tiny primary" data-agent="requirement_grouping" title="Agrupa requisitos soltos em funcionalidades e grupos">Agrupar com IA</button>
+            <button type="button" class="btn tiny" data-agent="reverse_idea">Resumo da ideia</button>
+            <button type="button" class="btn tiny" data-unlinked-reqs>Sem funcionalidade</button>
           </div>
         </article>
       `;
+
+      html += renderAgentJobsHtml(project);
 
       if (caps.length) {
         caps.forEach((cap) => {
@@ -737,47 +614,18 @@
           `;
         });
       } else {
-        html += `
-          <article class="pdos-card pdos-card-empty">
-            <p>Sem funcionalidades ainda. Usa <strong>Agrupar requisitos com IA</strong> para organizar os requisitos em blocos de valor (ex.: Login, Pagamentos, Cupons).</p>
-          </article>
-        `;
+        html += `<article class="pdos-card pdos-card-empty"><p>Sem funcionalidades — <strong>Agrupar com IA</strong>.</p></article>`;
       }
-    } else if (stageId === 'architecture') {
-      html += renderArchitectureFeed(project);
     } else if (stageId === 'idea') {
-      html += `
-        <article class="pdos-card">
-          <h4>Resumo da ideia</h4>
-          <div id="pdosIdeaBriefPreview" class="markdown-preview"></div>
-          <p class="muted-text pdos-card-hint">Texto inicial: problema, utilizadores-alvo e âmbito do primeiro release.</p>
-          <div class="pdos-card-actions">
-            <button type="button" class="btn tiny primary" data-agent="reverse_idea">Gerar a partir dos requisitos</button>
-          </div>
-        </article>
-      `;
-    } else {
-      html += `<article class="pdos-card"><h4>${escapeHtml(stageId)}</h4><p>${escapeHtml(window.state?.config?.stageFocus?.[stageId] || '')}</p></article>`;
-    }
-
-    const pendingReviews = (project.humanReviews || []).filter((r) => r.status === 'pending');
-    if (pendingReviews.length) {
-      html += `
-        <article class="pdos-card pdos-card-review">
-          <h4>Revisão humana (${pendingReviews.length})</h4>
-          ${pendingReviews.slice(0, 3).map((r) => `
-            <div class="review-item">
-              <strong>${escapeHtml(r.title)}</strong>
-              <p>${escapeHtml(shortText(r.summaryMarkdown, 100))}</p>
-              <small>${r.readingTimeMinutes || 5} min leitura · ${r.decisionsCount || 0} alteração(ões)</small>
-              <div class="pdos-card-actions">
-                <button type="button" class="btn tiny primary" data-approve-review="${escapeHtml(r.id)}">Aprovar</button>
-                <button type="button" class="btn tiny" data-view-review="${escapeHtml(r.id)}">Ver detalhes</button>
-              </div>
-            </div>
-          `).join('')}
-        </article>
-      `;
+      html += renderIdeaStage(project);
+    } else if (stageId === 'discovery') {
+      html += renderDiscoveryStage(project);
+    } else if (stageId === 'roadmap') {
+      html += renderRoadmapStage(project);
+    } else if (stageId === 'implementation') {
+      html += renderImplementationStage(project);
+    } else if (stageId === 'delivery') {
+      html += renderProposalStage(project);
     }
 
     if (risks.length && stageId === 'requirements') {
@@ -791,12 +639,1057 @@
 
     el.innerHTML = html;
 
-    if (stageId === 'idea' && project.ideaBriefMarkdown) {
-      renderMarkdownPreview(project.ideaBriefMarkdown, $('pdosIdeaBriefPreview'));
+    if (stageId === 'idea') {
+      hydrateIdeaStage(project);
+    } else if (stageId === 'discovery') {
+      hydrateDiscoveryStage(project);
+    } else if (stageId === 'roadmap') {
+      hydrateRoadmapStage(project);
+    } else if (stageId === 'implementation') {
+      hydrateImplementationStage(project);
+    } else if (stageId === 'delivery') {
+      hydrateProposalStage(project);
     }
 
     wireCardFeedEvents(project);
     renderMermaidInFeed();
+  }
+
+  function ideaVision(project) {
+    const v = project.vision && typeof project.vision === 'object' ? project.vision : {};
+    return {
+      headline: v.headline || '',
+      mainIdeaMarkdown: v.mainIdeaMarkdown || project.ideaBriefMarkdown || '',
+      philosophyMarkdown: v.philosophyMarkdown || '',
+      problemMarkdown: v.problemMarkdown || '',
+      targetUsers: Array.isArray(v.targetUsers) ? v.targetUsers : [],
+      valuePropositionMarkdown: v.valuePropositionMarkdown || '',
+      principles: Array.isArray(v.principles) ? v.principles : [],
+      consequentIdeas: Array.isArray(v.consequentIdeas) ? v.consequentIdeas : [],
+    };
+  }
+
+  function ideaHasContent(v) {
+    return Boolean(
+      v.headline || v.mainIdeaMarkdown || v.philosophyMarkdown || v.problemMarkdown
+      || v.valuePropositionMarkdown || v.targetUsers.length || v.principles.length || v.consequentIdeas.length
+    );
+  }
+
+  function renderIdeaStage(project) {
+    const v = ideaVision(project);
+    const genLabel = ideaHasContent(v) ? 'Regenerar visão com IA' : 'Gerar visão com IA';
+
+    if (!ideaHasContent(v)) {
+      return `
+        <article class="pdos-card idea-empty">
+          <h4>A visão da ideia ainda não foi escrita</h4>
+          <p class="muted-text">Gere uma narrativa clara da ideia principal, a sua filosofia e as ideias que dela nascem — a partir dos requisitos e contexto do projecto.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="reverse_idea">${genLabel}</button>
+          </div>
+        </article>
+      `;
+    }
+
+    const usersChips = v.targetUsers.length
+      ? `<div class="idea-users">${v.targetUsers.map((u) => `<span class="idea-user-chip">${escapeHtml(u)}</span>`).join('')}</div>`
+      : '';
+
+    const principles = v.principles.length
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Filosofia &amp; princípios</h4>
+          <div class="idea-principles">
+            ${v.principles.map((p, i) => `
+              <div class="idea-principle">
+                <span class="idea-principle-index">${i + 1}</span>
+                <div>
+                  <strong>${escapeHtml(p.title || '')}</strong>
+                  <div class="idea-md" data-idea-md="principle-${i}"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </section>`
+      : '';
+
+    const consequent = v.consequentIdeas.length
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Ideias consequentes</h4>
+          <div class="idea-consequent-grid">
+            ${v.consequentIdeas.map((c, i) => `
+              <article class="idea-consequent-card">
+                <h5>${escapeHtml(c.title || '')}</h5>
+                <div class="idea-md" data-idea-md="consequent-${i}"></div>
+              </article>
+            `).join('')}
+          </div>
+        </section>`
+      : '';
+
+    return `
+      <article class="pdos-card idea-canvas">
+        <header class="idea-hero">
+          <span class="idea-eyebrow">A IDEIA</span>
+          ${v.headline ? `<h2 class="idea-headline">${escapeHtml(v.headline)}</h2>` : ''}
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny" data-agent="reverse_idea">${genLabel}</button>
+          </div>
+        </header>
+
+        <div class="idea-md idea-main" data-idea-md="main"></div>
+
+        ${v.philosophyMarkdown ? `
+          <section class="idea-block idea-philosophy">
+            <h4 class="idea-block-title">Cultura &amp; filosofia</h4>
+            <div class="idea-md" data-idea-md="philosophy"></div>
+          </section>` : ''}
+
+        ${(v.problemMarkdown || v.valuePropositionMarkdown || usersChips) ? `
+          <section class="idea-block idea-why">
+            ${v.problemMarkdown ? `<div class="idea-why-col"><h4 class="idea-block-title">O problema</h4><div class="idea-md" data-idea-md="problem"></div></div>` : ''}
+            ${v.valuePropositionMarkdown ? `<div class="idea-why-col"><h4 class="idea-block-title">Porque importa</h4><div class="idea-md" data-idea-md="value"></div></div>` : ''}
+            ${usersChips ? `<div class="idea-why-col"><h4 class="idea-block-title">Para quem</h4>${usersChips}</div>` : ''}
+          </section>` : ''}
+
+        ${principles}
+        ${consequent}
+      </article>
+    `;
+  }
+
+  function hydrateIdeaStage(project) {
+    const v = ideaVision(project);
+    const fill = (key, md) => {
+      const el = $('pdosCardFeed')?.querySelector(`[data-idea-md="${key}"]`);
+      if (el && md) renderMarkdownPreview(md, el);
+    };
+    fill('main', v.mainIdeaMarkdown);
+    fill('philosophy', v.philosophyMarkdown);
+    fill('problem', v.problemMarkdown);
+    fill('value', v.valuePropositionMarkdown);
+    v.principles.forEach((p, i) => fill(`principle-${i}`, p.descriptionMarkdown));
+    v.consequentIdeas.forEach((c, i) => fill(`consequent-${i}`, c.descriptionMarkdown));
+  }
+
+  function discoveryData(project) {
+    const d = project.discovery && typeof project.discovery === 'object' ? project.discovery : {};
+    return {
+      marketSummaryMarkdown: d.marketSummaryMarkdown || '',
+      marketSizing: d.marketSizing || { tam: '', sam: '', som: '', notesMarkdown: '' },
+      segments: Array.isArray(d.segments) ? d.segments : [],
+      competitors: Array.isArray(d.competitors) ? d.competitors : [],
+      businessModel: d.businessModel || { revenueStreams: [], costStructure: [], channels: [], keyPartners: [] },
+      commercialImpact: d.commercialImpact || { objectivesMarkdown: '', kpis: [] },
+      swot: d.swot || { strengths: [], weaknesses: [], opportunities: [], threats: [] },
+      goToMarketMarkdown: d.goToMarketMarkdown || '',
+      assumptions: Array.isArray(d.assumptions) ? d.assumptions : [],
+    };
+  }
+
+  function discoveryHasContent(d) {
+    const bm = d.businessModel;
+    const sw = d.swot;
+    return Boolean(
+      d.marketSummaryMarkdown || d.marketSizing.tam || d.marketSizing.sam || d.marketSizing.som
+      || d.segments.length || d.competitors.length || d.commercialImpact.objectivesMarkdown
+      || d.commercialImpact.kpis.length || d.goToMarketMarkdown || d.assumptions.length
+      || bm.revenueStreams.length || bm.costStructure.length || bm.channels.length || bm.keyPartners.length
+      || sw.strengths.length || sw.weaknesses.length || sw.opportunities.length || sw.threats.length
+    );
+  }
+
+  function renderDiscoveryStage(project) {
+    const d = discoveryData(project);
+    const genLabel = discoveryHasContent(d) ? 'Regenerar descoberta com IA' : 'Gerar descoberta com IA';
+
+    if (!discoveryHasContent(d)) {
+      return `
+        <article class="pdos-card idea-empty">
+          <h4>A descoberta de mercado ainda não foi feita</h4>
+          <p class="muted-text">Gere uma análise estruturada — dimensão de mercado (TAM/SAM/SOM), segmentos, concorrência, modelo de negócio, impacto comercial e SWOT — a partir da ideia.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="discovery_research">${genLabel}</button>
+          </div>
+        </article>
+      `;
+    }
+
+    const sizing = d.marketSizing;
+    const sizingTiles = (sizing.tam || sizing.sam || sizing.som)
+      ? `<div class="disc-sizing">
+          <div class="disc-sizing-tile"><span>TAM</span><strong>${escapeHtml(sizing.tam || '—')}</strong><small>Mercado total</small></div>
+          <div class="disc-sizing-tile"><span>SAM</span><strong>${escapeHtml(sizing.sam || '—')}</strong><small>Mercado acessível</small></div>
+          <div class="disc-sizing-tile"><span>SOM</span><strong>${escapeHtml(sizing.som || '—')}</strong><small>Mercado obtível</small></div>
+        </div>
+        ${sizing.notesMarkdown ? `<div class="idea-md" data-disc-md="sizing-notes"></div>` : ''}`
+      : '';
+
+    const segments = d.segments.length
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Segmentos-alvo</h4>
+          <div class="disc-grid">
+            ${d.segments.map((s, i) => `
+              <article class="disc-card">
+                <h5>${escapeHtml(s.name || '')}</h5>
+                <div class="idea-md" data-disc-md="segment-${i}"></div>
+                ${(s.painPoints || []).length ? `<ul class="disc-pains">${s.painPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>` : ''}
+              </article>
+            `).join('')}
+          </div>
+        </section>`
+      : '';
+
+    const competitors = d.competitors.length
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Concorrência &amp; diferenciação</h4>
+          <div class="disc-grid">
+            ${d.competitors.map((c, i) => `
+              <article class="disc-card">
+                <h5>${escapeHtml(c.name || '')}</h5>
+                <div class="idea-md" data-disc-md="competitor-${i}"></div>
+                ${c.differentiation ? `<p class="disc-edge"><strong>A nossa vantagem:</strong> ${escapeHtml(c.differentiation)}</p>` : ''}
+              </article>
+            `).join('')}
+          </div>
+        </section>`
+      : '';
+
+    const bm = d.businessModel;
+    const bmCol = (title, items) => items.length
+      ? `<div class="disc-bm-col"><h5>${escapeHtml(title)}</h5><ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+      : '';
+    const businessModel = (bm.revenueStreams.length || bm.costStructure.length || bm.channels.length || bm.keyPartners.length)
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Modelo de negócio</h4>
+          <div class="disc-bm">
+            ${bmCol('Receitas', bm.revenueStreams)}
+            ${bmCol('Custos', bm.costStructure)}
+            ${bmCol('Canais', bm.channels)}
+            ${bmCol('Parceiros-chave', bm.keyPartners)}
+          </div>
+        </section>`
+      : '';
+
+    const kpis = d.commercialImpact.kpis;
+    const impact = (d.commercialImpact.objectivesMarkdown || kpis.length)
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Impacto comercial desejado</h4>
+          ${d.commercialImpact.objectivesMarkdown ? `<div class="idea-md" data-disc-md="impact-obj"></div>` : ''}
+          ${kpis.length ? `<div class="disc-kpis">${kpis.map((k) => `
+            <div class="disc-kpi">
+              <strong>${escapeHtml(k.name || '')}</strong>
+              ${k.target ? `<span class="disc-kpi-target">${escapeHtml(k.target)}</span>` : ''}
+              ${k.rationale ? `<small>${escapeHtml(k.rationale)}</small>` : ''}
+            </div>`).join('')}</div>` : ''}
+        </section>`
+      : '';
+
+    const sw = d.swot;
+    const swotQuad = (title, items, cls) => `
+      <div class="disc-swot-quad ${cls}">
+        <h5>${escapeHtml(title)}</h5>
+        ${items.length ? `<ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : '<p class="muted-text">—</p>'}
+      </div>`;
+    const swot = (sw.strengths.length || sw.weaknesses.length || sw.opportunities.length || sw.threats.length)
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">SWOT</h4>
+          <div class="disc-swot">
+            ${swotQuad('Forças', sw.strengths, 'is-pos')}
+            ${swotQuad('Fraquezas', sw.weaknesses, 'is-neg')}
+            ${swotQuad('Oportunidades', sw.opportunities, 'is-pos')}
+            ${swotQuad('Ameaças', sw.threats, 'is-neg')}
+          </div>
+        </section>`
+      : '';
+
+    const gtm = d.goToMarketMarkdown
+      ? `<section class="idea-block"><h4 class="idea-block-title">Go-to-market</h4><div class="idea-md" data-disc-md="gtm"></div></section>`
+      : '';
+
+    const assumptions = d.assumptions.length
+      ? `<section class="idea-block">
+          <h4 class="idea-block-title">Hipóteses a validar</h4>
+          <ul class="disc-assumptions">${d.assumptions.map((a) => `<li>${escapeHtml(a)}</li>`).join('')}</ul>
+        </section>`
+      : '';
+
+    return `
+      <article class="pdos-card idea-canvas discovery-canvas">
+        <header class="idea-hero">
+          <span class="idea-eyebrow">DESCOBERTA</span>
+          <h2 class="idea-headline">Mercado &amp; negócio</h2>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny" data-agent="discovery_research">${genLabel}</button>
+          </div>
+        </header>
+        <div class="idea-md idea-main" data-disc-md="summary"></div>
+        ${sizingTiles ? `<section class="idea-block"><h4 class="idea-block-title">Dimensão de mercado</h4>${sizingTiles}</section>` : ''}
+        ${segments}
+        ${competitors}
+        ${businessModel}
+        ${impact}
+        ${swot}
+        ${gtm}
+        ${assumptions}
+      </article>
+    `;
+  }
+
+  function hydrateDiscoveryStage(project) {
+    const d = discoveryData(project);
+    const fill = (key, md) => {
+      const el = $('pdosCardFeed')?.querySelector(`[data-disc-md="${key}"]`);
+      if (el && md) renderMarkdownPreview(md, el);
+    };
+    fill('summary', d.marketSummaryMarkdown);
+    fill('sizing-notes', d.marketSizing.notesMarkdown);
+    fill('impact-obj', d.commercialImpact.objectivesMarkdown);
+    fill('gtm', d.goToMarketMarkdown);
+    d.segments.forEach((s, i) => fill(`segment-${i}`, s.descriptionMarkdown));
+    d.competitors.forEach((c, i) => fill(`competitor-${i}`, c.descriptionMarkdown));
+  }
+
+  function roadmapData(project) {
+    const r = project.roadmap && typeof project.roadmap === 'object' ? project.roadmap : {};
+    return {
+      summaryMarkdown: r.summaryMarkdown || '',
+      phases: Array.isArray(r.phases) ? r.phases : [],
+    };
+  }
+
+  function fmtDate(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function renderRoadmapStage(project) {
+    const r = roadmapData(project);
+    const genLabel = r.phases.length ? 'Regenerar roadmap com IA' : 'Gerar roadmap com IA';
+
+    if (!r.phases.length) {
+      return `
+        <article class="pdos-card idea-empty">
+          <h4>O roadmap de implementação ainda não foi criado</h4>
+          <p class="muted-text">Gere um plano por fases — cada fase com entregável concreto, requisitos ligados, design pattern, testes e datas — a partir dos requisitos e da arquitetura.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="roadmap_plan">${genLabel}</button>
+          </div>
+        </article>
+      `;
+    }
+
+    const reqMap = {};
+    (Array.isArray(project.requirements) ? project.requirements : []).forEach((req) => { reqMap[req.id] = req; });
+    const phaseNameById = {};
+    r.phases.forEach((p) => { phaseNameById[p.id] = p.name; });
+
+    const phaseCards = r.phases.map((p, i) => {
+      const dates = [fmtDate(p.startDate), fmtDate(p.endDate)].filter(Boolean).join(' → ');
+      const reqChips = (p.requirementIds || []).map((id) => {
+        const req = reqMap[id];
+        const label = req ? (req.title || id) : id;
+        return `<button type="button" class="rm-req-chip" data-goto-requirement="${escapeHtml(id)}" title="Ver requisito">${escapeHtml(label)}</button>`;
+      }).join('');
+      const modules = (p.moduleTags || []).map((m) => `<span class="rm-module">${escapeHtml(m)}</span>`).join('');
+      const deps = (p.dependsOn || []).map((id) => phaseNameById[id]).filter(Boolean);
+      const milestones = (p.milestones || []).map((m) => `<li>${escapeHtml(m.name)}${m.date ? ` <span class="rm-ms-date">${escapeHtml(fmtDate(m.date))}</span>` : ''}</li>`).join('');
+      const tests = (p.tests || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+      const risks = (p.risks || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+
+      return `
+        <article class="rm-phase">
+          <div class="rm-phase-rail"><span class="rm-phase-index">${i + 1}</span></div>
+          <div class="rm-phase-body">
+            <header class="rm-phase-head">
+              <h4>${escapeHtml(p.name || `Fase ${i + 1}`)}</h4>
+              ${dates ? `<span class="rm-dates">${escapeHtml(dates)}</span>` : ''}
+            </header>
+            ${p.designPattern ? `<span class="rm-pattern">Design pattern: ${escapeHtml(p.designPattern)}</span>` : ''}
+            <div class="idea-md" data-rm-md="goal-${i}"></div>
+            ${p.deliverableMarkdown ? `<div class="rm-deliverable"><span class="rm-label">Entregável</span><div class="idea-md" data-rm-md="deliverable-${i}"></div></div>` : ''}
+            ${modules ? `<div class="rm-modules">${modules}</div>` : ''}
+            ${reqChips ? `<div class="rm-reqs"><span class="rm-label">Requisitos</span><div class="rm-req-chips">${reqChips}</div></div>` : ''}
+            ${tests ? `<div class="rm-sub"><span class="rm-label">Testes</span><ul>${tests}</ul></div>` : ''}
+            ${milestones ? `<div class="rm-sub"><span class="rm-label">Milestones</span><ul class="rm-milestones">${milestones}</ul></div>` : ''}
+            ${risks ? `<div class="rm-sub"><span class="rm-label">Riscos</span><ul>${risks}</ul></div>` : ''}
+            ${deps.length ? `<div class="rm-deps">Depende de: ${deps.map((d) => escapeHtml(d)).join(', ')}</div>` : ''}
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    return `
+      <article class="pdos-card idea-canvas roadmap-canvas">
+        <header class="idea-hero">
+          <span class="idea-eyebrow">ROADMAP</span>
+          <h2 class="idea-headline">Plano de implementação</h2>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny" data-agent="roadmap_plan">${genLabel}</button>
+          </div>
+        </header>
+        <div class="idea-md idea-main" data-rm-md="summary"></div>
+        <div class="rm-timeline">${phaseCards}</div>
+      </article>
+    `;
+  }
+
+  function hydrateRoadmapStage(project) {
+    const r = roadmapData(project);
+    const fill = (key, md) => {
+      const el = $('pdosCardFeed')?.querySelector(`[data-rm-md="${key}"]`);
+      if (el && md) renderMarkdownPreview(md, el);
+    };
+    fill('summary', r.summaryMarkdown);
+    r.phases.forEach((p, i) => {
+      fill(`goal-${i}`, p.goalMarkdown);
+      fill(`deliverable-${i}`, p.deliverableMarkdown);
+    });
+  }
+
+  // ---- Implementation phase ----------------------------------------------
+  const LLM_SIZES = [
+    { id: 'small', label: 'LLM pequeno', hint: 'Prompt muito detalhado e exigente' },
+    { id: 'medium', label: 'LLM médio', hint: 'Prompt equilibrado' },
+    { id: 'large', label: 'LLM grande', hint: 'Prompt conciso (confia no modelo)' },
+  ];
+  const TASK_STATUSES = [
+    { id: 'todo', label: 'A fazer' },
+    { id: 'in_progress', label: 'Em curso' },
+    { id: 'blocked', label: 'Bloqueada' },
+    { id: 'done', label: 'Concluída' },
+  ];
+  const TASK_STATUS_LABEL = TASK_STATUSES.reduce((acc, s) => { acc[s.id] = s.label; return acc; }, {});
+  let implViewMode = 'board';
+
+  function implementationData(project) {
+    const impl = project.implementation && typeof project.implementation === 'object' ? project.implementation : {};
+    const stack = impl.stack && typeof impl.stack === 'object' ? impl.stack : {};
+    return {
+      stack: {
+        summaryMarkdown: stack.summaryMarkdown || '',
+        designPattern: stack.designPattern || '',
+        languages: stack.languages || [],
+        frameworks: stack.frameworks || [],
+        datastores: stack.datastores || [],
+        integrations: stack.integrations || [],
+        deployment: stack.deployment || '',
+        infrastructureMarkdown: stack.infrastructureMarkdown || '',
+        resourcesMarkdown: stack.resourcesMarkdown || '',
+        modules: Array.isArray(stack.modules) ? stack.modules : [],
+        confirmed: Boolean(stack.confirmed),
+      },
+      tasks: Array.isArray(impl.tasks) ? impl.tasks : [],
+    };
+  }
+
+  function stackHasContent(s) {
+    return Boolean(
+      s.summaryMarkdown || s.designPattern || s.deployment || s.modules.length
+      || s.languages.length || s.frameworks.length || s.datastores.length || s.integrations.length
+    );
+  }
+
+  function downloadTextFile(content, filename, mime = 'text/markdown') {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+    return Promise.resolve();
+  }
+
+  // Compose the downloadable agent prompt from a task spec. The LLM size controls
+  // verbosity: smaller models get a stricter, more explicit prompt.
+  function buildTaskPrompt(task, llmSize, project) {
+    const data = implementationData(project);
+    const stack = data.stack;
+    const reqMap = {};
+    (Array.isArray(project.requirements) ? project.requirements : []).forEach((r) => { reqMap[r.id] = r; });
+    const reqs = (task.requirementIds || []).map((id) => reqMap[id]).filter(Boolean);
+    const phase = (project.roadmap?.phases || []).find((p) => p.id === task.roadmapPhaseId);
+    const size = LLM_SIZES.some((s) => s.id === llmSize) ? llmSize : 'medium';
+
+    const L = [];
+    L.push(`# Tarefa: ${task.title || 'Implementação'}`);
+    L.push('');
+    if (size === 'small') {
+      L.push('És um agente de desenvolvimento. Segue estas instruções com rigor, passo a passo. Não assumas nada que não esteja especificado — se faltar informação, lista as questões antes de escrever código. Implementa apenas o âmbito desta tarefa e não alteres código não relacionado.');
+    } else if (size === 'large') {
+      L.push('És um engenheiro de software sénior. Implementa o objetivo abaixo aplicando as melhores práticas e o teu critério técnico.');
+    } else {
+      L.push('És um agente de desenvolvimento. Implementa a tarefa abaixo respeitando os critérios de aceitação e as convenções do projeto.');
+    }
+    L.push('');
+    L.push('## Objetivo');
+    L.push(task.descriptionMarkdown || task.title || '');
+
+    if (project?.name) {
+      L.push('');
+      L.push('## Contexto do projeto');
+      L.push(`Projeto: ${project.name}${project.clientName ? ` (cliente: ${project.clientName})` : ''}.`);
+      if (phase) L.push(`Fase do roadmap: ${phase.name}.`);
+    }
+
+    if (size !== 'large' && stackHasContent(stack)) {
+      L.push('');
+      L.push('## Stack técnica');
+      if (stack.designPattern) L.push(`- Design pattern: ${stack.designPattern}`);
+      if (stack.languages.length) L.push(`- Linguagens: ${stack.languages.join(', ')}`);
+      if (stack.frameworks.length) L.push(`- Frameworks: ${stack.frameworks.join(', ')}`);
+      if (stack.datastores.length) L.push(`- Dados: ${stack.datastores.join(', ')}`);
+      if (stack.integrations.length) L.push(`- Integrações: ${stack.integrations.join(', ')}`);
+      if (stack.deployment) L.push(`- Deploy: ${stack.deployment}`);
+    } else if (size === 'large' && stack.designPattern) {
+      L.push('');
+      L.push(`Stack: ${[stack.designPattern, ...stack.languages, ...stack.frameworks].filter(Boolean).join(' · ')}`);
+    }
+
+    if ((task.moduleTags || []).length) {
+      L.push('');
+      L.push(`## Módulos: ${task.moduleTags.join(', ')}`);
+    }
+
+    if (reqs.length) {
+      L.push('');
+      L.push('## Requisitos a satisfazer (rastreabilidade)');
+      reqs.forEach((r) => {
+        if (size === 'large') {
+          L.push(`- [${r.id}] ${r.title}`);
+        } else if (size === 'medium') {
+          L.push(`- [${r.id}] ${r.title}${r.shall ? ` — ${r.shall}` : ''}`);
+        } else {
+          L.push(`- [${r.id}] ${r.title}`);
+          if (r.shall) L.push(`  - O sistema DEVE: ${r.shall}`);
+          if (r.type) L.push(`  - Tipo: ${r.type}`);
+        }
+      });
+    }
+
+    if ((task.subtasks || []).length) {
+      L.push('');
+      if (size === 'small') {
+        L.push('## Passos a seguir (executa por ordem)');
+        task.subtasks.forEach((st, i) => {
+          L.push(`${i + 1}. ${st.title}${st.descriptionMarkdown ? ` — ${st.descriptionMarkdown}` : ''}`);
+        });
+      } else {
+        L.push('## Passos sugeridos');
+        task.subtasks.forEach((st) => L.push(`- ${st.title}`));
+      }
+    }
+
+    if ((task.acceptanceCriteria || []).length) {
+      L.push('');
+      L.push('## Critérios de aceitação');
+      task.acceptanceCriteria.forEach((c) => L.push(`- [ ] ${c}`));
+    }
+
+    if (task.technicalNotesMarkdown) {
+      L.push('');
+      L.push('## Notas técnicas');
+      L.push(task.technicalNotesMarkdown);
+    }
+
+    if (size === 'small') {
+      L.push('');
+      L.push('## Entrega esperada');
+      L.push('- Código completo e funcional para o âmbito acima.');
+      L.push('- Testes que validam os critérios de aceitação.');
+      L.push('- Resumo curto do que foi feito e de decisões tomadas.');
+      L.push('- Lista de quaisquer pressupostos ou questões em aberto.');
+    }
+
+    return L.join('\n');
+  }
+
+  function renderStackChips(label, items) {
+    if (!items.length) return '';
+    return `<div class="impl-chip-row"><span class="rm-label">${escapeHtml(label)}</span><div class="impl-chips">${items.map((x) => `<span class="impl-chip">${escapeHtml(x)}</span>`).join('')}</div></div>`;
+  }
+
+  function renderImplementationStage(project) {
+    const data = implementationData(project);
+    const stack = data.stack;
+    const hasStack = stackHasContent(stack);
+
+    const reqMap = {};
+    (Array.isArray(project.requirements) ? project.requirements : []).forEach((r) => { reqMap[r.id] = r; });
+
+    let stackBlock;
+    if (!hasStack) {
+      stackBlock = `
+        <article class="pdos-card idea-empty">
+          <h4>A stack técnica ainda não foi definida</h4>
+          <p class="muted-text">Gere uma proposta de tecnologias (linguagens, frameworks, dados, deploy, recursos) ligada aos requisitos e à arquitetura.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="implementation_stack">Definir stack com IA</button>
+          </div>
+        </article>`;
+    } else {
+      const modules = stack.modules.map((m, i) => {
+        const reqChips = (m.requirementIds || []).map((id) => {
+          const req = reqMap[id];
+          return `<button type="button" class="rm-req-chip" data-goto-requirement="${escapeHtml(id)}" title="Ver requisito">${escapeHtml(req ? (req.title || id) : id)}</button>`;
+        }).join('');
+        return `
+          <article class="impl-module">
+            <header><h5>${escapeHtml(m.name)}</h5>${m.technology ? `<span class="impl-chip">${escapeHtml(m.technology)}</span>` : ''}</header>
+            <div class="idea-md" data-impl-md="module-${i}"></div>
+            ${reqChips ? `<div class="rm-req-chips">${reqChips}</div>` : ''}
+          </article>`;
+      }).join('');
+
+      stackBlock = `
+        <article class="pdos-card impl-stack-card">
+          <header class="impl-stack-head">
+            <div>
+              <span class="idea-eyebrow">STACK TÉCNICA</span>
+              ${stack.confirmed ? '<span class="impl-confirmed">Confirmada</span>' : '<span class="impl-pending">Por confirmar</span>'}
+            </div>
+            <div class="pdos-card-actions">
+              <button type="button" class="btn tiny ${stack.confirmed ? '' : 'primary'}" data-impl-confirm="${stack.confirmed ? 'unconfirm' : 'confirm'}">${stack.confirmed ? 'Reabrir' : 'Confirmar stack'}</button>
+              <button type="button" class="btn tiny ghost" data-agent="implementation_stack">Regenerar</button>
+            </div>
+          </header>
+          <div class="idea-md" data-impl-md="stack-summary"></div>
+          ${stack.designPattern ? `<span class="rm-pattern">Design pattern: ${escapeHtml(stack.designPattern)}</span>` : ''}
+          ${renderStackChips('Linguagens', stack.languages)}
+          ${renderStackChips('Frameworks', stack.frameworks)}
+          ${renderStackChips('Dados', stack.datastores)}
+          ${renderStackChips('Integrações', stack.integrations)}
+          ${stack.deployment ? `<div class="impl-chip-row"><span class="rm-label">Deploy</span><p class="impl-deploy">${escapeHtml(stack.deployment)}</p></div>` : ''}
+          ${stack.infrastructureMarkdown ? `<div class="rm-sub"><span class="rm-label">Infraestrutura</span><div class="idea-md" data-impl-md="stack-infra"></div></div>` : ''}
+          ${stack.resourcesMarkdown ? `<div class="rm-sub"><span class="rm-label">Recursos</span><div class="idea-md" data-impl-md="stack-resources"></div></div>` : ''}
+          ${modules ? `<div class="rm-sub"><span class="rm-label">Módulos do sistema</span><div class="impl-modules">${modules}</div></div>` : ''}
+        </article>`;
+    }
+
+    // Tasks — execution board / list
+    let tasksBlock;
+    if (!data.tasks.length) {
+      tasksBlock = `
+        <article class="pdos-card idea-empty">
+          <h4>Ainda não há tarefas de implementação</h4>
+          <p class="muted-text">Divida cada fase do roadmap em tarefas prontas para agentes. A IA recomenda o tamanho do modelo por complexidade e cada tarefa gera um prompt descarregável.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="implementation_tasks">Gerar tarefas com IA</button>
+          </div>
+        </article>`;
+    } else {
+      const phases = project.roadmap?.phases || [];
+      const phaseName = {};
+      phases.forEach((p) => { phaseName[p.id] = p.name; });
+
+      const done = data.tasks.filter((t) => t.status === 'done').length;
+      const progressPct = Math.round((done / data.tasks.length) * 100);
+
+      let viewBody;
+      if (implViewMode === 'board') {
+        const cols = TASK_STATUSES.map((col) => {
+          const colTasks = data.tasks.filter((t) => (t.status || 'todo') === col.id);
+          const cards = colTasks.map((t) => renderTaskCard(t, project, reqMap, phaseName, true)).join('')
+            || '<p class="impl-col-empty">—</p>';
+          return `
+            <div class="impl-col" data-col="${col.id}">
+              <header class="impl-col-head"><span class="impl-task-status impl-status-${col.id}"></span>${escapeHtml(col.label)} <span class="impl-col-count">${colTasks.length}</span></header>
+              <div class="impl-col-body">${cards}</div>
+            </div>`;
+        }).join('');
+        viewBody = `<div class="impl-board">${cols}</div>`;
+      } else {
+        const groups = new Map();
+        data.tasks.forEach((t) => {
+          const key = t.roadmapPhaseId && phaseName[t.roadmapPhaseId] ? t.roadmapPhaseId : '__none__';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(t);
+        });
+        viewBody = [...groups.entries()].map(([key, tasks]) => {
+          const title = key === '__none__' ? 'Sem fase atribuída' : phaseName[key];
+          const cards = tasks.map((t) => renderTaskCard(t, project, reqMap, phaseName, false)).join('');
+          return `<section class="impl-task-group"><h4 class="impl-group-title">${escapeHtml(title)}</h4><div class="impl-list">${cards}</div></section>`;
+        }).join('');
+      }
+
+      tasksBlock = `
+        <article class="pdos-card impl-tasks-card">
+          <header class="impl-stack-head">
+            <div>
+              <span class="idea-eyebrow">EXECUÇÃO DE TAREFAS</span>
+              <span class="impl-progress-label">${done}/${data.tasks.length} concluídas</span>
+            </div>
+            <div class="pdos-card-actions">
+              <div class="impl-view-toggle">
+                <button type="button" class="btn tiny ${implViewMode === 'board' ? 'primary' : 'ghost'}" data-impl-view="board">Quadro</button>
+                <button type="button" class="btn tiny ${implViewMode === 'list' ? 'primary' : 'ghost'}" data-impl-view="list">Lista</button>
+              </div>
+              <button type="button" class="btn tiny ghost" data-agent="implementation_tasks">Regenerar tarefas</button>
+            </div>
+          </header>
+          <div class="impl-progress"><div class="impl-progress-bar" style="width:${progressPct}%"></div></div>
+          ${viewBody}
+        </article>`;
+    }
+
+    return `
+      <div class="idea-canvas impl-canvas">
+        <header class="idea-hero">
+          <span class="idea-eyebrow">IMPLEMENTAÇÃO</span>
+          <h2 class="idea-headline">Stack &amp; execução</h2>
+        </header>
+        ${stackBlock}
+        ${tasksBlock}
+      </div>
+    `;
+  }
+
+  function renderTaskCard(t, project, reqMap, phaseName, isBoard) {
+    const subDone = (t.subtasks || []).filter((s) => s.done).length;
+    const subTotal = (t.subtasks || []).length;
+    const model = LLM_SIZES.find((s) => s.id === t.llmSize);
+    const phaseLabel = t.roadmapPhaseId && phaseName[t.roadmapPhaseId] ? phaseName[t.roadmapPhaseId] : '';
+    const hasResult = Boolean(t.resultMarkdown || (t.outputLinks || []).length);
+    const complexityBadge = t.complexity
+      ? `<span class="impl-complexity impl-cx-${escapeHtml(t.complexity)}" title="Complexidade">${({ low: 'Simples', medium: 'Média', high: 'Complexa' })[t.complexity] || t.complexity}</span>`
+      : '';
+    return `
+      <article class="impl-card" data-open-task="${escapeHtml(t.id)}" role="button" tabindex="0">
+        <div class="impl-card-top">
+          ${isBoard ? '' : `<span class="impl-task-status impl-status-${escapeHtml(t.status || 'todo')}"></span>`}
+          <span class="impl-card-title">${escapeHtml(t.title)}</span>
+        </div>
+        <div class="impl-card-meta">
+          ${model ? `<span class="impl-model-badge impl-model-${escapeHtml(t.llmSize)}" title="Modelo recomendado">${escapeHtml(model.label)}</span>` : ''}
+          ${complexityBadge}
+          ${isBoard && phaseLabel ? `<span class="impl-phase-chip">${escapeHtml(phaseLabel)}</span>` : ''}
+          ${subTotal ? `<span class="impl-sub-progress">${subDone}/${subTotal} passos</span>` : ''}
+          ${(t.requirementIds || []).length ? `<span class="impl-req-count" title="Requisitos ligados">${(t.requirementIds || []).length} req</span>` : ''}
+          ${hasResult ? '<span class="impl-result-flag" title="Resultado registado">✓ resultado</span>' : ''}
+        </div>
+      </article>`;
+  }
+
+  function hydrateImplementationStage(project) {
+    const data = implementationData(project);
+    const fill = (key, md) => {
+      const el = $('pdosCardFeed')?.querySelector(`[data-impl-md="${key}"]`);
+      if (el && md) renderMarkdownPreview(md, el);
+    };
+    fill('stack-summary', data.stack.summaryMarkdown);
+    fill('stack-infra', data.stack.infrastructureMarkdown);
+    fill('stack-resources', data.stack.resourcesMarkdown);
+    data.stack.modules.forEach((m, i) => fill(`module-${i}`, m.descriptionMarkdown));
+    wireImplementationEvents(project);
+  }
+
+  async function persistImplementation(project, payload) {
+    try {
+      const res = await apiRequest(`/projects/${project.id}/implementation`, { method: 'POST', body: payload });
+      if (res?.project && window.state) {
+        window.state.selectedProject = res.project;
+      }
+      return res?.project || null;
+    } catch (err) {
+      showToast(err.message, 'error');
+      return null;
+    }
+  }
+
+  function wireImplementationEvents(project) {
+    const feed = $('pdosCardFeed');
+    if (!feed) return;
+
+    feed.querySelector('[data-impl-confirm]')?.addEventListener('click', async (e) => {
+      const confirm = e.currentTarget.dataset.implConfirm === 'confirm';
+      const updated = await persistImplementation(project, { confirmStack: confirm });
+      if (updated) {
+        showToast(confirm ? 'Stack confirmada.' : 'Stack reaberta.');
+        window.PdosUI?.renderAll(updated);
+      }
+    });
+
+    feed.querySelectorAll('[data-impl-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        implViewMode = btn.dataset.implView;
+        window.PdosUI?.renderAll(window.state?.selectedProject || project);
+      });
+    });
+
+    feed.querySelectorAll('[data-open-task]').forEach((card) => {
+      const open = () => openTaskDrawer(window.state?.selectedProject || project, card.dataset.openTask);
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
+    });
+  }
+
+  // Rich per-task execution drawer: objective, requirements, subtasks checklist,
+  // model-aware prompt (download/copy), and post-execution result capture.
+  function openTaskDrawer(project, taskId) {
+    const data = implementationData(project);
+    const task = data.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const reqMap = {};
+    (Array.isArray(project.requirements) ? project.requirements : []).forEach((r) => { reqMap[r.id] = r; });
+    const phase = (project.roadmap?.phases || []).find((p) => p.id === task.roadmapPhaseId);
+
+    document.querySelector('.impl-drawer-overlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'impl-drawer-overlay';
+
+    const sizeOptions = LLM_SIZES.map((s) => `<option value="${s.id}" ${task.llmSize === s.id ? 'selected' : ''}>${s.label}${s.id === task.recommendedLlmSize ? ' (recomendado)' : ''}</option>`).join('');
+    const statusOptions = TASK_STATUSES.map((s) => `<option value="${s.id}" ${task.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('');
+    const reqChips = (task.requirementIds || []).map((id) => {
+      const req = reqMap[id];
+      return `<button type="button" class="rm-req-chip" data-goto-requirement="${escapeHtml(id)}">${escapeHtml(req ? (req.title || id) : id)}</button>`;
+    }).join('');
+    const acc = (task.acceptanceCriteria || []).map((c) => `<li>${escapeHtml(c)}</li>`).join('');
+    const subtasks = (task.subtasks || []).map((st) => `
+      <li class="impl-subtask">
+        <label><input type="checkbox" data-subtask="${escapeHtml(st.id)}" ${st.done ? 'checked' : ''}> <span class="${st.done ? 'impl-sub-done' : ''}">${escapeHtml(st.title)}</span></label>
+        ${st.descriptionMarkdown ? `<p class="impl-sub-desc">${escapeHtml(st.descriptionMarkdown)}</p>` : ''}
+      </li>`).join('');
+    const linksText = (task.outputLinks || []).map((l) => (l.label ? `${l.label} ${l.url}` : l.url)).join('\n');
+    const initialPrompt = buildTaskPrompt(task, task.llmSize, project);
+
+    overlay.innerHTML = `
+      <div class="impl-drawer" role="dialog" aria-modal="true">
+        <header class="impl-drawer-head">
+          <div>
+            ${phase ? `<span class="impl-phase-chip">${escapeHtml(phase.name)}</span>` : ''}
+            <h3>${escapeHtml(task.title)}</h3>
+          </div>
+          <button type="button" class="btn tiny ghost" data-drawer-close>Fechar</button>
+        </header>
+        <div class="impl-drawer-body">
+          <section class="impl-drawer-section">
+            <span class="rm-label">Objetivo</span>
+            <div class="idea-md" data-drawer-md="desc"></div>
+          </section>
+          ${reqChips ? `<section class="impl-drawer-section"><span class="rm-label">Requisitos (rastreabilidade)</span><div class="rm-req-chips">${reqChips}</div></section>` : ''}
+          ${acc ? `<section class="impl-drawer-section"><span class="rm-label">Critérios de aceitação</span><ul>${acc}</ul></section>` : ''}
+          ${subtasks ? `<section class="impl-drawer-section"><span class="rm-label">Passos (${(task.subtasks || []).filter((s) => s.done).length}/${(task.subtasks || []).length})</span><ul class="impl-subtasks">${subtasks}</ul></section>` : ''}
+          ${task.technicalNotesMarkdown ? `<section class="impl-drawer-section"><span class="rm-label">Notas técnicas</span><div class="idea-md" data-drawer-md="notes"></div></section>` : ''}
+
+          <section class="impl-drawer-section impl-exec-controls">
+            <label class="impl-control">Tamanho do LLM
+              <select data-drawer-llm>${sizeOptions}</select>
+            </label>
+            <label class="impl-control">Estado
+              <select data-drawer-status>${statusOptions}</select>
+            </label>
+          </section>
+          <p class="impl-llm-hint" data-drawer-hint>${escapeHtml(LLM_SIZES.find((s) => s.id === task.llmSize)?.hint || '')}</p>
+
+          <section class="impl-drawer-section">
+            <div class="impl-prompt-actions">
+              <span class="rm-label" style="flex:1">Prompt para o agente</span>
+              <button type="button" class="btn tiny primary" data-drawer-download>Baixar</button>
+              <button type="button" class="btn tiny" data-drawer-copy>Copiar</button>
+            </div>
+            <textarea class="impl-prompt-box" data-drawer-prompt readonly rows="12">${escapeHtml(initialPrompt)}</textarea>
+          </section>
+
+          <section class="impl-drawer-section impl-result">
+            <span class="rm-label">Resultado da execução</span>
+            <input type="text" class="impl-input" data-drawer-model placeholder="Modelo usado (ex.: GPT-5, Claude...)" value="${escapeHtml(task.executedModel || '')}">
+            <textarea class="impl-textarea" data-drawer-result rows="4" placeholder="O que foi produzido, decisões, observações...">${escapeHtml(task.resultMarkdown || '')}</textarea>
+            <textarea class="impl-textarea" data-drawer-links rows="2" placeholder="Links de saída (PR, commit, ficheiros) — um por linha">${escapeHtml(linksText)}</textarea>
+            <div class="impl-prompt-actions">
+              <button type="button" class="btn tiny primary" data-drawer-save-result>Guardar resultado</button>
+              ${task.executedAt ? `<span class="impl-exec-at">Executada em ${escapeHtml(fmtDate(task.executedAt))}</span>` : ''}
+            </div>
+          </section>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+
+    if (task.descriptionMarkdown) renderMarkdownPreview(task.descriptionMarkdown, overlay.querySelector('[data-drawer-md="desc"]'));
+    if (task.technicalNotesMarkdown) renderMarkdownPreview(task.technicalNotesMarkdown, overlay.querySelector('[data-drawer-md="notes"]'));
+
+    const close = () => { overlay.remove(); document.body.style.overflow = ''; };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-drawer-close]')?.addEventListener('click', close);
+    overlay.querySelectorAll('[data-goto-requirement]').forEach((chip) => {
+      chip.addEventListener('click', () => { close(); });
+    });
+
+    const promptBox = overlay.querySelector('[data-drawer-prompt]');
+    const llmSel = overlay.querySelector('[data-drawer-llm]');
+    llmSel?.addEventListener('change', () => {
+      task.llmSize = llmSel.value;
+      promptBox.value = buildTaskPrompt(task, task.llmSize, project);
+      const hint = overlay.querySelector('[data-drawer-hint]');
+      if (hint) hint.textContent = LLM_SIZES.find((s) => s.id === task.llmSize)?.hint || '';
+      persistImplementation(project, { taskUpdates: [{ id: task.id, llmSize: task.llmSize }] });
+    });
+
+    overlay.querySelector('[data-drawer-status]')?.addEventListener('change', async (e) => {
+      const status = e.currentTarget.value;
+      task.status = status;
+      const updated = await persistImplementation(project, { taskUpdates: [{ id: task.id, status }] });
+      if (updated) window.PdosUI?.renderAll(updated);
+    });
+
+    overlay.querySelectorAll('[data-subtask]').forEach((cb) => {
+      cb.addEventListener('change', (e) => {
+        const id = e.currentTarget.dataset.subtask;
+        const payload = e.currentTarget.checked
+          ? { taskUpdates: [{ id: task.id, subtaskDone: [id] }] }
+          : { taskUpdates: [{ id: task.id, subtaskDone: [], subtaskUndone: [id] }] };
+        const span = e.currentTarget.parentElement.querySelector('span');
+        if (span) span.className = e.currentTarget.checked ? 'impl-sub-done' : '';
+        persistImplementation(project, payload);
+      });
+    });
+
+    overlay.querySelector('[data-drawer-download]')?.addEventListener('click', () => {
+      const slug = (task.title || 'tarefa').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      downloadTextFile(promptBox.value, `prompt-${slug || 'tarefa'}.md`);
+    });
+    overlay.querySelector('[data-drawer-copy]')?.addEventListener('click', async () => {
+      await copyToClipboard(promptBox.value);
+      showToast('Prompt copiado.');
+    });
+
+    overlay.querySelector('[data-drawer-save-result]')?.addEventListener('click', async () => {
+      const model = overlay.querySelector('[data-drawer-model]').value;
+      const result = overlay.querySelector('[data-drawer-result]').value;
+      const links = overlay.querySelector('[data-drawer-links]').value
+        .split('\n').map((l) => l.trim()).filter(Boolean)
+        .map((line) => {
+          const m = line.match(/^(.*?)(https?:\/\/\S+)$/);
+          return m ? { label: m[1].trim(), url: m[2] } : { label: '', url: line };
+        });
+      const updated = await persistImplementation(project, {
+        taskUpdates: [{ id: task.id, executedModel: model, resultMarkdown: result, outputLinks: links }],
+      });
+      if (updated) {
+        showToast('Resultado guardado.');
+        close();
+        window.PdosUI?.renderAll(updated);
+      }
+    });
+  }
+
+  // ---- Proposal phase (commercial) ---------------------------------------
+  function proposalCanViewBudget() {
+    try { return typeof canViewBudget === 'function' ? canViewBudget() : true; } catch { return true; }
+  }
+
+  function formatMoney(value, currency) {
+    const n = Number(value) || 0;
+    const cur = currency || 'EUR';
+    try {
+      return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n);
+    } catch {
+      return `${cur} ${n.toLocaleString('pt-PT')}`;
+    }
+  }
+
+  function proposalData(project) {
+    const p = project.proposal && typeof project.proposal === 'object' ? project.proposal : {};
+    return {
+      headlineMarkdown: p.headlineMarkdown || '',
+      valueJustificationMarkdown: p.valueJustificationMarkdown || '',
+      currency: p.currency || 'EUR',
+      totalValue: Number(p.totalValue) || 0,
+      phases: Array.isArray(p.phases) ? p.phases : [],
+      paymentTermsMarkdown: p.paymentTermsMarkdown || '',
+      timelineMarkdown: p.timelineMarkdown || '',
+    };
+  }
+
+  function proposalHasContent(p) {
+    return Boolean(p.headlineMarkdown || p.valueJustificationMarkdown || p.phases.length || p.totalValue || p.paymentTermsMarkdown);
+  }
+
+  function renderProposalStage(project) {
+    const p = proposalData(project);
+    const showMoney = proposalCanViewBudget();
+    const reqCount = (project.requirements || []).length;
+
+    if (!proposalHasContent(p)) {
+      return `
+        <article class="pdos-card idea-empty">
+          <h4>A proposta comercial ainda não foi gerada</h4>
+          <p class="muted-text">Gere uma proposta a partir dos ${reqCount} requisitos, do roadmap e dos documentos. Pode dar instruções específicas (tom, foco, restrições de valor).</p>
+          <textarea class="impl-textarea" data-proposal-instructions rows="3" placeholder="Instruções para a IA (opcional): foco comercial, restrições de valor, tom..."></textarea>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn primary" data-agent="commercial_proposal">Gerar proposta com IA</button>
+          </div>
+        </article>`;
+    }
+
+    const phaseCards = p.phases.map((ph, i) => `
+      <article class="prop-phase">
+        <header class="prop-phase-head">
+          <h5>${escapeHtml(ph.name || `Fase ${i + 1}`)}</h5>
+          ${showMoney ? `<span class="prop-phase-value">${escapeHtml(formatMoney(ph.value, p.currency))}</span>` : ''}
+        </header>
+        ${ph.justificationMarkdown ? `<div class="idea-md" data-prop-md="phase-just-${i}"></div>` : ''}
+        ${(ph.deliverables || []).length ? `<ul class="prop-deliverables">${ph.deliverables.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul>` : ''}
+      </article>`).join('');
+
+    return `
+      <article class="pdos-card idea-canvas proposal-canvas">
+        <header class="idea-hero">
+          <span class="idea-eyebrow">PROPOSTA COMERCIAL</span>
+          <h2 class="idea-headline">Proposta &amp; valor</h2>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny ghost" data-proposal-regen>Regenerar com instruções</button>
+          </div>
+        </header>
+        <div class="idea-md idea-main" data-prop-md="headline"></div>
+        ${showMoney && p.totalValue ? `<div class="prop-total"><span class="rm-label">Valor total</span><strong>${escapeHtml(formatMoney(p.totalValue, p.currency))}</strong></div>` : ''}
+        ${p.valueJustificationMarkdown ? `<section class="idea-block"><h4 class="idea-block-title">Justificação do valor</h4><div class="idea-md" data-prop-md="justification"></div></section>` : ''}
+        ${phaseCards ? `<section class="idea-block"><h4 class="idea-block-title">Valor por fase</h4><div class="prop-phases">${phaseCards}</div></section>` : ''}
+        ${p.timelineMarkdown ? `<section class="idea-block"><h4 class="idea-block-title">Cronograma</h4><div class="idea-md" data-prop-md="timeline"></div></section>` : ''}
+        ${p.paymentTermsMarkdown ? `<section class="idea-block"><h4 class="idea-block-title">Condições de pagamento</h4><div class="idea-md" data-prop-md="payment"></div></section>` : ''}
+        ${!showMoney ? '<p class="muted-text">Os valores comerciais estão ocultos para o seu perfil.</p>' : ''}
+        <div class="prop-regen-panel hidden" data-proposal-panel>
+          <textarea class="impl-textarea" data-proposal-instructions rows="3" placeholder="Instruções para regenerar (tom, foco, restrições de valor)..."></textarea>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny primary" data-agent="commercial_proposal">Gerar proposta</button>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  function hydrateProposalStage(project) {
+    const p = proposalData(project);
+    const fill = (key, md) => {
+      const el = $('pdosCardFeed')?.querySelector(`[data-prop-md="${key}"]`);
+      if (el && md) renderMarkdownPreview(md, el);
+    };
+    fill('headline', p.headlineMarkdown);
+    fill('justification', p.valueJustificationMarkdown);
+    fill('timeline', p.timelineMarkdown);
+    fill('payment', p.paymentTermsMarkdown);
+    p.phases.forEach((ph, i) => fill(`phase-just-${i}`, ph.justificationMarkdown));
+
+    $('pdosCardFeed')?.querySelector('[data-proposal-regen]')?.addEventListener('click', () => {
+      $('pdosCardFeed')?.querySelector('[data-proposal-panel]')?.classList.toggle('hidden');
+    });
   }
 
   async function renderMermaidInFeed() {
@@ -846,6 +1739,19 @@
     $('pdosCardFeed')?.querySelectorAll('[data-agent]').forEach((btn) => {
       btn.addEventListener('click', () => runAgent(btn.dataset.agent, project));
     });
+    $('pdosCardFeed')?.querySelectorAll('[data-resume-job]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const job = ensureArray(project.agentJobs).find((j) => j.id === btn.dataset.resumeJob);
+        if (job) openJobWorkbench(job);
+      });
+    });
+    $('pdosCardFeed')?.querySelectorAll('[data-job-chunk]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [jobId, idx] = String(btn.dataset.jobChunk).split(':');
+        const job = ensureArray(project.agentJobs).find((j) => j.id === jobId);
+        if (job) openJobWorkbench(job, Number(idx));
+      });
+    });
     $('pdosCardFeed')?.querySelectorAll('[data-approve-review]').forEach((btn) => {
       btn.addEventListener('click', () => resolveReview(btn.dataset.approveReview, 'approved'));
     });
@@ -860,6 +1766,12 @@
       (project.capabilities || []).forEach((c) => (c.requirementIds || []).forEach((id) => linked.add(id)));
       const unlinked = (project.requirements || []).filter((r) => !linked.has(r.id));
       showToast(`${unlinked.length} requisito(s) ainda sem funcionalidade atribuída`);
+    });
+    $('pdosCardFeed')?.querySelectorAll('[data-scroll-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        document.getElementById(btn.dataset.scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
     $('pdosCardFeed')?.querySelectorAll('[data-nav-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -935,7 +1847,6 @@
         </div>
         <div class="markdown-preview" id="pdosCapSummary"></div>
         <h4>Grupos de requisitos</h4>
-        <p class="muted-text pdos-drawer-hint">Cada grupo reúne requisitos relacionados dentro desta funcionalidade.</p>
         <div class="pdos-cluster-list">
           ${clusters.length ? clusters.map((cl) => `
             <button type="button" class="pdos-cluster-item" data-open-cluster="${escapeHtml(cl.id)}">
@@ -1015,7 +1926,9 @@
 
   function closeDrawer() {
     pdosState.drawerOpen = false;
-    $('pdosDetailDrawer')?.classList.add('hidden');
+    const drawer = $('pdosDetailDrawer');
+    drawer?.classList.add('hidden');
+    drawer?.classList.remove('hr-drawer-open');
   }
 
   function openAddInfoModal() {
@@ -1048,13 +1961,138 @@
     }
   }
 
+  async function runDiagramToRequirements(project, options = {}) {
+    const diagrams = project.diagramArtifacts || [];
+    const preselected = options.diagramArtifactId;
+    if (preselected) {
+      await submitDiagramToRequirementsPrompt(project, preselected, null);
+      return;
+    }
+    openDiagramToReqModal(project, diagrams, options);
+  }
+
+  async function submitDiagramToRequirementsPrompt(project, diagramArtifactId, bodyMarkdown) {
+    const res = await apiRequest(`/projects/${project.id}/prompt-runs`, {
+      method: 'POST',
+      body: {
+        agentType: 'diagram_to_requirements',
+        stageId: 'architecture',
+        diagramArtifactId: diagramArtifactId || undefined,
+        bodyMarkdown: diagramArtifactId ? undefined : bodyMarkdown,
+      },
+    });
+    pdosState.pendingPromptRun = res.promptRun;
+    openPromptWorkbench(res);
+    showToast('Prompt Diagrama → Requisitos gerado');
+  }
+
+  function openDiagramToReqModal(project, diagrams, modalOptions = {}) {
+    $('diagramToReqModal')?.remove();
+    const diagramOptionHtml = diagrams.map((d) =>
+      `<option value="${escapeHtml(d.id)}">${escapeHtml(d.title)} (${escapeHtml(d.type)})</option>`
+    ).join('');
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="diagramToReqModal" class="modal-overlay" role="dialog" aria-labelledby="diagramToReqTitle">
+        <div class="modal-card modal-card-wide">
+          <div class="modal-head">
+            <h3 id="diagramToReqTitle">Diagrama → Requisitos</h3>
+            <button type="button" class="btn tiny ghost" id="diagramToReqClose" aria-label="Fechar">✕</button>
+          </div>
+          <p class="muted-text">Escolha um diagrama da fase de arquitectura ou cole o código fonte. Será gerado um prompt v2 para extrair requisitos.</p>
+          ${diagrams.length ? `
+            <label class="full">Diagrama existente
+              <select id="diagramToReqSelect">
+                <option value="">— Colar manualmente —</option>
+                ${diagramOptionHtml}
+              </select>
+            </label>
+          ` : '<p class="muted-text">Sem diagramas guardados — cole o texto abaixo.</p>'}
+          <label class="full">Código do diagrama (Mermaid, PlantUML, etc.)
+            <textarea id="diagramToReqPaste" rows="10" placeholder="Cole aqui se não seleccionou um diagrama existente..."></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn ghost" id="diagramToReqCancel">Cancelar</button>
+            <button type="button" class="btn primary" id="diagramToReqConfirm">Gerar prompt</button>
+          </div>
+        </div>
+      </div>
+    `);
+    const modal = $('diagramToReqModal');
+    const close = () => modal?.remove();
+    $('diagramToReqClose')?.addEventListener('click', close);
+    $('diagramToReqCancel')?.addEventListener('click', close);
+    modal?.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    const preselect = modalOptions.diagramArtifactId;
+    if (preselect && $('diagramToReqSelect')) {
+      $('diagramToReqSelect').value = preselect;
+      $('diagramToReqSelect').dispatchEvent(new Event('change'));
+    }
+    $('diagramToReqSelect')?.addEventListener('change', (e) => {
+      const d = diagrams.find((x) => x.id === e.target.value);
+      const ta = $('diagramToReqPaste');
+      if (d && ta) {
+        ta.value = d.sourceText || '';
+        ta.readOnly = true;
+      } else if (ta) {
+        ta.readOnly = false;
+      }
+    });
+    $('diagramToReqConfirm')?.addEventListener('click', async () => {
+      const diagramArtifactId = $('diagramToReqSelect')?.value || '';
+      const bodyMarkdown = $('diagramToReqPaste')?.value?.trim() || '';
+      if (!diagramArtifactId && !bodyMarkdown) {
+        showToast('Seleccione um diagrama ou cole o código', 'error');
+        return;
+      }
+      close();
+      try {
+        await submitDiagramToRequirementsPrompt(project, diagramArtifactId, bodyMarkdown);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  }
+
+  async function runArchitecturePackGeneration(project, options = {}) {
+    try {
+      const caps = project.capabilities || [];
+      const capabilityId = options.capabilityId ?? $('archGenCapability')?.value ?? caps[0]?.id ?? '';
+      const moduleTag = options.moduleTag ?? $('archGenModule')?.value ?? (pdosState.moduleFilter || 'Backend');
+      const res = await apiRequest(`/projects/${project.id}/prompt-runs`, {
+        method: 'POST',
+        body: {
+          agentType: 'requirements_to_architecture',
+          stageId: 'architecture',
+          capabilityId: capabilityId || undefined,
+          moduleTag,
+        },
+      });
+      pdosState.pendingPromptRun = res.promptRun;
+      openPromptWorkbench(res);
+      showToast('Prompt de arquitectura gerado — cole o JSON no workbench');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
   async function runAgent(agentType, project) {
+    if (agentType === 'requirements_to_architecture') {
+      return runArchitecturePackGeneration(project);
+    }
+    if (agentType === 'diagram_to_requirements') {
+      return runDiagramToRequirements(project);
+    }
+    // Para agentes pesados com muitos requisitos, divide em lotes para nao
+    // sobrecarregar o pedido ao modelo.
+    if (BATCHABLE_AGENT_TYPES.includes(agentType)
+      && ensureArray(project.requirements).length > AGENT_JOB_THRESHOLD) {
+      return startAgentJob(agentType, project);
+    }
     try {
       const body = { agentType, stageId: window.state?.deliverySelectedStageId };
-      if (agentType === 'requirements_to_architecture') {
-        const cap = (project.capabilities || [])[0];
-        body.capabilityId = cap?.id;
-        body.moduleTag = 'Backend';
+      if (agentType === 'commercial_proposal') {
+        const ta = $('pdosCardFeed')?.querySelector('[data-proposal-instructions]');
+        if (ta && ta.value.trim()) body.instructions = ta.value.trim();
       }
       const res = await apiRequest(`/projects/${project.id}/prompt-runs`, { method: 'POST', body });
       pdosState.pendingPromptRun = res.promptRun;
@@ -1064,9 +2102,18 @@
     }
   }
 
+  function setWorkbenchJobMode(on) {
+    $('pdosJobBar')?.classList.toggle('hidden', !on);
+    $('pdosJobSubmit')?.classList.toggle('hidden', !on);
+    $('pdosPromptApply')?.classList.toggle('hidden', on);
+    if (!on) $('pdosJobAuto')?.classList.add('hidden');
+  }
+
   function openPromptWorkbench(res) {
     const modal = $('pdosPromptWorkbench');
     if (!modal) return;
+    pdosState.activeJob = null;
+    setWorkbenchJobMode(false);
     modal.classList.remove('hidden');
     $('pdosPromptSummary').textContent = res.promptRun?.summaryMarkdown || 'Prompt gerado.';
     $('pdosPromptRaw').value = res.prompt || '';
@@ -1076,6 +2123,188 @@
 
   function closePromptWorkbench() {
     $('pdosPromptWorkbench')?.classList.add('hidden');
+    setWorkbenchJobMode(false);
+    pdosState.activeJob = null;
+    pdosState.activeJobStep = '';
+  }
+
+  async function startAgentJob(agentType, project) {
+    try {
+      const res = await apiRequest(`/projects/${project.id}/agent-jobs`, {
+        method: 'POST',
+        body: { agentType, stageId: window.state?.deliverySelectedStageId },
+      });
+      showToast('Pedido dividido em lotes — responda um lote de cada vez');
+      openJobWorkbench(res.agentJob);
+      await reloadProject(project.id);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // Escolhe o proximo passo do job: primeiro os lotes obrigatorios pendentes,
+  // depois a consolidacao. Lotes deferidos (sem modulo) nao bloqueiam.
+  function renderAgentJobsHtml(project) {
+    const jobs = ensureArray(project.agentJobs).filter((j) => ['collecting', 'reconciling'].includes(j.status));
+    if (!jobs.length) return '';
+    return `
+      <article class="pdos-card pdos-agent-jobs">
+        <h4>Tarefas de IA em lotes</h4>
+        <p class="muted-text">Pedidos grandes divididos em lotes — responda um de cada vez para não sobrecarregar o modelo.</p>
+        ${jobs.map((job) => {
+          const total = ensureArray(job.chunks).length;
+          const done = ensureArray(job.chunks).filter((c) => c.status === 'done').length;
+          const pendingDeferred = ensureArray(job.chunks).filter((c) => c.deferred && c.status !== 'done');
+          const stateLabel = job.status === 'reconciling' ? 'Pronto para consolidação' : `${done}/${total} lotes concluídos`;
+          return `
+            <div class="pdos-job-row">
+              <div class="pdos-job-row-info">
+                <strong>${escapeHtml(agentTypeLabel(job.agentType))}</strong>
+                <span class="muted-text"> · ${escapeHtml(stateLabel)}</span>
+              </div>
+              <div class="pdos-job-row-actions">
+                <button type="button" class="btn tiny primary" data-resume-job="${escapeHtml(job.id)}">${job.status === 'reconciling' ? 'Consolidar' : 'Continuar'}</button>
+                ${pendingDeferred.map((c) => `<button type="button" class="btn tiny" data-job-chunk="${escapeHtml(job.id)}:${c.index}">Definir: ${escapeHtml(c.label)}</button>`).join('')}
+              </div>
+            </div>`;
+        }).join('')}
+      </article>`;
+  }
+
+  function nextJobStep(job) {
+    const pendingRequired = ensureArray(job.chunks).find((c) => !c.deferred && c.status !== 'done');
+    if (pendingRequired) return { type: 'chunk', chunk: pendingRequired };
+    if (job.promptRunId || job.status === 'review_pending' || job.status === 'applied') return { type: 'done' };
+    return { type: 'reconcile' };
+  }
+
+  function openJobWorkbench(job, forceChunkIndex = null) {
+    const modal = $('pdosPromptWorkbench');
+    if (!modal || !job) return;
+    pdosState.activeJob = job;
+    setWorkbenchJobMode(true);
+    modal.classList.remove('hidden');
+    $('pdosJobId').value = job.id;
+    renderJobStep(job, forceChunkIndex);
+  }
+
+  function renderJobStep(job, forceChunkIndex = null) {
+    pdosState.activeJob = job;
+    let step;
+    if (forceChunkIndex != null) {
+      const c = ensureArray(job.chunks).find((x) => Number(x.index) === Number(forceChunkIndex));
+      step = c ? { type: 'chunk', chunk: c } : nextJobStep(job);
+    } else {
+      step = nextJobStep(job);
+    }
+
+    const total = ensureArray(job.chunks).length;
+    const doneCount = ensureArray(job.chunks).filter((c) => c.status === 'done').length;
+
+    if (step.type === 'done') {
+      closePromptWorkbench();
+      return;
+    }
+
+    if (step.type === 'reconcile') {
+      pdosState.activeJobStep = 'reconcile';
+      $('pdosJobChunkIndex').value = '';
+      $('pdosPromptSummary').textContent = 'Consolidação final. Recomendado: "Consolidar automaticamente (sem IA)" — junta os lotes sem pedir nada ao ChatGPT. Opcional: cole grupos de fusão da IA para unir funcionalidades parecidas.';
+      $('pdosPromptRaw').value = job.reconcilePrompt || '';
+      $('pdosPromptOutput').value = '';
+      $('pdosJobBar').innerHTML = `<span class="pdos-job-step">Passo final: consolidação</span><span class="pdos-job-progress">${doneCount}/${total} lotes concluídos</span>`;
+      $('pdosJobAuto')?.classList.remove('hidden');
+      $('pdosJobSubmit').textContent = 'Submeter grupos da IA';
+      refreshReconcilePrompt(job);
+      return;
+    }
+
+    const chunk = step.chunk;
+    pdosState.activeJobStep = 'chunk';
+    $('pdosJobAuto')?.classList.add('hidden');
+    $('pdosJobChunkIndex').value = chunk.index;
+    const human = Number(chunk.index) + 1;
+    $('pdosPromptSummary').textContent = `Lote ${human} de ${total}: ${chunk.label} (${chunk.requirementIds.length} requisitos)${chunk.deferred ? ' — opcional, pode definir mais tarde' : ''}`;
+    $('pdosPromptRaw').value = chunk.prompt || '';
+    $('pdosPromptOutput').value = '';
+    const dots = ensureArray(job.chunks).map((c) => `<span class="pdos-job-dot${c.status === 'done' ? ' done' : ''}${c.deferred ? ' deferred' : ''}" title="${escapeHtml(c.label)}">${Number(c.index) + 1}</span>`).join('');
+    $('pdosJobBar').innerHTML = `<div class="pdos-job-dots">${dots}</div><span class="pdos-job-progress">${doneCount}/${total} concluídos</span>`;
+    $('pdosJobSubmit').textContent = 'Submeter lote e seguir';
+  }
+
+  // Recalcula o prompt de consolidacao (compacto) no servidor, util para jobs
+  // criados antes desta versao.
+  async function refreshReconcilePrompt(job) {
+    const project = window.state?.selectedProject;
+    if (!project || !job) return;
+    try {
+      const res = await apiRequest(`/projects/${project.id}/agent-jobs/${job.id}/refresh-reconcile`, { method: 'POST' });
+      if (pdosState.activeJob?.id === job.id && pdosState.activeJobStep === 'reconcile' && res.agentJob?.reconcilePrompt) {
+        pdosState.activeJob = res.agentJob;
+        $('pdosPromptRaw').value = res.agentJob.reconcilePrompt;
+      }
+    } catch (err) {
+      // mantem o prompt anterior se falhar
+    }
+  }
+
+  // Consolidacao deterministica (sem IA): funde os lotes por codigo e envia para
+  // revisao humana. Caminho recomendado e a prova de truncamento do ChatGPT.
+  async function submitJobAuto() {
+    const project = window.state?.selectedProject;
+    const job = pdosState.activeJob;
+    if (!project || !job) return;
+    try {
+      const res = await apiRequest(`/projects/${project.id}/agent-jobs/${job.id}/reconcile`, {
+        method: 'POST',
+        body: {},
+      });
+      showToast('Consolidado automaticamente — reveja e aprove para aplicar');
+      closePromptWorkbench();
+      await reloadProject(project.id);
+      if (res.review?.id) openReviewDrawer(window.state.selectedProject, res.review.id);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function submitJobStep() {
+    const project = window.state?.selectedProject;
+    const job = pdosState.activeJob;
+    if (!project || !job) return;
+    const raw = $('pdosPromptOutput')?.value || '';
+    if (!raw.trim()) {
+      showToast('Cole o output da IA antes de submeter', 'error');
+      return;
+    }
+    const normalized = normalizeJsonInput(raw);
+    let parsed = null;
+    try { parsed = JSON.parse(normalized); } catch {
+      showToast('JSON inválido — use aspas rectas (" ") no output', 'error');
+      return;
+    }
+    try {
+      if (pdosState.activeJobStep === 'reconcile') {
+        const res = await apiRequest(`/projects/${project.id}/agent-jobs/${job.id}/reconcile`, {
+          method: 'POST',
+          body: { rawOutput: normalized, parsedOutput: parsed },
+        });
+        showToast('Consolidação submetida para revisão humana — aprove para aplicar');
+        closePromptWorkbench();
+        await reloadProject(project.id);
+        if (res.review?.id) openReviewDrawer(window.state.selectedProject, res.review.id);
+      } else {
+        const idx = $('pdosJobChunkIndex').value;
+        const res = await apiRequest(`/projects/${project.id}/agent-jobs/${job.id}/chunks/${idx}`, {
+          method: 'POST',
+          body: { rawOutput: normalized, parsedOutput: parsed },
+        });
+        renderJobStep(res.agentJob);
+        await reloadProject(project.id);
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   }
 
   async function applyPromptOutput() {
@@ -1135,8 +2364,8 @@
         body: { status, applyChanges: status === 'approved' },
       });
       showToast(status === 'approved' ? 'Revisão aprovada e alterações aplicadas' : 'Revisão actualizada');
+      closeDrawer();
       await reloadProject(project.id);
-      if (status !== 'approved') closeDrawer();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -1197,31 +2426,44 @@
     }
 
     drawer.classList.remove('hidden');
+    drawer.classList.add('hr-drawer-open');
+    const agentLabel = promptRun ? agentFriendlyLabel(promptRun.agentType) : '';
     content.innerHTML = `
-      <div class="pdos-drawer-head">
-        <h3>${escapeHtml(review.title)}</h3>
-        <button type="button" class="btn tiny ghost pdos-drawer-close">Fechar</button>
+      <div class="pdos-drawer-head hr-drawer-head">
+        <div>
+          <span class="hr-card-status">Revisão humana</span>
+          <h3>${escapeHtml(review.title)}</h3>
+          ${agentLabel ? `<p class="muted-text">Origem: <strong>${escapeHtml(agentLabel)}</strong></p>` : ''}
+        </div>
+        <button type="button" class="btn tiny ghost pdos-drawer-close" aria-label="Fechar">Fechar</button>
       </div>
-      <p class="review-summary">${escapeHtml(review.summaryMarkdown)}</p>
-      ${promptRun ? `<p class="muted-text">Agente: <strong>${escapeHtml(promptRun.agentType)}</strong> · ${escapeHtml(promptRun.targetOutput || '')}</p>` : ''}
-      <details class="collapsible" open>
-        <summary>Detalhes técnicos (${review.decisionsCount || 0} alteração(ões))</summary>
-        <div id="pdosReviewSections" class="review-sections">${renderReviewSectionsHtml(review, promptRun)}</div>
-      </details>
-      ${review.bodyMarkdown ? `<details class="collapsible"><summary>Resumo em markdown</summary><div id="pdosReviewMarkdown" class="markdown-preview"></div></details>` : ''}
-      <div class="pdos-card-actions">
+      <div class="hr-drawer-body">
+        <section class="hr-drawer-section">
+          <span class="rm-label">Resumo</span>
+          <p class="review-summary">${escapeHtml(review.summaryMarkdown || '')}</p>
+        </section>
+        <section class="hr-drawer-section">
+          <span class="rm-label">Alterações propostas (${review.decisionsCount || 0})</span>
+          <div id="pdosReviewSections" class="review-sections hr-review-sections">${renderReviewSectionsHtml(review, promptRun)}</div>
+        </section>
+        ${review.bodyMarkdown ? `<section class="hr-drawer-section"><span class="rm-label">Detalhe narrativo</span><div id="pdosReviewMarkdown" class="markdown-preview idea-md"></div></section>` : ''}
+      </div>
+      <footer class="hr-drawer-footer">
         ${review.status === 'pending' ? `
           <button type="button" class="btn primary" data-approve-review="${escapeHtml(review.id)}">Aprovar e aplicar</button>
           <button type="button" class="btn" data-reject-review="${escapeHtml(review.id)}">Pedir alterações</button>
         ` : `<span class="chip">${escapeHtml(review.status)}</span>`}
-      </div>
+        <button type="button" class="btn ghost pdos-drawer-close-footer">Fechar</button>
+      </footer>
     `;
 
     if (review.bodyMarkdown) {
       await renderMarkdownPreview(review.bodyMarkdown, $('pdosReviewMarkdown'));
     }
 
-    content.querySelector('.pdos-drawer-close')?.addEventListener('click', closeDrawer);
+    content.querySelectorAll('.pdos-drawer-close, .pdos-drawer-close-footer').forEach((btn) => {
+      btn.addEventListener('click', closeDrawer);
+    });
     content.querySelector('[data-approve-review]')?.addEventListener('click', () => resolveReview(reviewId, 'approved'));
     content.querySelector('[data-reject-review]')?.addEventListener('click', () => resolveReview(reviewId, 'changes_requested'));
   }
@@ -1291,10 +2533,11 @@
     renderGoldenTimeline(project);
     renderStageGuidance(project);
     renderCurrentFocus(project);
-    renderStageConceptBanner(stageId);
+    renderStageConceptBanner();
     renderModuleNav();
+    renderHumanReviewsSection(project);
     renderCardFeed(project);
-    renderPlatformGlossary();
+    window.DiagramsUI?.renderShell?.(project);
   }
 
   function renderSnapshotsList(project) {
@@ -1538,6 +2781,8 @@
       copyToClipboard($('pdosPromptRaw')?.value).then(() => showToast('Prompt copiado'));
     });
     $('pdosPromptApply')?.addEventListener('click', applyPromptOutput);
+    $('pdosJobSubmit')?.addEventListener('click', submitJobStep);
+    $('pdosJobAuto')?.addEventListener('click', submitJobAuto);
     $('pdosAltSubmit')?.addEventListener('click', pasteAlternative);
     $('pdosDrawerOverlay')?.addEventListener('click', closeDrawer);
     document.querySelectorAll('[data-close-transition]').forEach((el) => {
@@ -1561,6 +2806,9 @@
     wirePdosEvents,
     wireTraceEvents,
     closeDrawer,
+    openPromptWorkbench,
+    runArchitecturePackGeneration,
+    runDiagramToRequirements,
     pdosState,
   };
   window.refreshTraceMap = () => loadTraceMap(window.state?.selectedProject?.id);

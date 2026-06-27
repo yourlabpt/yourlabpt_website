@@ -12,6 +12,22 @@
     document: 'Documento gerado',
   };
 
+  // Friendly names so the reader never sees agent slugs like "requirements_to_architecture".
+  const AGENT_FRIENDLY = {
+    requirement_grouping: 'Organização de requisitos',
+    reverse_idea: 'Resumo da ideia',
+    diagram_to_requirements: 'Requisitos a partir de diagrama',
+    requirements_to_architecture: 'Pacote de arquitectura',
+    capability_requirements: 'Requisitos da funcionalidade',
+    stage_transition: 'Transição de fase',
+    impact_regeneration: 'Propagação de impacto',
+    meeting_classification: 'Classificação de ata',
+    prompt_builder: 'Agente',
+    agent_output: 'Resposta IA',
+  };
+
+  const STAGE_SEQUENCE = ['idea', 'discovery', 'requirements', 'architecture', 'roadmap', 'implementation', 'validation', 'delivery', 'operations'];
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -20,9 +36,44 @@
     return state.tabFilters?.deliveryStageId || state.deliverySelectedStageId || '';
   }
 
+  function friendlyLabel(item) {
+    if (item.kind === 'prompt_run') {
+      const slug = String(item.raw?.agentType || item.typeLabel || '').trim();
+      return AGENT_FRIENDLY[slug] || KIND_LABELS.prompt_run;
+    }
+    return KIND_LABELS[item.kind] || item.typeLabel;
+  }
+
+  function friendlyDate(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function stageOrderList() {
+    return window.state?.config?.stageOrder || STAGE_SEQUENCE;
+  }
+
+  // Single readable place: when no phase filter is active, gather AI artifacts
+  // from EVERY phase (deduped); otherwise just the filtered phase.
   function getAiArtifacts(project) {
-    const stageId = getStageId() || 'requirements';
-    return window.PhaseContent?.collectAiArtifacts?.(project, stageId) || [];
+    const collect = window.PhaseContent?.collectAiArtifacts;
+    if (!collect) return [];
+    const stageFilter = getStageId();
+    if (stageFilter) return collect(project, stageFilter);
+
+    const seen = new Set();
+    const all = [];
+    for (const sid of stageOrderList()) {
+      for (const item of collect(project, sid)) {
+        const key = `${item.kind}:${item.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push({ ...item, stageId: item.stageId || sid });
+      }
+    }
+    return all.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
   }
 
   function getUploadDocuments(project) {
@@ -121,34 +172,50 @@
     if (!el) return;
 
     const items = getAiArtifacts(project);
+    const scoped = Boolean(getStageId());
     if (meta) {
       meta.textContent = items.length
-        ? `${items.length} artefacto(s) gerado(s) pela IA nesta fase — clique para ver e editar.`
-        : 'Nenhum artefacto IA nesta fase. Gere conteúdo na Linha de Entrega ou importe output de agentes.';
+        ? (scoped
+          ? `${items.length} resultado(s) da IA nesta fase. Clique em «Ler» para a versão completa.`
+          : `${items.length} resultado(s) gerados pela IA no projecto. Agrupados por fase — clique em «Ler».`)
+        : 'Ainda não há resultados da IA. Corra agentes na Linha de Entrega para gerar conteúdo.';
     }
 
     if (!items.length) {
-      el.innerHTML = `<p class="muted-text docs-empty-hint">Sem artefactos IA. Na fase Arquitectura, use «Gerar pacote de arquitectura»; noutras fases, corra agentes na Linha de Entrega.</p>`;
+      el.innerHTML = `<p class="muted-text docs-empty-hint">Sem resultados da IA. Na fase Arquitectura use «Gerar pacote de arquitectura»; noutras fases, corra os agentes na Linha de Entrega.</p>`;
       return;
     }
 
-    el.innerHTML = items.map((item) => `
-      <article class="ai-artifact-card" data-ai-kind="${escapeHtml(item.kind)}" data-ai-id="${escapeHtml(item.id)}">
-        <div class="ai-artifact-card-top">
-          <span class="ai-artifact-kind">${escapeHtml(KIND_LABELS[item.kind] || item.typeLabel)}</span>
-          <span class="ai-artifact-type">${escapeHtml(item.typeLabel)}</span>
+    const cardHtml = (item) => `
+      <article class="ai-read-card" data-ai-kind="${escapeHtml(item.kind)}" data-ai-id="${escapeHtml(item.id)}">
+        <div class="ai-read-card-head">
+          <span class="ai-read-kind">${escapeHtml(friendlyLabel(item))}</span>
+          ${friendlyDate(item.updatedAt) ? `<span class="ai-read-date">${escapeHtml(friendlyDate(item.updatedAt))}</span>` : ''}
         </div>
-        <h4 class="ai-artifact-title">${escapeHtml(item.title)}</h4>
-        <p class="ai-artifact-preview">${escapeHtml(item.preview || 'Sem pré-visualização.')}</p>
-        <div class="ai-artifact-meta">
-          <span>${item.updatedAt ? new Date(item.updatedAt).toLocaleString('pt-PT') : '—'}</span>
-          ${item.status ? `<span class="ai-artifact-status">${escapeHtml(item.status)}</span>` : ''}
-        </div>
-        <button type="button" class="ai-artifact-open-btn" data-open-ai-artifact="${escapeHtml(item.kind)}:${escapeHtml(item.id)}">
-          Ver e editar
-        </button>
+        <h4 class="ai-read-title">${escapeHtml(item.title)}</h4>
+        <p class="ai-read-excerpt">${escapeHtml(item.preview || 'Sem resumo.')}</p>
+        <button type="button" class="btn tiny primary ai-read-open" data-open-ai-artifact="${escapeHtml(item.kind)}:${escapeHtml(item.id)}">Ler</button>
       </article>
-    `).join('');
+    `;
+
+    if (scoped) {
+      el.innerHTML = `<div class="ai-read-list">${items.map(cardHtml).join('')}</div>`;
+    } else {
+      // Group by phase for a narrative, top-to-bottom reading order.
+      const byStage = new Map();
+      for (const item of items) {
+        const sid = item.stageId || 'requirements';
+        if (!byStage.has(sid)) byStage.set(sid, []);
+        byStage.get(sid).push(item);
+      }
+      const orderedStages = stageOrderList().filter((sid) => byStage.has(sid));
+      el.innerHTML = orderedStages.map((sid) => `
+        <section class="ai-read-group">
+          <h3 class="ai-read-group-title">${escapeHtml(stageLabel(sid))}<span class="ai-read-group-count">${byStage.get(sid).length}</span></h3>
+          <div class="ai-read-list">${byStage.get(sid).map(cardHtml).join('')}</div>
+        </section>
+      `).join('');
+    }
 
     el.querySelectorAll('[data-open-ai-artifact]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -191,6 +258,32 @@
     });
   }
 
+  async function renderReadPane(markdown) {
+    const pane = $('aiArtifactReadPane');
+    if (!pane) return;
+    const md = String(markdown || '').trim();
+    if (!md) {
+      pane.innerHTML = '<p class="muted-text">Sem conteúdo legível.</p>';
+      return;
+    }
+    try {
+      const res = await apiRequest('/markdown/render', { method: 'POST', body: { markdown: md } });
+      pane.innerHTML = res.html || escapeHtml(md);
+    } catch {
+      pane.textContent = md;
+    }
+  }
+
+  function setAiModalMode(mode) {
+    // mode: 'read' | 'edit'
+    const editing = mode === 'edit';
+    $('aiArtifactReadPane')?.classList.toggle('hidden', editing);
+    $('aiArtifactEditForm')?.classList.toggle('hidden', !editing);
+    $('aiArtifactEditToggle')?.classList.toggle('hidden', editing);
+    $('aiArtifactModalSave')?.classList.toggle('hidden', !editing);
+    $('aiArtifactModalCancel')?.classList.toggle('hidden', !editing);
+  }
+
   function openAiArtifactModal(item, project) {
     const modal = $('aiArtifactModal');
     if (!modal || !item) return;
@@ -199,7 +292,7 @@
     docUiState.modalDirty = false;
     $('aiArtifactModalDirty')?.classList.add('hidden');
     $('aiArtifactModalTitle').textContent = item.title;
-    $('aiArtifactModalKind').textContent = KIND_LABELS[item.kind] || item.typeLabel;
+    $('aiArtifactModalKind').textContent = friendlyLabel(item);
 
     const readonly = !canEdit();
     const showTitle = item.kind === 'artifact' || item.kind === 'document';
@@ -224,10 +317,14 @@
     }
 
     $('aiArtifactModalMeta').innerHTML = `
-      <span>Tipo: <strong>${escapeHtml(item.typeLabel)}</strong></span>
       ${item.stageId ? `<span>Fase: <strong>${escapeHtml(stageLabel(item.stageId))}</strong></span>` : ''}
-      ${item.status ? `<span>Estado: <strong>${escapeHtml(item.status)}</strong></span>` : ''}
+      <span>Tipo: <strong>${escapeHtml(friendlyLabel(item))}</strong></span>
     `;
+
+    // Read-first: render the content as readable markdown; editing is opt-in.
+    renderReadPane(item.contentMarkdown);
+    setAiModalMode('read');
+    $('aiArtifactEditToggle')?.classList.toggle('hidden', readonly || !item.editable);
 
     $('aiArtifactModalSave').disabled = readonly || !item.editable;
     modal.classList.remove('hidden');
@@ -298,6 +395,9 @@
         state.selectedProject = res.project;
         docUiState.modalDirty = false;
         $('aiArtifactModalDirty')?.classList.add('hidden');
+        if (docUiState.modalItem) docUiState.modalItem.contentMarkdown = contentMarkdown;
+        renderReadPane(contentMarkdown);
+        setAiModalMode('read');
         renderDocumentsPage(state.selectedProject);
         renderProjectDetails?.();
         showToast('Artefacto guardado.', 'ok');
@@ -309,10 +409,11 @@
 
   function initDocumentsUi() {
     $('aiArtifactModalClose')?.addEventListener('click', closeAiArtifactModal);
-    $('aiArtifactModalCancel')?.addEventListener('click', closeAiArtifactModal);
+    $('aiArtifactModalCancel')?.addEventListener('click', () => setAiModalMode('read'));
     $('aiArtifactModalSave')?.addEventListener('click', saveAiArtifactModal);
+    $('aiArtifactEditToggle')?.addEventListener('click', () => setAiModalMode('edit'));
     $('aiArtifactModalCopy')?.addEventListener('click', () => {
-      const text = $('aiArtifactContentInput')?.value || '';
+      const text = $('aiArtifactContentInput')?.value || docUiState.modalItem?.contentMarkdown || '';
       navigator.clipboard?.writeText(text).then(() => showToast('Copiado.', 'ok'));
     });
   }

@@ -24,6 +24,16 @@ function resolveMeetingStageId(minute) {
   );
 }
 
+// Atas are a global field — one ata can impact multiple phases. Returns every
+// phase this ata touches (AI-classified impactedStageIds, with legacy fallback).
+function meetingImpactedStageIds(minute) {
+  const ids = ensureArray(minute?.impactedStageIds)
+    .map((id) => normalizeDeliveryStageId(id, ''))
+    .filter((id) => STAGE_ORDER.includes(id));
+  if (ids.length) return [...new Set(ids)];
+  return [resolveMeetingStageId(minute)];
+}
+
 function resolveRequirementStageId(req) {
   return normalizeDeliveryStageId(req?.deliveryStageId, 'requirements');
 }
@@ -38,7 +48,7 @@ function getStageContentSummary(project, stageId) {
     (r) => resolveRequirementStageId(r) === sid
   );
   const minutes = ensureArray(project?.meetingMinutes).filter(
-    (m) => resolveMeetingStageId(m) === sid
+    (m) => meetingImpactedStageIds(m).includes(sid)
   );
   const documents = ensureArray(project?.documents).filter(
     (d) => resolveDocumentStageId(d) === sid
@@ -215,6 +225,7 @@ function createPhaseDiagramDocument({ title, contentMarkdown, diagramFormat, del
 module.exports = {
   normalizeDeliveryStageId,
   resolveMeetingStageId,
+  meetingImpactedStageIds,
   resolveRequirementStageId,
   resolveDocumentStageId,
   getStageContentSummary,

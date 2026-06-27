@@ -25,6 +25,7 @@ const TRACE_NODE_TYPES = [
   'technical_requirement',
   'requirement',
   'artifact',
+  'diagram',
   'architecture_object',
   'data_entity',
   'api_endpoint',
@@ -55,6 +56,12 @@ const AGENT_TYPES = [
   'prompt_builder',
   'alternative_output_parser',
   'impact_regeneration',
+  'meeting_classification',
+  'discovery_research',
+  'roadmap_plan',
+  'implementation_stack',
+  'implementation_tasks',
+  'commercial_proposal',
 ];
 
 const ONION_LAYERS = [
@@ -149,7 +156,7 @@ const STAGE_FOCUS = {
 const STAGE_NEXT_HINT = {
   idea: 'Completa o resumo da ideia (Idea Brief) e avança para Descoberta para mapear o contexto.',
   discovery: 'Consolida atas e feedback; depois agrupa requisitos por funcionalidade do produto.',
-  requirements: 'Aprova os grupos de requisitos e gera o pacote de arquitectura por módulo.',
+  requirements: 'Aprova os grupos de requisitos e avança para Arquitectura — use «Gerar prompt de arquitectura» no painel de diagramas.',
   architecture: 'Valida o desenho técnico e monta o roadmap de implementação.',
   roadmap: 'Divide a fase actual em tarefas pequenas para desenvolvimento.',
   implementation: 'Implementa e liga cada entrega aos requisitos correspondentes.',
@@ -263,6 +270,19 @@ const MEETING_IMPACT_PROPAGATION = {
   },
 };
 
+/**
+ * Stages an ata touches. Prefers the AI-classified `impactedStageIds`
+ * (multi-phase); falls back to the legacy single `targetStageId`/`impactScope`.
+ */
+function meetingImpactedStageIds(minute) {
+  const fromAi = ensureArray(minute?.impactedStageIds)
+    .map((id) => textOr(id))
+    .filter((id) => STAGE_ORDER.includes(id));
+  if (fromAi.length) return [...new Set(fromAi)];
+  const legacy = textOr(minute?.targetStageId, minute?.impactScope, 'requirements');
+  return STAGE_ORDER.includes(legacy) ? [legacy] : ['requirements'];
+}
+
 function buildMinutePropagationPlan(minutes) {
   const list = ensureArray(minutes);
   const primaryStageIds = new Set();
@@ -271,12 +291,16 @@ function buildMinutePropagationPlan(minutes) {
   const hints = [];
 
   for (const minute of list) {
-    const scope = textOr(minute?.impactScope, 'requirements');
-    primaryStageIds.add(textOr(minute?.targetStageId, scope));
-    const map = MEETING_IMPACT_PROPAGATION[scope] || MEETING_IMPACT_PROPAGATION.requirements;
-    map.upstream.forEach((id) => upstreamStageIds.add(id));
-    map.downstream.forEach((id) => downstreamStageIds.add(id));
-    if (map.hint) hints.push(map.hint);
+    const impacted = meetingImpactedStageIds(minute);
+    impacted.forEach((id) => primaryStageIds.add(id));
+    for (const stageId of impacted) {
+      const map = MEETING_IMPACT_PROPAGATION[stageId]
+        || MEETING_IMPACT_PROPAGATION[textOr(minute?.impactScope, 'requirements')]
+        || MEETING_IMPACT_PROPAGATION.requirements;
+      map.upstream.forEach((id) => upstreamStageIds.add(id));
+      map.downstream.forEach((id) => downstreamStageIds.add(id));
+      if (map.hint) hints.push(map.hint);
+    }
   }
 
   const allAffectedStageIds = [...new Set([
@@ -339,6 +363,94 @@ Responda em JSON:
 ## Atas
 ${minuteBlock}
 `;
+}
+
+/**
+ * Builds a prompt that asks the AI to classify a single ata: which delivery
+ * phases it impacts, which requirements it touches, and the concrete decisions
+ * taken. Output feeds applyMeetingClassificationParsed().
+ */
+function buildMeetingClassificationPrompt(project, minute) {
+  const reqs = ensureArray(project.requirements).slice(0, 80).map((r) => ({
+    id: r.id,
+    title: textOr(r.title),
+    shall: textOr(r.shall).slice(0, 140),
+    moduleTags: r.moduleTags || [],
+  }));
+  const stageList = STAGE_ORDER.map((id) => `- ${id}: ${STAGE_FOCUS[id] || id}`).join('\n');
+
+  return `Tu és um analista de systems engineering YourLab.
+
+Tarefa: ler a ata de reunião abaixo e **classificar o seu impacto** na linha de entrega.
+Uma única ata pode tocar **várias fases** e **vários requisitos** ao mesmo tempo.
+
+Fases disponíveis (usa estes ids em impactedStageIds):
+${stageList}
+
+Regras:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- impactedStageIds: todas as fases realmente afectadas pela ata (1 ou mais).
+- impactedRequirementIds: usa SOMENTE ids presentes em requirementsSummary.
+- decisions: cada decisão concreta tomada na reunião, ligada à(s) fase(s) que afecta.
+- summaryMarkdown: resumo narrativo, claro e curto, legível como um post (2-4 frases).
+- openQuestions: dúvidas que ficaram em aberto.
+
+Projecto: ${project.name} (${project.clientName || 'cliente'})
+
+requirementsSummary:
+${JSON.stringify(reqs, null, 2)}
+
+Ata (texto bruto):
+"""
+${textOr(minute.rawText, minute.bodyMarkdown).slice(0, 12000)}
+"""
+
+Schema de output (meeting_classification_v1):
+{
+  "summaryMarkdown": "",
+  "impactedStageIds": [],
+  "impactedRequirementIds": [],
+  "decisions": [
+    { "text": "", "stageIds": [], "type": "scope_change|new_requirement|risk|clarification|decision" }
+  ],
+  "openQuestions": [],
+  "requiresHumanConfirmation": true
+}`;
+}
+
+/**
+ * Applies a parsed meeting_classification output onto a single ata in place.
+ * Returns the affected stage ids for downstream use.
+ */
+function applyMeetingClassificationParsed(project, minute, parsed) {
+  if (!minute || !parsed) return [];
+  const validReqIds = new Set(ensureArray(project.requirements).map((r) => r.id));
+
+  const stageIds = [...new Set(ensureArray(parsed.impactedStageIds)
+    .map((id) => textOr(id))
+    .filter((id) => STAGE_ORDER.includes(id)))];
+
+  const reqIds = [...new Set(ensureArray(parsed.impactedRequirementIds)
+    .map((id) => textOr(id))
+    .filter((id) => validReqIds.has(id)))];
+
+  const decisions = ensureArray(parsed.decisions).map((d) => {
+    if (typeof d === 'string') return { text: d, stageIds: stageIds, type: 'decision' };
+    return {
+      text: textOr(d?.text || d?.decision),
+      stageIds: [...new Set(ensureArray(d?.stageIds).map((id) => textOr(id)).filter((id) => STAGE_ORDER.includes(id)))],
+      type: textOr(d?.type, 'decision'),
+    };
+  }).filter((d) => d.text);
+
+  minute.impactedStageIds = stageIds.length ? stageIds : meetingImpactedStageIds(minute);
+  minute.impactedRequirementIds = reqIds;
+  minute.decisions = decisions;
+  minute.summaryMarkdown = textOr(parsed.summaryMarkdown, minute.summaryMarkdown);
+  minute.openQuestions = ensureArray(parsed.openQuestions).map((q) => textOr(typeof q === 'string' ? q : q?.text || q?.question)).filter(Boolean);
+  minute.classificationStatus = 'classified';
+  minute.classifiedAt = nowIso();
+  return minute.impactedStageIds;
 }
 
 const STAGE_TRANSITION_AGENTS = {
@@ -455,6 +567,43 @@ function normalizePromptRun(raw) {
   };
 }
 
+function normalizeAgentJobChunk(raw, index) {
+  const status = textOr(raw?.status, 'pending');
+  const allowed = ['pending', 'done', 'skipped'];
+  return {
+    index: numberOr(raw?.index, index),
+    key: textOr(raw?.key),
+    label: textOr(raw?.label, `Lote ${numberOr(raw?.index, index) + 1}`),
+    requirementIds: ensureArray(raw?.requirementIds).map(String),
+    deferred: Boolean(raw?.deferred),
+    prompt: textOr(raw?.prompt),
+    rawOutput: textOr(raw?.rawOutput),
+    parsedOutput: raw?.parsedOutput ?? null,
+    status: allowed.includes(status) ? status : 'pending',
+  };
+}
+
+function normalizeAgentJob(raw) {
+  const status = textOr(raw?.status, 'collecting');
+  const allowed = ['collecting', 'reconciling', 'review_pending', 'applied', 'failed'];
+  return {
+    id: textOr(raw?.id, `ajob_${crypto.randomUUID().slice(0, 8)}`),
+    agentType: textOr(raw?.agentType, 'requirement_grouping'),
+    mode: textOr(raw?.mode, 'batched'),
+    status: allowed.includes(status) ? status : 'collecting',
+    strategy: textOr(raw?.strategy, 'module'),
+    stageId: textOr(raw?.stageId),
+    chunks: ensureArray(raw?.chunks).map((c, i) => normalizeAgentJobChunk(c, i)),
+    reconcilePrompt: textOr(raw?.reconcilePrompt),
+    reconcileRaw: textOr(raw?.reconcileRaw),
+    reconcileParsed: raw?.reconcileParsed ?? null,
+    promptRunId: textOr(raw?.promptRunId),
+    createdBy: textOr(raw?.createdBy),
+    createdAt: textOr(raw?.createdAt, nowIso()),
+    updatedAt: textOr(raw?.updatedAt, nowIso()),
+  };
+}
+
 function normalizeHumanReview(raw) {
   const status = textOr(raw?.status, 'pending');
   return {
@@ -521,19 +670,329 @@ function numberOr(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * The Idea Canvas — a structured, narrative vision of the project.
+ * Migrates from the legacy single `ideaBriefMarkdown` when no vision exists yet.
+ */
+function normalizeTitledList(list) {
+  return ensureArray(list).map((item) => {
+    if (typeof item === 'string') return { title: textOr(item), descriptionMarkdown: '' };
+    return {
+      title: textOr(item?.title || item?.name),
+      descriptionMarkdown: textOr(item?.descriptionMarkdown || item?.description || item?.summary),
+    };
+  }).filter((item) => item.title);
+}
+
+function normalizeVision(raw, project) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const targetUsers = ensureArray(src.targetUsers)
+    .map((u) => textOr(typeof u === 'string' ? u : (u?.name || u?.text)))
+    .filter(Boolean);
+
+  let mainIdeaMarkdown = textOr(src.mainIdeaMarkdown);
+  if (!mainIdeaMarkdown && project) mainIdeaMarkdown = textOr(project.ideaBriefMarkdown);
+
+  return {
+    headline: textOr(src.headline),
+    mainIdeaMarkdown,
+    philosophyMarkdown: textOr(src.philosophyMarkdown || src.cultureMarkdown),
+    problemMarkdown: textOr(src.problemMarkdown || src.problemStatement),
+    targetUsers,
+    valuePropositionMarkdown: textOr(src.valuePropositionMarkdown || src.businessValue),
+    principles: normalizeTitledList(src.principles),
+    consequentIdeas: normalizeTitledList(src.consequentIdeas || src.derivedIdeas),
+    updatedAt: textOr(src.updatedAt),
+  };
+}
+
+/**
+ * The Discovery dossier — market research and business consequence, grounded in
+ * proven frameworks (TAM/SAM/SOM, Business Model Canvas, SWOT, KPIs/OKRs).
+ */
+function normalizeStringList(list) {
+  return ensureArray(list)
+    .map((x) => textOr(typeof x === 'string' ? x : (x?.text || x?.name || x?.title)))
+    .filter(Boolean);
+}
+
+function normalizeDiscovery(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const sizing = src.marketSizing && typeof src.marketSizing === 'object' ? src.marketSizing : {};
+  const model = src.businessModel && typeof src.businessModel === 'object' ? src.businessModel : {};
+  const impact = src.commercialImpact && typeof src.commercialImpact === 'object' ? src.commercialImpact : {};
+  const swot = src.swot && typeof src.swot === 'object' ? src.swot : {};
+
+  return {
+    marketSummaryMarkdown: textOr(src.marketSummaryMarkdown || src.summaryMarkdown),
+    marketSizing: {
+      tam: textOr(sizing.tam),
+      sam: textOr(sizing.sam),
+      som: textOr(sizing.som),
+      notesMarkdown: textOr(sizing.notesMarkdown || sizing.notes),
+    },
+    segments: ensureArray(src.segments).map((s) => {
+      if (typeof s === 'string') return { name: s, descriptionMarkdown: '', painPoints: [] };
+      return {
+        name: textOr(s?.name || s?.title),
+        descriptionMarkdown: textOr(s?.descriptionMarkdown || s?.description),
+        painPoints: normalizeStringList(s?.painPoints),
+      };
+    }).filter((s) => s.name),
+    competitors: ensureArray(src.competitors).map((c) => {
+      if (typeof c === 'string') return { name: c, descriptionMarkdown: '', differentiation: '' };
+      return {
+        name: textOr(c?.name || c?.title),
+        descriptionMarkdown: textOr(c?.descriptionMarkdown || c?.description),
+        differentiation: textOr(c?.differentiation || c?.ourEdge),
+      };
+    }).filter((c) => c.name),
+    businessModel: {
+      revenueStreams: normalizeStringList(model.revenueStreams),
+      costStructure: normalizeStringList(model.costStructure),
+      channels: normalizeStringList(model.channels),
+      keyPartners: normalizeStringList(model.keyPartners),
+    },
+    commercialImpact: {
+      objectivesMarkdown: textOr(impact.objectivesMarkdown || impact.summaryMarkdown),
+      kpis: ensureArray(impact.kpis).map((k) => {
+        if (typeof k === 'string') return { name: k, target: '', rationale: '' };
+        return {
+          name: textOr(k?.name || k?.metric),
+          target: textOr(k?.target),
+          rationale: textOr(k?.rationale || k?.why),
+        };
+      }).filter((k) => k.name),
+    },
+    swot: {
+      strengths: normalizeStringList(swot.strengths),
+      weaknesses: normalizeStringList(swot.weaknesses),
+      opportunities: normalizeStringList(swot.opportunities),
+      threats: normalizeStringList(swot.threats),
+    },
+    goToMarketMarkdown: textOr(src.goToMarketMarkdown),
+    assumptions: normalizeStringList(src.assumptions),
+    updatedAt: textOr(src.updatedAt),
+  };
+}
+
+/**
+ * The Roadmap — implementation phases, each with a concrete deliverable tied to
+ * requirements/tests/architecture, a design pattern and a date plan.
+ */
+function normalizeRoadmapPhase(raw, index) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    id: textOr(src.id, `rmp_${crypto.randomUUID().slice(0, 8)}`),
+    order: Number.isFinite(src.order) ? src.order : index,
+    name: textOr(src.name || src.title, `Fase ${index + 1}`),
+    goalMarkdown: textOr(src.goalMarkdown || src.objectiveMarkdown || src.summaryMarkdown),
+    deliverableMarkdown: textOr(src.deliverableMarkdown || src.deliverable),
+    requirementIds: ensureArray(src.requirementIds).map(String).filter(Boolean),
+    moduleTags: normalizeModuleTags(src.moduleTags),
+    designPattern: textOr(src.designPattern),
+    dependsOn: ensureArray(src.dependsOn).map(String).filter(Boolean),
+    startDate: textOr(src.startDate),
+    endDate: textOr(src.endDate),
+    status: textOr(src.status, 'planned'),
+    milestones: ensureArray(src.milestones).map((m) => {
+      if (typeof m === 'string') return { name: m, date: '' };
+      return { name: textOr(m?.name || m?.title), date: textOr(m?.date) };
+    }).filter((m) => m.name),
+    tests: normalizeStringList(src.tests),
+    risks: normalizeStringList(src.risks),
+  };
+}
+
+function normalizeRoadmap(raw, project) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const validReqIds = new Set(ensureArray(project?.requirements).map((r) => String(r.id)));
+  const phases = ensureArray(src.phases).map((p, i) => {
+    const phase = normalizeRoadmapPhase(p, i);
+    if (validReqIds.size) {
+      phase.requirementIds = phase.requirementIds.filter((id) => validReqIds.has(id));
+    }
+    return phase;
+  });
+  const phaseIds = new Set(phases.map((p) => p.id));
+  phases.forEach((p) => { p.dependsOn = p.dependsOn.filter((id) => phaseIds.has(id) && id !== p.id); });
+  phases.sort((a, b) => a.order - b.order);
+  return {
+    summaryMarkdown: textOr(src.summaryMarkdown),
+    phases,
+    updatedAt: textOr(src.updatedAt),
+  };
+}
+
+/**
+ * The Implementation dossier — confirmed tech stack (languages, frameworks,
+ * deploy, resources) tied to requirements, plus concrete agent-ready tasks
+ * derived from the roadmap. Each task carries a configurable LLM size that
+ * controls how demanding the downloadable prompt is.
+ */
+const IMPL_LLM_SIZES = ['small', 'medium', 'large'];
+const IMPL_TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+
+function normalizeImplementationModule(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    name: textOr(src.name || src.title),
+    technology: textOr(src.technology || src.tech),
+    descriptionMarkdown: textOr(src.descriptionMarkdown || src.description),
+    requirementIds: ensureArray(src.requirementIds).map(String).filter(Boolean),
+  };
+}
+
+const IMPL_COMPLEXITIES = ['low', 'medium', 'high'];
+
+function normalizeSubtask(raw, index) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  if (typeof raw === 'string') return { id: `sub_${crypto.randomUUID().slice(0, 6)}`, title: raw, descriptionMarkdown: '', done: false };
+  return {
+    id: textOr(src.id, `sub_${crypto.randomUUID().slice(0, 6)}`),
+    title: textOr(src.title || src.name, `Passo ${index + 1}`),
+    descriptionMarkdown: textOr(src.descriptionMarkdown || src.description),
+    done: Boolean(src.done),
+  };
+}
+
+function normalizeImplementationTask(raw, index) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const recommendedLlmSize = IMPL_LLM_SIZES.includes(src.recommendedLlmSize) ? src.recommendedLlmSize : '';
+  const llmSize = IMPL_LLM_SIZES.includes(src.llmSize)
+    ? src.llmSize
+    : (recommendedLlmSize || 'medium');
+  const status = IMPL_TASK_STATUSES.includes(src.status) ? src.status : 'todo';
+  const complexity = IMPL_COMPLEXITIES.includes(src.complexity) ? src.complexity : '';
+  return {
+    id: textOr(src.id, `itask_${crypto.randomUUID().slice(0, 8)}`),
+    order: Number.isFinite(src.order) ? src.order : index,
+    roadmapPhaseId: textOr(src.roadmapPhaseId || src.phaseId),
+    title: textOr(src.title || src.name, `Tarefa ${index + 1}`),
+    descriptionMarkdown: textOr(src.descriptionMarkdown || src.description || src.goalMarkdown),
+    requirementIds: ensureArray(src.requirementIds).map(String).filter(Boolean),
+    moduleTags: normalizeModuleTags(src.moduleTags),
+    acceptanceCriteria: normalizeStringList(src.acceptanceCriteria),
+    technicalNotesMarkdown: textOr(src.technicalNotesMarkdown || src.notesMarkdown),
+    promptMarkdown: textOr(src.promptMarkdown),
+    subtasks: ensureArray(src.subtasks).map(normalizeSubtask),
+    complexity,
+    recommendedLlmSize,
+    llmSize,
+    status,
+    // Post-execution capture
+    resultMarkdown: textOr(src.resultMarkdown),
+    outputLinks: ensureArray(src.outputLinks)
+      .map((l) => (typeof l === 'string' ? { label: '', url: l } : { label: textOr(l?.label), url: textOr(l?.url) }))
+      .filter((l) => l.url),
+    executedModel: textOr(src.executedModel),
+    executedAt: textOr(src.executedAt),
+  };
+}
+
+function normalizeImplementation(raw, project) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const stackSrc = src.stack && typeof src.stack === 'object' ? src.stack : {};
+  const validReqIds = new Set(ensureArray(project?.requirements).map((r) => String(r.id)));
+  const validPhaseIds = new Set(ensureArray(project?.roadmap?.phases).map((p) => String(p.id)));
+  const filterReqs = (ids) => (validReqIds.size ? ids.filter((id) => validReqIds.has(id)) : ids);
+
+  const stack = {
+    summaryMarkdown: textOr(stackSrc.summaryMarkdown),
+    designPattern: textOr(stackSrc.designPattern),
+    languages: normalizeStringList(stackSrc.languages),
+    frameworks: normalizeStringList(stackSrc.frameworks),
+    datastores: normalizeStringList(stackSrc.datastores),
+    integrations: normalizeStringList(stackSrc.integrations),
+    deployment: textOr(stackSrc.deployment),
+    infrastructureMarkdown: textOr(stackSrc.infrastructureMarkdown),
+    resourcesMarkdown: textOr(stackSrc.resourcesMarkdown),
+    modules: ensureArray(stackSrc.modules).map(normalizeImplementationModule)
+      .filter((m) => m.name)
+      .map((m) => ({ ...m, requirementIds: filterReqs(m.requirementIds) })),
+    confirmed: Boolean(stackSrc.confirmed),
+    confirmedAt: textOr(stackSrc.confirmedAt),
+  };
+
+  const tasks = ensureArray(src.tasks).map((t, i) => {
+    const task = normalizeImplementationTask(t, i);
+    task.requirementIds = filterReqs(task.requirementIds);
+    if (validPhaseIds.size && task.roadmapPhaseId && !validPhaseIds.has(task.roadmapPhaseId)) {
+      task.roadmapPhaseId = '';
+    }
+    return task;
+  }).sort((a, b) => a.order - b.order);
+
+  return { stack, tasks, updatedAt: textOr(src.updatedAt) };
+}
+
+/**
+ * The commercial Proposal — generated from requirements + documents. Holds the
+ * value narrative, the total value, and the value (with justification) per phase,
+ * all in one place. Monetary fields are budget-gated at sanitize time.
+ */
+function normalizeProposal(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const num = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    if (v == null) return 0;
+    const s = String(v).trim().replace(/[^0-9.,-]/g, '');
+    if (!s) return 0;
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    const decPos = Math.max(lastComma, lastDot);
+    if (decPos === -1) return Number(s) || 0;
+    const decimals = s.length - decPos - 1;
+    // Treat as a decimal separator only when it leaves <=2 trailing digits and
+    // both separator types aren't ambiguous; otherwise separators are thousands.
+    if (decimals <= 2 && lastComma !== lastDot) {
+      const intPart = s.slice(0, decPos).replace(/[.,]/g, '');
+      return Number(`${intPart}.${s.slice(decPos + 1)}`) || 0;
+    }
+    return Number(s.replace(/[.,]/g, '')) || 0;
+  };
+  const phases = ensureArray(src.phases).map((p, i) => ({
+    id: textOr(p?.id, `pp_${crypto.randomUUID().slice(0, 8)}`),
+    name: textOr(p?.name || p?.title, `Fase ${i + 1}`),
+    value: num(p?.value ?? p?.price ?? p?.cost),
+    justificationMarkdown: textOr(p?.justificationMarkdown || p?.justification),
+    deliverables: normalizeStringList(p?.deliverables),
+  }));
+  const declaredTotal = num(src.totalValue ?? src.total);
+  const sumPhases = phases.reduce((acc, p) => acc + (p.value || 0), 0);
+  return {
+    headlineMarkdown: textOr(src.headlineMarkdown || src.summaryMarkdown),
+    valueJustificationMarkdown: textOr(src.valueJustificationMarkdown),
+    currency: textOr(src.currency, 'EUR'),
+    totalValue: declaredTotal || sumPhases,
+    phases,
+    paymentTermsMarkdown: textOr(src.paymentTermsMarkdown),
+    timelineMarkdown: textOr(src.timelineMarkdown),
+    updatedAt: textOr(src.updatedAt),
+  };
+}
+
 function normalizeProjectV3Fields(project) {
+  const diagramFields = require('./diagrams').normalizeProjectDiagramFields(project);
   return {
     capabilities: ensureArray(project.capabilities).map(normalizeCapability),
     requirementClusters: ensureArray(project.requirementClusters).map(normalizeCluster),
     clientRequests: ensureArray(project.clientRequests).map(normalizeClientRequest),
     businessObjectives: ensureArray(project.businessObjectives).map(normalizeBusinessObjective),
     promptRuns: ensureArray(project.promptRuns).map(normalizePromptRun),
+    agentJobs: ensureArray(project.agentJobs).map(normalizeAgentJob),
     humanReviews: ensureArray(project.humanReviews).map(normalizeHumanReview),
     versionSnapshots: ensureArray(project.versionSnapshots).map(normalizeVersionSnapshot),
     alternativeResponses: ensureArray(project.alternativeResponses).map(normalizeAlternativeResponse),
     informationEntries: ensureArray(project.informationEntries).map(normalizeInformationEntry),
     nextDecision: textOr(project.nextDecision),
     ideaBriefMarkdown: textOr(project.ideaBriefMarkdown),
+    vision: normalizeVision(project.vision, project),
+    discovery: normalizeDiscovery(project.discovery),
+    roadmap: normalizeRoadmap(project.roadmap, project),
+    implementation: normalizeImplementation(project.implementation, project),
+    proposal: normalizeProposal(project.proposal),
+    ...diagramFields,
   };
 }
 
@@ -608,6 +1067,13 @@ function autoDeriveTraceLinks(project) {
   for (const art of ensureArray(project.artifacts)) {
     for (const reqId of ensureArray(art.relatedRequirementIds)) {
       add('artifact', art.id, 'requirement', reqId, 'implements', 0.85);
+    }
+  }
+
+  for (const diagram of ensureArray(project.diagramArtifacts)) {
+    for (const reqId of ensureArray(diagram.linkedRequirementIds)) {
+      add('diagram', diagram.id, 'requirement', reqId, 'implements', 0.95);
+      add('requirement', reqId, 'diagram', diagram.id, 'implemented_by', 0.95);
     }
   }
 
@@ -786,55 +1252,508 @@ Responde APENAS com JSON válido:
 
 function buildReverseIdeaPrompt(project) {
   const ctx = buildContextPack(project, { maxRequirements: 50 });
-  return `Gera Idea Brief a partir dos requisitos aprovados. Marca como "generated backwards".
+  const existing = project.vision && typeof project.vision === 'object'
+    ? {
+      headline: textOr(project.vision.headline),
+      mainIdeaMarkdown: textOr(project.vision.mainIdeaMarkdown).slice(0, 1500),
+    }
+    : { headline: '', mainIdeaMarkdown: textOr(project.ideaBriefMarkdown).slice(0, 1500) };
 
-Contexto:
-${JSON.stringify(ctx, null, 2)}
+  return `Tu és um estratega de produto YourLab.
 
-Responde APENAS com JSON:
+Tarefa: a partir do contexto e requisitos, escrever a **visão da ideia** de forma **narrativa e clara**,
+como se fosse a abertura de uma apresentação ou um post forte de LinkedIn. O leitor deve compreender a
+**cultura e a filosofia** por trás da ideia, não apenas funcionalidades.
+
+Princípios de escrita:
+- Texto humano, fluido e inspirador — frases completas, sem bullet points secos no mainIdeaMarkdown.
+- Linguagem simples; a complexidade técnica fica de fora desta fase.
+- "consequentIdeas" = ideias que nascem naturalmente da ideia principal (extensões, futuros, oportunidades).
+- "principles" = a filosofia/cultura que guia decisões (o "como pensamos", não o "o que fazemos").
+
+Contexto e visão atual:
+${JSON.stringify({ ...ctx, currentVision: existing }, null, 2)}
+
+Responde APENAS com JSON válido (sem \`\`\` fences):
 {
-  "ideaBriefMarkdown": "",
-  "problemStatement": "",
-  "targetUsers": [],
-  "businessValue": "",
-  "initialScope": "",
+  "ideaBriefMarkdown": "resumo curto da ideia (compatibilidade)",
+  "vision": {
+    "headline": "uma frase-essência memorável",
+    "mainIdeaMarkdown": "2-4 parágrafos narrativos sobre a ideia principal",
+    "philosophyMarkdown": "1-2 parágrafos sobre cultura e filosofia",
+    "problemMarkdown": "o problema/dor que justifica a ideia",
+    "targetUsers": ["quem beneficia"],
+    "valuePropositionMarkdown": "porque importa / valor entregue",
+    "principles": [{ "title": "", "descriptionMarkdown": "" }],
+    "consequentIdeas": [{ "title": "", "descriptionMarkdown": "" }]
+  },
   "requiresHumanConfirmation": true
 }`;
 }
 
-function buildDiagramToRequirementsPrompt(project, bodyMarkdown) {
-  return `Analisa o diagrama/fluxo e gera requisitos.
+function buildDiscoveryPrompt(project) {
+  const ctx = buildContextPack(project, { maxRequirements: 40 });
+  const vision = project.vision && typeof project.vision === 'object'
+    ? {
+      headline: textOr(project.vision.headline),
+      mainIdea: textOr(project.vision.mainIdeaMarkdown).slice(0, 1200),
+      targetUsers: ensureArray(project.vision.targetUsers),
+    }
+    : { headline: '', mainIdea: textOr(project.ideaBriefMarkdown).slice(0, 1200), targetUsers: [] };
 
-Diagrama:
-${textOr(bodyMarkdown).slice(0, 8000)}
+  return `Tu és um analista de negócio e estratégia de mercado YourLab.
 
-Responde APENAS com JSON:
+Tarefa: a partir da ideia e do contexto, produzir um **dossier de descoberta** estruturado segundo
+**frameworks de negócio reais e comprovados**: dimensionamento de mercado (TAM/SAM/SOM),
+segmentos-alvo, concorrência, Business Model Canvas (receitas, custos, canais, parceiros),
+impacto comercial desejado (objectivos + KPIs/OKRs) e análise SWOT.
+
+Princípios:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Texto narrativo e legível em marketSummaryMarkdown (2-3 parágrafos) — como abertura de um pitch.
+- Sê concreto e realista; assenta em práticas que funcionam no mundo real.
+- assumptions = hipóteses de negócio que ainda precisam de ser validadas.
+
+Ideia e contexto:
+${JSON.stringify({ ...ctx, vision }, null, 2)}
+
+Schema de output (discovery_v1):
 {
-  "stakeholderRequirements": [{ "title": "", "need": "", "shall": "" }],
-  "technicalRequirements": [{ "title": "", "shall": "", "moduleTags": [] }],
-  "actors": [],
-  "flows": [],
-  "openQuestions": [],
-  "assumptions": []
+  "discovery": {
+    "marketSummaryMarkdown": "",
+    "marketSizing": { "tam": "", "sam": "", "som": "", "notesMarkdown": "" },
+    "segments": [{ "name": "", "descriptionMarkdown": "", "painPoints": [] }],
+    "competitors": [{ "name": "", "descriptionMarkdown": "", "differentiation": "" }],
+    "businessModel": { "revenueStreams": [], "costStructure": [], "channels": [], "keyPartners": [] },
+    "commercialImpact": { "objectivesMarkdown": "", "kpis": [{ "name": "", "target": "", "rationale": "" }] },
+    "swot": { "strengths": [], "weaknesses": [], "opportunities": [], "threats": [] },
+    "goToMarketMarkdown": "",
+    "assumptions": []
+  },
+  "requiresHumanConfirmation": true
 }`;
 }
 
-function buildArchitecturePackPrompt(project, capabilityId, moduleTag) {
-  const ctx = buildContextPack(project, { capabilityId, maxRequirements: 40 });
-  return `Gera architecture pack para capability "${ctx.capability?.name || capabilityId}" módulo "${moduleTag}".
+function buildRoadmapPrompt(project) {
+  const ctx = buildContextPack(project, { maxRequirements: 80 });
+  const capabilities = ensureArray(project.capabilities).map((c) => ({
+    id: c.id, name: c.name, requirementIds: c.requirementIds, moduleIds: c.moduleIds,
+  }));
+  const diagrams = ensureArray(project.diagramArtifacts).map((d) => ({
+    title: d.title, type: d.type, module: d.module, linkedRequirementIds: d.linkedRequirementIds,
+  }));
+  const existing = ensureArray(project.roadmap?.phases).map((p) => ({
+    id: p.id, name: p.name, requirementIds: p.requirementIds, designPattern: p.designPattern,
+    startDate: p.startDate, endDate: p.endDate,
+  }));
+
+  return `Tu és um tech lead / engenheiro de entrega YourLab.
+
+Tarefa: a partir dos requisitos, capabilities, arquitetura (diagramas) e descoberta,
+montar um **roadmap de implementação** por fases. Cada fase precisa de:
+- um **entregável concreto** (deliverableMarkdown) — o que fica pronto e demonstrável;
+- os **requirementIds** que essa fase satisfaz (rastreabilidade — usa SÓ ids existentes);
+- um **design pattern** recomendado e os **moduleTags** envolvidos;
+- **testes** que validam a entrega e **riscos**;
+- **datas** (startDate/endDate em ISO yyyy-mm-dd) e **dependsOn** (lista de "id" de fases anteriores deste roadmap, ex.: ["p1"]);
+- **milestones** chave.
+
+Princípios:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Ordena por sequência lógica de construção (o que se constrói primeiro).
+- summaryMarkdown = visão geral do plano em 1-2 parágrafos legíveis.
+- Sê realista nas datas e mantém fases pequenas e entregáveis.
 
 Contexto:
+${JSON.stringify({ ...ctx, capabilities, diagrams, existingRoadmap: existing }, null, 2)}
+
+Schema de output (roadmap_v1):
+{
+  "roadmap": {
+    "summaryMarkdown": "",
+    "phases": [{
+      "id": "p1",
+      "name": "",
+      "goalMarkdown": "",
+      "deliverableMarkdown": "",
+      "requirementIds": [],
+      "moduleTags": [],
+      "designPattern": "",
+      "dependsOn": [],
+      "startDate": "",
+      "endDate": "",
+      "tests": [],
+      "risks": [],
+      "milestones": [{ "name": "", "date": "" }]
+    }]
+  },
+  "requiresHumanConfirmation": true
+}`;
+}
+
+function buildImplementationStackPrompt(project) {
+  const ctx = buildContextPack(project, { maxRequirements: 80 });
+  const diagrams = ensureArray(project.diagramArtifacts).map((d) => ({
+    title: d.title, type: d.type, module: d.module,
+  }));
+  const roadmap = ensureArray(project.roadmap?.phases).map((p) => ({
+    name: p.name, designPattern: p.designPattern, moduleTags: p.moduleTags,
+  }));
+  const current = project.implementation?.stack || {};
+
+  return `Tu és um arquiteto de software / tech lead YourLab.
+
+Tarefa: definir e **confirmar a stack técnica** do sistema, ligada aos requisitos.
+Decide tecnologias concretas e realistas: linguagens, frameworks, bases de dados,
+integrações externas, onde fica o deploy, e que recursos de infraestrutura são precisos.
+Mapeia os módulos/partes do sistema às tecnologias e aos requisitos que satisfazem.
+
+Princípios:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Sê concreto (ex.: "Node.js + Express", "PostgreSQL", "Deploy em AWS ECS Fargate").
+- requirementIds em cada módulo devem usar SÓ ids existentes (rastreabilidade).
+- summaryMarkdown = visão geral legível da arquitetura técnica em 1-2 parágrafos.
+- resourcesMarkdown = estimativa de recursos (instâncias, memória, custos aproximados).
+
+Contexto:
+${JSON.stringify({ ...ctx, diagrams, roadmap, currentStack: current }, null, 2)}
+
+Schema de output (implementation_stack_v1):
+{
+  "implementation": {
+    "stack": {
+      "summaryMarkdown": "",
+      "designPattern": "",
+      "languages": [],
+      "frameworks": [],
+      "datastores": [],
+      "integrations": [],
+      "deployment": "",
+      "infrastructureMarkdown": "",
+      "resourcesMarkdown": "",
+      "modules": [{ "name": "", "technology": "", "descriptionMarkdown": "", "requirementIds": [] }]
+    }
+  },
+  "requiresHumanConfirmation": true
+}`;
+}
+
+function buildImplementationTasksPrompt(project) {
+  const ctx = buildContextPack(project, { maxRequirements: 80 });
+  const phases = ensureArray(project.roadmap?.phases).map((p) => ({
+    id: p.id, name: p.name, deliverable: textOr(p.deliverableMarkdown).slice(0, 400),
+    requirementIds: p.requirementIds, moduleTags: p.moduleTags, designPattern: p.designPattern,
+  }));
+  const stack = project.implementation?.stack
+    ? {
+      designPattern: project.implementation.stack.designPattern,
+      languages: project.implementation.stack.languages,
+      frameworks: project.implementation.stack.frameworks,
+      deployment: project.implementation.stack.deployment,
+    }
+    : null;
+
+  return `Tu és um tech lead YourLab a preparar trabalho para agentes de desenvolvimento.
+
+Tarefa: dividir cada fase do roadmap em **tarefas pequenas, coerentes e prontas para execução**
+por um agente de IA. A divisão tem de ser **coerente com o modelo (LLM) recomendado** e com os
+recursos disponíveis. Cada tarefa precisa de:
+- um título curto e claro;
+- descriptionMarkdown = o **resultado desejado** (objetivo claro e concreto do que fica pronto);
+- roadmapPhaseId = o "id" da fase do roadmap a que pertence;
+- requirementIds satisfeitos (rastreabilidade — usa SÓ ids existentes);
+- moduleTags envolvidos;
+- acceptanceCriteria = critérios objetivos de aceitação (definição de "concluído");
+- technicalNotesMarkdown = notas técnicas/restrições relevantes;
+- complexity = "low" | "medium" | "high" (estimativa de esforço/risco);
+- recommendedLlmSize = "small" | "medium" | "large" — o tamanho de modelo adequado:
+  tarefas simples e mecânicas → "small"; tarefas com lógica de negócio → "medium";
+  tarefas críticas, arquiteturais ou ambíguas → "large";
+- subtasks = passos coerentes dentro da tarefa. **Quanto menor o modelo recomendado, mais granular
+  e explícita deve ser a divisão em subtasks**; para "large" usa poucas ou nenhuma.
+
+Princípios:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Tarefas pequenas e independentes quando possível, ordenadas por sequência de construção.
+- Pedidos claros e objetivos — cada tarefa tem de ser executável sem ambiguidade.
+- NÃO escrevas o prompt final — o sistema gera o prompt a partir destes campos.
+
+Roadmap (fases):
+${JSON.stringify(phases, null, 2)}
+
+Stack confirmada (se existir):
+${JSON.stringify(stack, null, 2)}
+
+Requisitos:
+${JSON.stringify(ctx.requirementsSummary, null, 2)}
+
+Schema de output (implementation_tasks_v1):
+{
+  "implementation": {
+    "tasks": [{
+      "roadmapPhaseId": "",
+      "title": "",
+      "descriptionMarkdown": "",
+      "requirementIds": [],
+      "moduleTags": [],
+      "acceptanceCriteria": [],
+      "technicalNotesMarkdown": "",
+      "complexity": "medium",
+      "recommendedLlmSize": "medium",
+      "subtasks": [{ "title": "", "descriptionMarkdown": "" }]
+    }]
+  },
+  "requiresHumanConfirmation": true
+}`;
+}
+
+function buildCommercialProposalPrompt(project, options = {}) {
+  const instructions = textOr(options.instructions);
+  const ctx = buildContextPack(project, { maxRequirements: 120 });
+  const roadmap = ensureArray(project.roadmap?.phases).map((p) => ({
+    id: p.id, name: p.name, deliverable: textOr(p.deliverableMarkdown).slice(0, 300),
+    requirementIds: p.requirementIds, startDate: p.startDate, endDate: p.endDate,
+  }));
+  const stack = project.implementation?.stack
+    ? { designPattern: project.implementation.stack.designPattern, languages: project.implementation.stack.languages, frameworks: project.implementation.stack.frameworks, deployment: project.implementation.stack.deployment }
+    : null;
+  const docs = ensureArray(project.documents)
+    .map((d) => ({ title: textOr(d.title || d.originalName), type: textOr(d.docType), excerpt: textOr(d.contentMarkdown || d.extractedText).slice(0, 600) }))
+    .filter((d) => d.title)
+    .slice(0, 12);
+  const commercial = {
+    currency: textOr(project.currency, 'EUR'),
+    hourlyRate: project.hourlyRate || null,
+    targetBudgetMin: project.targetBudgetMin || null,
+    targetBudgetMax: project.targetBudgetMax || null,
+    commercialTerms: project.commercialTerms || null,
+  };
+
+  return `Tu és um consultor comercial sénior YourLab a preparar uma **proposta comercial**.
+
+Tarefa: a partir dos requisitos, do roadmap e dos documentos do projeto, construir uma proposta
+clara com **valor por fase**, **justificação do valor** e termos de pagamento. O cliente tem de
+perceber porque é que cada valor faz sentido (esforço, complexidade, risco, valor de negócio).
+
+${instructions ? `Instruções específicas do utilizador (segue-as):\n${instructions}\n` : ''}
+Princípios:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- headlineMarkdown = abertura executiva persuasiva (2-3 parágrafos).
+- valueJustificationMarkdown = justificação global do valor (porque vale o investimento).
+- Cada fase: nome, valor numérico (em ${commercial.currency}), justificationMarkdown e deliverables.
+- Mantém-te coerente com o orçamento-alvo quando existir; o total deve ser a soma das fases.
+- Usa o roadmap como base das fases sempre que possível (mesmos nomes).
+
+Contexto:
+${JSON.stringify({ projectSummary: ctx.projectSummary, requirementsSummary: ctx.requirementsSummary, roadmap, stack, commercial, documents: docs }, null, 2)}
+
+Schema de output (commercial_proposal_v1):
+{
+  "proposal": {
+    "headlineMarkdown": "",
+    "valueJustificationMarkdown": "",
+    "currency": "${commercial.currency}",
+    "totalValue": 0,
+    "phases": [{ "name": "", "value": 0, "justificationMarkdown": "", "deliverables": [] }],
+    "paymentTermsMarkdown": "",
+    "timelineMarkdown": ""
+  },
+  "requiresHumanConfirmation": true
+}`;
+}
+
+function buildDiagramToRequirementsPrompt(project, options = {}) {
+  const { bodyMarkdown, diagramArtifact, stageId = 'architecture' } = options;
+  const ctx = buildContextPack(project, { stageId: 'requirements', maxRequirements: 50 });
+  const existingReqIds = new Set(ensureArray(project.requirements).map((r) => r.id));
+
+  const diagramBlock = diagramArtifact
+    ? {
+      id: diagramArtifact.id,
+      title: diagramArtifact.title,
+      type: diagramArtifact.type,
+      notation: diagramArtifact.notation,
+      sourceText: textOr(diagramArtifact.sourceText, bodyMarkdown).slice(0, 12000),
+      linkedRequirementIds: ensureArray(diagramArtifact.linkedRequirementIds),
+      module: diagramArtifact.module,
+    }
+    : {
+      sourceText: textOr(bodyMarkdown).slice(0, 12000),
+      note: 'Texto colado manualmente — inferir actores, sistemas e fluxos.',
+    };
+
+  const contextPack = {
+    projectSummary: ctx.projectSummary,
+    ideaBrief: ctx.ideaBrief,
+    existingRequirementIds: [...existingReqIds],
+    requirementsSummary: ctx.requirementsSummary,
+    openQuestions: ctx.openQuestions,
+    diagram: diagramBlock,
+    outputSchemaVersion: 'diagram_to_requirements_v2',
+  };
+
+  return `Tu és um agente de engenharia de requisitos YourLab.
+
+Tarefa: analisar o diagrama abaixo e **derivar ou actualizar requisitos** rastreáveis (stakeholder + técnicos funcionais).
+
+Regras:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Não duplique requisitos que já existem — use "updates" para melhorar IDs existentes quando aplicável.
+- Novos requisitos devem ser SMART e verificáveis (need + shall + condition + measure quando possível).
+- moduleTags: Frontend, Backend, Database, API, Integration conforme apropriado.
+- Se o diagrama mostrar lacunas, registe em openQuestions.
+- Mantenha linkedDiagramId no output — a plataforma usa-o para ligar requisitos novos/actualizados ao diagrama.
+- Marque requiresHumanConfirmation: true.
+
+Context pack:
+${JSON.stringify(contextPack, null, 2)}
+
+Schema de output (diagram_to_requirements_v2):
+{
+  "diagramAnalysisMarkdown": "resumo do que o diagrama representa",
+  "stakeholderRequirements": [{
+    "title": "",
+    "need": "",
+    "shall": "",
+    "condition": "",
+    "measure": "",
+    "moduleTags": [],
+    "relatedRequirementIds": []
+  }],
+  "technicalRequirements": [{
+    "title": "",
+    "shall": "",
+    "condition": "",
+    "measure": "",
+    "moduleTags": [],
+    "relatedRequirementIds": []
+  }],
+  "updates": [{
+    "id": "FR-01",
+    "shall": "texto melhorado opcional",
+    "notes": "porque este requisito existente muda"
+  }],
+  "actors": [],
+  "flows": [{ "name": "", "steps": [] }],
+  "linkedDiagramId": "${textOr(diagramArtifact?.id)}",
+  "openQuestions": [],
+  "assumptions": [],
+  "requiresHumanConfirmation": true
+}`;
+}
+
+function buildArchitectureContextPack(project, capabilityId, moduleTag) {
+  const registry = require('./diagram-registry');
+  const ctx = buildContextPack(project, { capabilityId, stageId: 'architecture', maxRequirements: 50 });
+  const mod = textOr(moduleTag, 'Backend');
+  const recommendedTypes = [
+    'c4_context', 'c4_container', 'sequence', 'erd', 'uml_class_domain',
+    'openapi_spec', 'deployment', 'api_flow', 'state_machine',
+  ];
+  return {
+    ...ctx,
+    targetModule: mod,
+    capabilities: ensureArray(project.capabilities).map((c) => ({
+      id: c.id,
+      name: c.name,
+      requirementCount: ensureArray(c.requirementIds).length,
+    })),
+    existingDiagrams: ensureArray(project.diagramArtifacts).map((d) => ({
+      id: d.id,
+      title: d.title,
+      type: d.type,
+      notation: d.notation,
+      status: d.status,
+    })),
+    existingArchitecture: {
+      components: ensureArray(project.artifacts).filter((a) => a.type === 'architecture_object').length,
+      entities: ensureArray(project.artifacts).filter((a) => a.type === 'data_entity').length,
+      apiEndpoints: ensureArray(project.artifacts).filter((a) => a.type === 'api_endpoint').length,
+    },
+    recommendedDiagramTypes: recommendedTypes.map((type) => ({
+      type,
+      label: registry.getDiagramType(type)?.label || type,
+      notation: registry.getRecommendedNotation(type),
+    })),
+    outputSchemaVersion: 'architecture_pack_v2',
+  };
+}
+
+function buildArchitecturePackPrompt(project, capabilityId, moduleTag) {
+  const mod = textOr(moduleTag, 'Backend');
+  const ctx = buildArchitectureContextPack(project, capabilityId, mod);
+  const capName = ctx.capability?.name || 'todas as funcionalidades';
+
+  return `Tu és um agente de arquitectura de sistemas YourLab.
+
+Tarefa: gerar um **pacote de arquitectura completo** para a fase **architecture** — componentes, entidades, APIs e **diagramArtifacts** (diagramas versionáveis com rastreabilidade).
+
+Foco:
+- Funcionalidade: ${capName}
+- Módulo técnico: ${mod}
+
+Regras obrigatórias:
+- Responde APENAS com JSON válido (sem \`\`\` fences).
+- Use SOMENTE IDs de requisitos presentes em requirementsSummary.
+- **OBRIGATÓRIO:** cada diagramArtifacts[].linkedRequirementIds deve incluir pelo menos 1 ID de requisito directamente relacionado ao conteúdo do diagrama.
+- Cada item em diagramArtifacts deve incluir sourceText completo e válido para a notation escolhida.
+- Tipos de diagrama: use valores de recommendedDiagramTypes (ex.: c4_context, c4_container, sequence, erd, openapi_spec).
+- Notações: mermaid, plantuml, openapi, asyncapi, json_schema.
+- APIs/entidades ainda inexistentes: prefixo proposed: nos arrays linked*.
+- Não duplique diagramas já listados em existingDiagrams salvo melhoria explícita.
+- architectureSummary descreve o desenho em linguagem simples para revisão humana.
+
+Context pack (mínimo — não assuma dados fora disto):
 ${JSON.stringify(ctx, null, 2)}
 
-Responde APENAS com JSON:
+Schema de output (architecture_pack_v2):
 {
-  "architectureObjects": [{ "name": "", "type": "", "descriptionMarkdown": "" }],
-  "dataEntities": [{ "name": "", "fields": [] }],
-  "apiEndpoints": [{ "method": "", "path": "", "description": "" }],
-  "modules": [],
-  "risks": [],
-  "artifacts": [{ "type": "architecture", "name": "", "description": "", "stageId": "architecture" }]
-}`;
+  "architectureSummary": "",
+  "architectureMermaid": "",
+  "architectureObjects": [{
+    "name": "",
+    "type": "service|component|gateway|frontend|...",
+    "descriptionMarkdown": "",
+    "relatedRequirementIds": []
+  }],
+  "dataEntities": [{
+    "name": "",
+    "fields": [""],
+    "relatedRequirementIds": []
+  }],
+  "apiEndpoints": [{
+    "method": "GET",
+    "path": "/...",
+    "description": "",
+    "relatedRequirementIds": []
+  }],
+  "modules": [{ "name": "Frontend|Backend|Database", "submodules": [] }],
+  "diagramArtifacts": [{
+    "title": "",
+    "description": "",
+    "type": "c4_container|sequence|erd|openapi_spec|...",
+    "notation": "mermaid|plantuml|openapi|asyncapi|json_schema",
+    "sourceText": "",
+    "module": "${mod}",
+    "linkedRequirementIds": [],
+    "linkedApiOperationIds": [],
+    "linkedEntityIds": [],
+    "assumptions": [],
+    "openQuestions": []
+  }],
+  "risks": [{ "title": "", "description": "" }],
+  "artifacts": [{
+    "type": "architecture",
+    "name": "",
+    "description": "",
+    "stageId": "architecture"
+  }],
+  "openQuestions": [],
+  "assumptions": [],
+  "validationNotes": []
+}
+
+Nota: diagramArtifacts[] é o formato principal. O campo legacy diagrams[] só se necessário: [{ "title": "", "format": "mermaid", "content": "" }].`;
 }
 
 function buildCapabilityRequirementsPrompt(project, capabilityId) {
@@ -923,6 +1842,281 @@ function applyGroupingResult(project, parsed, userId) {
   return { capabilities: caps, requirementClusters: clusters };
 }
 
+// ---------------------------------------------------------------------------
+// Agent Jobs (batching) — divide pedidos grandes em lotes deterministicos por
+// modulo, recolhe parciais e funde-os com um prompt final de reconciliacao.
+// ---------------------------------------------------------------------------
+
+const GROUPING_MODULE_PRIORITY = ['Database', 'Backend', 'Frontend'];
+
+function requirementSummaryForIds(project, ids) {
+  const wanted = new Set(ensureArray(ids).map(String));
+  return ensureArray(project.requirements)
+    .filter((r) => wanted.has(String(r.id)))
+    .map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      shall: textOr(r.shall).slice(0, 200),
+      status: r.status,
+      moduleTags: normalizeModuleTags(r.moduleTags, r.module),
+    }));
+}
+
+// Particiona requisitos por modulo primario (cada requisito num so lote). A
+// ordenacao estavel por id garante determinismo entre execucoes. Requisitos sem
+// qualquer modulo sao agrupados num lote "Geral" marcado como deferido (podem
+// ser definidos mais tarde, sem bloquear a consolidacao).
+function partitionRequirementsByModule(project, options = {}) {
+  const priority = ensureArray(options.modulePriority).length ? options.modulePriority : GROUPING_MODULE_PRIORITY;
+  const maxChunkSize = Math.max(5, numberOr(options.maxChunkSize, 20));
+  const reqs = ensureArray(project.requirements)
+    .map((r) => ({ id: String(r.id), moduleTags: normalizeModuleTags(r.moduleTags, r.module) }))
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  const buckets = new Map();
+  const deferred = [];
+  for (const r of reqs) {
+    const primary = priority.find((m) => r.moduleTags.includes(m));
+    if (!primary) { deferred.push(r); continue; }
+    if (!buckets.has(primary)) buckets.set(primary, []);
+    buckets.get(primary).push(r);
+  }
+
+  const chunks = [];
+  let idx = 0;
+  for (const m of priority) {
+    const list = buckets.get(m);
+    if (!list || !list.length) continue;
+    if (list.length <= maxChunkSize) {
+      chunks.push({ index: idx++, key: m, label: m, requirementIds: list.map((r) => r.id), deferred: false, status: 'pending' });
+    } else {
+      const parts = Math.ceil(list.length / maxChunkSize);
+      for (let p = 0; p < parts; p += 1) {
+        const slice = list.slice(p * maxChunkSize, (p + 1) * maxChunkSize);
+        chunks.push({
+          index: idx++,
+          key: `${m}-${p + 1}`,
+          label: `${m} (${p + 1}/${parts})`,
+          requirementIds: slice.map((r) => r.id),
+          deferred: false,
+          status: 'pending',
+        });
+      }
+    }
+  }
+  if (deferred.length) {
+    chunks.push({
+      index: idx++,
+      key: 'Geral',
+      label: 'Sem módulo (definir mais tarde)',
+      requirementIds: deferred.map((r) => r.id),
+      deferred: true,
+      status: 'pending',
+    });
+  }
+  return chunks;
+}
+
+const GROUPING_OUTPUT_SCHEMA = `{
+  "capabilities": [{ "name": "", "summaryMarkdown": "", "moduleIds": [], "requirementIds": [], "risks": [], "openQuestions": [], "nextAction": "" }],
+  "requirementClusters": [{ "capabilityName": "", "name": "", "summaryMarkdown": "", "requirementIds": [], "clientRequestText": "" }],
+  "moduleMappings": [{ "requirementId": "", "moduleTags": ["Frontend","Backend"] }],
+  "openQuestions": [],
+  "assumptions": []
+}`;
+
+function buildGroupingChunkPrompt(project, chunk) {
+  const summary = requirementSummaryForIds(project, chunk.requirementIds);
+  const scopeNote = chunk.deferred
+    ? 'Estes requisitos NÃO têm módulo atribuído. Para cada um, sugere também o moduleMappings adequado (Frontend/Backend/Database).'
+    : `Estes requisitos pertencem sobretudo ao módulo: ${chunk.label}. Foca-te apenas neste subconjunto.`;
+  return `Tu és um analista de systems engineering. Agrupa APENAS o subconjunto de requisitos abaixo em capabilities e clusters humanos.
+
+Projeto: ${project.name} (${project.clientName})
+Lote: ${chunk.label} (${summary.length} requisitos)
+${scopeNote}
+
+Requisitos deste lote:
+${JSON.stringify(summary, null, 2)}
+
+Responde APENAS com JSON válido:
+${GROUPING_OUTPUT_SCHEMA}`;
+}
+
+// Fusao deterministica (rede de seguranca / fallback manual): junta capabilities
+// pelo nome normalizado e faz a uniao de requirementIds, clusters e mappings.
+function mergeGroupingPartials(partials) {
+  const capByName = new Map();
+  const clusters = [];
+  const moduleMappings = [];
+  const seenMapping = new Set();
+  const openQuestions = [];
+  const assumptions = [];
+  const pushUnique = (arr, value) => { if (value && !arr.includes(value)) arr.push(value); };
+  const mergeInto = (dst, src) => { for (const v of ensureArray(src).map(String)) pushUnique(dst, v); };
+
+  for (const parsed of ensureArray(partials)) {
+    if (!parsed || typeof parsed !== 'object') continue;
+    for (const cap of ensureArray(parsed.capabilities)) {
+      const name = textOr(cap?.name);
+      if (!name) continue;
+      const key = name.toLowerCase().trim();
+      if (!capByName.has(key)) {
+        capByName.set(key, {
+          name,
+          summaryMarkdown: textOr(cap?.summaryMarkdown || cap?.summary),
+          moduleIds: [],
+          requirementIds: [],
+          risks: [],
+          openQuestions: [],
+          nextAction: textOr(cap?.nextAction),
+        });
+      }
+      const target = capByName.get(key);
+      mergeInto(target.moduleIds, cap?.moduleIds);
+      mergeInto(target.requirementIds, cap?.requirementIds);
+      for (const r of ensureArray(cap?.risks)) pushUnique(target.risks, typeof r === 'string' ? r : textOr(r?.text || r?.description));
+      for (const q of ensureArray(cap?.openQuestions)) pushUnique(target.openQuestions, typeof q === 'string' ? q : textOr(q?.text || q?.question));
+      if (!target.summaryMarkdown && cap?.summaryMarkdown) target.summaryMarkdown = textOr(cap.summaryMarkdown);
+    }
+    for (const cl of ensureArray(parsed.requirementClusters)) {
+      clusters.push({
+        capabilityName: textOr(cl?.capabilityName),
+        name: textOr(cl?.name, 'Grupo'),
+        summaryMarkdown: textOr(cl?.summaryMarkdown || cl?.summary),
+        requirementIds: ensureArray(cl?.requirementIds).map(String),
+        clientRequestText: textOr(cl?.clientRequestText),
+      });
+    }
+    for (const m of ensureArray(parsed.moduleMappings)) {
+      const id = textOr(m?.requirementId);
+      if (!id || seenMapping.has(id)) continue;
+      seenMapping.add(id);
+      moduleMappings.push({ requirementId: id, moduleTags: ensureArray(m?.moduleTags).map(String) });
+    }
+    for (const q of ensureArray(parsed.openQuestions)) pushUnique(openQuestions, typeof q === 'string' ? q : textOr(q?.text));
+    for (const a of ensureArray(parsed.assumptions)) pushUnique(assumptions, typeof a === 'string' ? a : textOr(a?.text));
+  }
+
+  return {
+    capabilities: Array.from(capByName.values()),
+    requirementClusters: clusters,
+    moduleMappings,
+    openQuestions,
+    assumptions,
+  };
+}
+
+// A consolidacao so precisa de juizo semantico para fundir capabilities
+// duplicadas entre modulos. Clusters e moduleMappings sao fundidos por codigo.
+// Por isso o prompt envia APENAS nomes + resumos curtos das capabilities e pede
+// grupos de fusao (member names), mantendo o pedido pequeno e dentro dos limites
+// de contexto. Os requirementIds sao reatribuidos por codigo (uniao dos membros)
+// para garantir que nenhum requisito se perde.
+function buildGroupingReconcilePrompt(project, merged) {
+  const compactCaps = ensureArray(merged.capabilities).map((c) => ({
+    name: c.name,
+    summary: textOr(c.summaryMarkdown).slice(0, 140),
+    requirementIds: c.requirementIds,
+  }));
+  return `Tu és um analista de systems engineering. Recebeste capabilities geradas em LOTES separados (por módulo). Algumas representam a mesma funcionalidade e devem ser fundidas.
+
+Projeto: ${project.name} (${project.clientName})
+
+Tarefa: agrupa as capabilities parciais abaixo em grupos finais coerentes. Funde as que representam a mesma funcionalidade entre módulos (ex.: "Autenticação" no Frontend + Backend => um só grupo). NÃO precisas de repetir requisitos: o sistema reatribui os requirementIds automaticamente a partir dos membros de cada grupo.
+
+Regras:
+- Cada nome de capability parcial tem de aparecer em EXATAMENTE um grupo (usa o nome exato).
+- Dá a cada grupo um finalName claro e um finalSummaryMarkdown curto.
+
+Capabilities parciais (nome + resumo + requisitos só para contexto):
+${JSON.stringify(compactCaps, null, 2)}
+
+Responde APENAS com JSON válido:
+{
+  "groups": [
+    { "finalName": "", "finalSummaryMarkdown": "", "members": ["nome parcial 1", "nome parcial 2"] }
+  ]
+}`;
+}
+
+// Transforma os grupos de fusao devolvidos pela IA no schema completo de
+// agrupamento. Os requirementIds sao a uniao dos membros (deterministico) e os
+// clusters/moduleMappings sao fundidos por codigo. Capabilities parciais que a
+// IA nao mencionou sao preservadas (rede de seguranca contra perdas).
+function applyReconcileGroups(merged, parsed) {
+  const uniq = (arr) => {
+    const out = [];
+    for (const v of ensureArray(arr).map(String)) if (v && !out.includes(v)) out.push(v);
+    return out;
+  };
+  const partialCaps = ensureArray(merged.capabilities);
+  const byName = new Map(partialCaps.map((c) => [String(c.name).toLowerCase().trim(), c]));
+  const usedNames = new Set();
+  const nameRemap = new Map();
+  const finalCaps = [];
+
+  for (const g of ensureArray(parsed?.groups)) {
+    const memberKeys = ensureArray(g?.members).map((m) => String(m).toLowerCase().trim());
+    const matched = memberKeys.map((m) => byName.get(m)).filter(Boolean);
+    if (!matched.length) continue;
+    const finalName = textOr(g?.finalName, matched[0].name);
+    finalCaps.push({
+      name: finalName,
+      summaryMarkdown: textOr(g?.finalSummaryMarkdown || g?.summaryMarkdown, matched[0].summaryMarkdown),
+      moduleIds: uniq(matched.flatMap((c) => c.moduleIds)),
+      requirementIds: uniq(matched.flatMap((c) => c.requirementIds)),
+      risks: uniq(matched.flatMap((c) => c.risks)),
+      openQuestions: uniq(matched.flatMap((c) => c.openQuestions)),
+      nextAction: textOr(matched[0].nextAction),
+    });
+    for (const m of memberKeys) {
+      if (byName.has(m)) { usedNames.add(m); nameRemap.set(m, finalName); }
+    }
+  }
+
+  for (const c of partialCaps) {
+    const key = String(c.name).toLowerCase().trim();
+    if (usedNames.has(key)) continue;
+    finalCaps.push({ ...c });
+    nameRemap.set(key, c.name);
+  }
+
+  const seenCluster = new Set();
+  const clusters = [];
+  for (const cl of ensureArray(merged.requirementClusters)) {
+    const origKey = String(cl.capabilityName || '').toLowerCase().trim();
+    const capName = nameRemap.get(origKey) || cl.capabilityName;
+    const dedupeKey = `${capName}::${cl.name}::${ensureArray(cl.requirementIds).slice().sort().join(',')}`;
+    if (seenCluster.has(dedupeKey)) continue;
+    seenCluster.add(dedupeKey);
+    clusters.push({ ...cl, capabilityName: capName });
+  }
+
+  return {
+    capabilities: finalCaps,
+    requirementClusters: clusters,
+    moduleMappings: ensureArray(merged.moduleMappings),
+    openQuestions: ensureArray(merged.openQuestions),
+    assumptions: ensureArray(merged.assumptions),
+  };
+}
+
+// Registry de agentes que suportam divisao em lotes. Outros agentes mantem o
+// fluxo de prompt unico existente.
+const BATCHABLE_AGENTS = {
+  requirement_grouping: {
+    targetOutput: 'grouping_json',
+    partition: (project, options) => partitionRequirementsByModule(project, options),
+    buildChunkPrompt: (project, chunk) => buildGroupingChunkPrompt(project, chunk),
+    mergePartials: (partials) => mergeGroupingPartials(partials),
+    buildReconcilePrompt: (project, merged) => buildGroupingReconcilePrompt(project, merged),
+    finalizeReconcile: (merged, parsed) => applyReconcileGroups(merged, parsed),
+  },
+};
+
 function itemLabel(item, fallback = 'Item') {
   return textOr(item?.title || item?.name || item?.id, fallback);
 }
@@ -974,6 +2168,7 @@ function buildHumanReviewPayload(project, run, parsed, rawOutput) {
   const existingCapNames = new Set(ensureArray(project.capabilities).map((c) => String(c.name || '').toLowerCase()));
   const existingClusterNames = new Set(ensureArray(project.requirementClusters).map((c) => String(c.name || '').toLowerCase()));
   const existingReqIds = new Set(ensureArray(project.requirements).map((r) => r.id));
+  const existingReqTitleKeys = new Set(ensureArray(project.requirements).map((r) => normalizeReqTitleKey(r.title)).filter(Boolean));
   const existingArtifactNames = new Set(ensureArray(project.artifacts).map((a) => String(a.name || '').toLowerCase()));
 
   if (parsed.ideaBriefMarkdown) {
@@ -986,6 +2181,121 @@ function buildHumanReviewPayload(project, run, parsed, rawOutput) {
       after: parsed.ideaBriefMarkdown.slice(0, 4000),
     });
     decisionsCount += 1;
+  }
+
+  if (parsed.vision && typeof parsed.vision === 'object') {
+    const v = parsed.vision;
+    const had = Boolean(textOr(project.vision?.mainIdeaMarkdown));
+    const after = [
+      v.headline ? `**${textOr(v.headline)}**` : '',
+      textOr(v.mainIdeaMarkdown),
+      textOr(v.philosophyMarkdown) ? `\n_Filosofia:_ ${textOr(v.philosophyMarkdown)}` : '',
+      ensureArray(v.consequentIdeas).length ? `\n_Ideias consequentes:_ ${ensureArray(v.consequentIdeas).map((c) => textOr(c?.title || c)).filter(Boolean).join(', ')}` : '',
+    ].filter(Boolean).join('\n\n');
+    pushSection(sections, {
+      kind: had ? 'updated' : 'created',
+      entityType: 'vision',
+      label: had ? 'Visão da ideia (melhoria)' : 'Visão da ideia (criada)',
+      before: had ? textOr(project.vision?.mainIdeaMarkdown).slice(0, 2000) : null,
+      after: after.slice(0, 4000),
+    });
+    decisionsCount += 1;
+  }
+
+  if (parsed.discovery && typeof parsed.discovery === 'object') {
+    const dsc = parsed.discovery;
+    const had = Boolean(textOr(project.discovery?.marketSummaryMarkdown));
+    const sizing = dsc.marketSizing || {};
+    const after = [
+      textOr(dsc.marketSummaryMarkdown),
+      (sizing.tam || sizing.sam || sizing.som) ? `\n_Mercado:_ TAM ${textOr(sizing.tam, '?')} · SAM ${textOr(sizing.sam, '?')} · SOM ${textOr(sizing.som, '?')}` : '',
+      ensureArray(dsc.segments).length ? `\n_Segmentos:_ ${ensureArray(dsc.segments).map((s) => textOr(s?.name || s)).filter(Boolean).join(', ')}` : '',
+      ensureArray(dsc.competitors).length ? `\n_Concorrência:_ ${ensureArray(dsc.competitors).map((c) => textOr(c?.name || c)).filter(Boolean).join(', ')}` : '',
+    ].filter(Boolean).join('\n\n');
+    pushSection(sections, {
+      kind: had ? 'updated' : 'created',
+      entityType: 'discovery',
+      label: had ? 'Descoberta de mercado (melhoria)' : 'Descoberta de mercado (criada)',
+      before: had ? textOr(project.discovery?.marketSummaryMarkdown).slice(0, 2000) : null,
+      after: after.slice(0, 4000),
+    });
+    decisionsCount += 1;
+  }
+
+  if (parsed.roadmap && typeof parsed.roadmap === 'object') {
+    const phases = ensureArray(parsed.roadmap.phases);
+    const had = ensureArray(project.roadmap?.phases).length > 0;
+    const after = [
+      textOr(parsed.roadmap.summaryMarkdown),
+      phases.length ? `\n_${phases.length} fase(s):_\n${phases.map((p, i) => {
+        const dates = [textOr(p?.startDate), textOr(p?.endDate)].filter(Boolean).join(' → ');
+        return `${i + 1}. **${textOr(p?.name, 'Fase')}**${dates ? ` (${dates})` : ''}${p?.designPattern ? ` · ${textOr(p.designPattern)}` : ''}`;
+      }).join('\n')}` : '',
+    ].filter(Boolean).join('\n\n');
+    pushSection(sections, {
+      kind: had ? 'updated' : 'created',
+      entityType: 'roadmap',
+      label: had ? 'Roadmap de implementação (melhoria)' : 'Roadmap de implementação (criado)',
+      before: had ? `${ensureArray(project.roadmap.phases).length} fase(s) existentes` : null,
+      after: after.slice(0, 4000),
+    });
+    decisionsCount += 1;
+  }
+
+  if (parsed.proposal && typeof parsed.proposal === 'object') {
+    const pr = parsed.proposal;
+    const had = Boolean(textOr(project.proposal?.headlineMarkdown));
+    const phases = ensureArray(pr.phases);
+    const cur = textOr(pr.currency, 'EUR');
+    const after = [
+      textOr(pr.headlineMarkdown),
+      textOr(pr.valueJustificationMarkdown),
+      phases.length ? `\n_Valor por fase:_\n${phases.map((p) => `- ${textOr(p?.name, 'Fase')}: ${cur} ${textOr(String(p?.value ?? ''), '?')}`).join('\n')}` : '',
+      pr.totalValue ? `\n**Total:** ${cur} ${textOr(String(pr.totalValue))}` : '',
+    ].filter(Boolean).join('\n\n');
+    pushSection(sections, {
+      kind: had ? 'updated' : 'created',
+      entityType: 'proposal',
+      label: had ? 'Proposta comercial (melhoria)' : 'Proposta comercial (criada)',
+      before: had ? textOr(project.proposal?.headlineMarkdown).slice(0, 2000) : null,
+      after: after.slice(0, 4000),
+    });
+    decisionsCount += 1;
+  }
+
+  if (parsed.implementation && typeof parsed.implementation === 'object') {
+    const impl = parsed.implementation;
+    if (impl.stack && typeof impl.stack === 'object') {
+      const s = impl.stack;
+      const had = Boolean(textOr(project.implementation?.stack?.summaryMarkdown));
+      const after = [
+        textOr(s.summaryMarkdown),
+        s.designPattern ? `\n_Design pattern:_ ${textOr(s.designPattern)}` : '',
+        ensureArray(s.languages).length ? `\n_Linguagens:_ ${ensureArray(s.languages).join(', ')}` : '',
+        ensureArray(s.frameworks).length ? `\n_Frameworks:_ ${ensureArray(s.frameworks).join(', ')}` : '',
+        s.deployment ? `\n_Deploy:_ ${textOr(s.deployment)}` : '',
+      ].filter(Boolean).join('\n\n');
+      pushSection(sections, {
+        kind: had ? 'updated' : 'created',
+        entityType: 'implementation',
+        label: had ? 'Stack técnica (melhoria)' : 'Stack técnica (proposta)',
+        before: had ? textOr(project.implementation?.stack?.summaryMarkdown).slice(0, 2000) : null,
+        after: after.slice(0, 4000),
+      });
+      decisionsCount += 1;
+    }
+    if (Array.isArray(impl.tasks) && impl.tasks.length) {
+      const had = ensureArray(project.implementation?.tasks).length > 0;
+      const after = `${impl.tasks.length} tarefa(s):\n${impl.tasks.map((t, i) => `${i + 1}. ${textOr(t?.title, 'Tarefa')}`).join('\n')}`;
+      pushSection(sections, {
+        kind: had ? 'updated' : 'created',
+        entityType: 'implementation',
+        label: had ? 'Tarefas de implementação (atualizadas)' : 'Tarefas de implementação (criadas)',
+        before: had ? `${ensureArray(project.implementation.tasks).length} tarefa(s) existentes` : null,
+        after: after.slice(0, 4000),
+      });
+      decisionsCount += 1;
+    }
   }
 
   if (parsed.transitionSummaryMarkdown || parsed.nextDecision) {
@@ -1059,6 +2369,27 @@ function buildHumanReviewPayload(project, run, parsed, rawOutput) {
     }
   }
 
+  if (parsed.diagramAnalysisMarkdown) {
+    pushSection(sections, {
+      kind: 'created',
+      entityType: 'diagramAnalysis',
+      label: 'Análise do diagrama',
+      after: textOr(parsed.diagramAnalysisMarkdown).slice(0, 3000),
+    });
+    decisionsCount += 1;
+  }
+
+  const reqUpdates = ensureArray(parsed.updates).filter((u) => u.id && existingReqIds.has(u.id));
+  if (reqUpdates.length) {
+    pushSection(sections, {
+      kind: 'updated',
+      entityType: 'requirement',
+      label: 'Actualizações a requisitos existentes',
+      items: reqUpdates.map((u) => ({ id: u.id, notes: shortText(u.notes || u.shall, 120) })),
+    });
+    decisionsCount += reqUpdates.length;
+  }
+
   const stakeholderReqs = ensureArray(parsed.stakeholderRequirements);
   const technicalReqs = ensureArray(parsed.technicalRequirements);
   if (stakeholderReqs.length || technicalReqs.length) {
@@ -1066,8 +2397,9 @@ function buildHumanReviewPayload(project, run, parsed, rawOutput) {
       ...stakeholderReqs.map((r) => ({ ...r, type: 'stakeholder' })),
       ...technicalReqs.map((r) => ({ ...r, type: 'functional' })),
     ];
-    const created = allReqs.filter((r) => !r.id || !existingReqIds.has(r.id));
-    const updated = allReqs.filter((r) => r.id && existingReqIds.has(r.id));
+    const isExisting = (r) => (r.id && existingReqIds.has(r.id)) || existingReqTitleKeys.has(normalizeReqTitleKey(r.title));
+    const created = allReqs.filter((r) => !isExisting(r));
+    const updated = allReqs.filter((r) => isExisting(r));
     if (created.length) {
       pushSection(sections, {
         kind: 'created',
@@ -1119,6 +2451,44 @@ function buildHumanReviewPayload(project, run, parsed, rawOutput) {
       items: apiEndpoints.map((e) => ({ name: `${textOr(e.method, 'GET')} ${textOr(e.path, '/')}`, description: shortText(e.description, 100) })),
     });
     decisionsCount += apiEndpoints.length;
+  }
+
+  const diagramArtifacts = ensureArray(parsed.diagramArtifacts);
+  if (diagramArtifacts.length) {
+    pushSection(sections, {
+      kind: 'created',
+      entityType: 'diagramArtifact',
+      label: 'Diagramas de arquitectura',
+      items: diagramArtifacts.map((d) => ({
+        name: textOr(d.title, d.type),
+        type: d.type,
+        notation: d.notation,
+        requirements: ensureArray(d.linkedRequirementIds || d.relatedRequirementIds).length,
+      })),
+    });
+    decisionsCount += diagramArtifacts.length;
+  } else if (textOr(parsed.architectureMermaid) || ensureArray(parsed.diagrams).length) {
+    pushSection(sections, {
+      kind: 'created',
+      entityType: 'diagramArtifact',
+      label: 'Diagramas (formato legado)',
+      items: [
+        ...(textOr(parsed.architectureMermaid) ? [{ name: 'architectureMermaid', type: 'mermaid', notation: 'mermaid' }] : []),
+        ...ensureArray(parsed.diagrams).map((d) => ({ name: textOr(d.title, 'Diagrama'), type: d.format || 'mermaid', notation: d.format || 'mermaid' })),
+      ],
+    });
+    decisionsCount += 1;
+  }
+
+  if (textOr(parsed.architectureSummary)) {
+    pushSection(sections, {
+      kind: project.technicalApproach?.architectureSummary ? 'updated' : 'created',
+      entityType: 'architectureSummary',
+      label: 'Resumo de arquitectura',
+      after: textOr(parsed.architectureSummary).slice(0, 2000),
+      before: textOr(project.technicalApproach?.architectureSummary) || null,
+    });
+    decisionsCount += 1;
   }
 
   const artifacts = ensureArray(parsed.artifacts);
@@ -1295,12 +2665,17 @@ function applyArchitecturePack(project, parsed, run, userId) {
   const now = nowIso();
 
   project.technicalApproach = project.technicalApproach || {};
-  project.technicalApproach.architectureSummary = [
-    `${ensureArray(parsed.architectureObjects).length} componentes/serviços`,
-    `${ensureArray(parsed.dataEntities).length} entidades`,
-    `${ensureArray(parsed.apiEndpoints).length} endpoints`,
-    `módulo ${moduleTag}`,
-  ].join(' · ');
+  if (textOr(parsed.architectureSummary)) {
+    project.technicalApproach.architectureSummary = textOr(parsed.architectureSummary);
+  } else {
+    project.technicalApproach.architectureSummary = [
+      `${ensureArray(parsed.architectureObjects).length} componentes/serviços`,
+      `${ensureArray(parsed.dataEntities).length} entidades`,
+      `${ensureArray(parsed.apiEndpoints).length} endpoints`,
+      `${ensureArray(parsed.diagramArtifacts).length || ensureArray(parsed.diagrams).length} diagrama(s)`,
+      `módulo ${moduleTag}`,
+    ].join(' · ');
+  }
 
   const packArtifact = {
     id: `art_${crypto.randomUUID().slice(0, 8)}`,
@@ -1323,76 +2698,54 @@ function applyArchitecturePack(project, parsed, run, userId) {
     createdBy: userId,
   };
 
-  const detailArtifacts = [
-    ...ensureArray(parsed.architectureObjects).map((o) => ({
-      id: `art_${crypto.randomUUID().slice(0, 8)}`,
-      type: 'architecture_object',
-      name: o.name,
-      description: textOr(o.descriptionMarkdown || o.description),
-      bodyMarkdown: textOr(o.descriptionMarkdown || o.description),
-      stageId: 'architecture',
-      status: 'approved',
-      metadata: { componentType: o.type, moduleTag, packId: packArtifact.id },
-      createdAt: now,
-      updatedAt: now,
-      createdBy: userId,
-    })),
-    ...ensureArray(parsed.dataEntities).map((e) => ({
-      id: `art_${crypto.randomUUID().slice(0, 8)}`,
-      type: 'data_entity',
-      name: e.name,
-      description: `Campos: ${ensureArray(e.fields).join(', ')}`,
-      bodyMarkdown: ensureArray(e.fields).map((f) => `- ${f}`).join('\n'),
-      stageId: 'architecture',
-      status: 'approved',
-      metadata: { fields: e.fields, moduleTag, packId: packArtifact.id },
-      createdAt: now,
-      updatedAt: now,
-      createdBy: userId,
-    })),
-    ...ensureArray(parsed.apiEndpoints).map((e) => ({
-      id: `art_${crypto.randomUUID().slice(0, 8)}`,
-      type: 'api_endpoint',
-      name: `${textOr(e.method, 'GET')} ${textOr(e.path, '/')}`,
-      description: textOr(e.description),
-      bodyMarkdown: textOr(e.description),
-      stageId: 'architecture',
-      status: 'approved',
-      metadata: { method: e.method, path: e.path, moduleTag, packId: packArtifact.id },
-      createdAt: now,
-      updatedAt: now,
-      createdBy: userId,
-    })),
-  ];
+  project.artifacts = [packArtifact, ...ensureArray(project.artifacts)];
 
-  project.artifacts = [packArtifact, ...detailArtifacts, ...ensureArray(project.artifacts)];
+  const { createDiagramArtifact, createDiagramArtifactsFromLegacyPack } = require('./diagrams');
+  const traceability = require('./diagram-traceability');
+  const defaultReqIds = traceability.resolveDefaultPackRequirementIds(project, capabilityId, moduleTag);
 
-  const diagramSources = [];
-  const mermaidMain = textOr(parsed.architectureMermaid || parsed.mermaid || project.technicalApproach?.architectureMermaid);
-  if (mermaidMain) diagramSources.push({ title: `Diagrama — ${packLabel}`, content: mermaidMain, format: 'mermaid' });
-  for (const d of ensureArray(parsed.diagrams)) {
-    const content = textOr(d.content || d.source || d.body);
-    if (!content) continue;
-    diagramSources.push({
-      title: textOr(d.title || d.name, `Diagrama — ${packLabel}`),
-      content,
-      format: textOr(d.format || d.type, 'mermaid').toLowerCase(),
-    });
-  }
-  if (diagramSources.length) {
-    const { createPhaseDiagramDocument } = require('./phase-content');
-    project.documents = ensureArray(project.documents);
-    for (const src of diagramSources) {
-      project.documents.push(createPhaseDiagramDocument({
-        title: src.title,
-        contentMarkdown: src.content,
-        diagramFormat: src.format,
-        deliveryStageId: 'architecture',
-        origin: 'ai',
-        userId,
-      }));
+  for (const da of ensureArray(parsed.diagramArtifacts)) {
+    try {
+      const linkedIds = traceability.mergeUniqueIds(
+        da.linkedRequirementIds || da.relatedRequirementIds,
+        defaultReqIds,
+      );
+      createDiagramArtifact(project, {
+        title: textOr(da.title, da.name, 'Diagrama'),
+        description: textOr(da.description, da.summary),
+        type: da.type,
+        notation: da.notation,
+        sourceText: da.sourceText,
+        module: textOr(da.module, moduleTag),
+        linkedRequirementIds: linkedIds,
+        linkedApiOperationIds: da.linkedApiOperationIds,
+        linkedEntityIds: da.linkedEntityIds,
+        linkedRoadmapPhaseIds: da.linkedRoadmapPhaseIds,
+        linkedTestIds: da.linkedTestIds,
+        status: 'needs_review',
+        generatedBy: 'ai-agent',
+        metadata: {
+          assumptions: ensureArray(da.assumptions),
+          openQuestions: ensureArray(da.openQuestions),
+          packId: packArtifact.id,
+        },
+        capabilityId,
+      }, userId);
+    } catch (_err) {
+      /* diagrama inválido no pack — não bloqueia o resto */
     }
   }
+
+  const mermaidMain = textOr(parsed.architectureMermaid || parsed.mermaid);
+  if (mermaidMain) {
+    project.technicalApproach.architectureMermaid = mermaidMain;
+  }
+
+  createDiagramArtifactsFromLegacyPack(project, parsed, userId, moduleTag, {
+    skipIfDiagramArtifacts: ensureArray(parsed.diagramArtifacts).length > 0,
+  });
+
+  traceability.syncRequirementDiagramIds(project);
 
   for (const risk of ensureArray(parsed.risks)) {
     const entry = typeof risk === 'string'
@@ -1408,18 +2761,82 @@ function applyArchitecturePack(project, parsed, run, userId) {
   }
 }
 
+function normalizeReqTitleKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function nextRequirementId(project, type) {
+  const prefix = type === 'stakeholder' ? 'SR' : type === 'functional' ? 'FR' : 'REQ';
+  let max = 0;
+  ensureArray(project.requirements).forEach((r) => {
+    const m = String(r.id || '').match(new RegExp(`^${prefix}-(\\d+)$`, 'i'));
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return `${prefix}-${max + 1}`;
+}
+
+/**
+ * Merge AI-produced requirements into the project WITHOUT multiplying them.
+ * If an incoming requirement matches an existing one by id or by normalized
+ * title, it updates that record (filling empty fields) instead of appending.
+ * New requirements get a sequential id when the agent omitted one.
+ */
+function mergeRequirementsDedup(project, incoming, normalizeRequirementRecord) {
+  const existing = ensureArray(project.requirements).map((r) => normalizeRequirementRecord(r));
+  const byId = new Map(existing.map((r) => [String(r.id), r]));
+  const byTitle = new Map(existing.filter((r) => r.title).map((r) => [normalizeReqTitleKey(r.title), r]));
+  let added = 0;
+  let updated = 0;
+
+  incoming.forEach((raw) => {
+    const candidate = normalizeRequirementRecord(raw);
+    const titleKey = normalizeReqTitleKey(candidate.title);
+    const match = (candidate.id && byId.get(String(candidate.id))) || (titleKey && byTitle.get(titleKey)) || null;
+
+    if (match) {
+      Object.keys(candidate).forEach((k) => {
+        if (['id', 'createdAt'].includes(k)) return;
+        const val = candidate[k];
+        const isEmpty = val == null || val === '' || (Array.isArray(val) && val.length === 0);
+        if (!isEmpty) match[k] = val;
+      });
+      match.updatedAt = nowIso();
+      updated += 1;
+      return;
+    }
+
+    if (!candidate.id) candidate.id = nextRequirementId({ requirements: existing }, candidate.type);
+    candidate.createdAt = candidate.createdAt || nowIso();
+    candidate.updatedAt = nowIso();
+    existing.push(candidate);
+    byId.set(String(candidate.id), candidate);
+    if (titleKey) byTitle.set(titleKey, candidate);
+    added += 1;
+  });
+
+  project.requirements = existing;
+  return { added, updated };
+}
+
 function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
   const normalizeRequirementRecord = deps.normalizeRequirementRecord || ((r) => r);
+  const traceability = require('./diagram-traceability');
   if (!parsed || !run) return;
 
   const isArchitecturePack = run.agentType === 'requirements_to_architecture'
-    || (parsed.architectureObjects || parsed.dataEntities || parsed.apiEndpoints);
+    || (parsed.architectureObjects || parsed.dataEntities || parsed.apiEndpoints || parsed.diagramArtifacts);
 
   if (isArchitecturePack) {
     applyArchitecturePack(project, parsed, run, userId);
     project.traceLinks = mergeTraceLinks(project.traceLinks, autoDeriveTraceLinks(project));
     return;
   }
+
+  const beforeReqIds = new Set(ensureArray(project.requirements).map((r) => r.id));
 
   if (run.agentType === 'requirement_grouping' || parsed.capabilities || parsed.requirementClusters) {
     const applied = applyGroupingResult(project, parsed, userId);
@@ -1429,6 +2846,57 @@ function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
 
   if (parsed.ideaBriefMarkdown) project.ideaBriefMarkdown = parsed.ideaBriefMarkdown;
 
+  if (parsed.vision && typeof parsed.vision === 'object') {
+    project.vision = normalizeVision({ ...parsed.vision, updatedAt: nowIso() }, project);
+    if (!textOr(project.ideaBriefMarkdown) && project.vision.mainIdeaMarkdown) {
+      project.ideaBriefMarkdown = project.vision.mainIdeaMarkdown;
+    }
+  }
+
+  if (parsed.discovery && typeof parsed.discovery === 'object') {
+    project.discovery = normalizeDiscovery({ ...parsed.discovery, updatedAt: nowIso() });
+  }
+
+  if (parsed.roadmap && typeof parsed.roadmap === 'object') {
+    project.roadmap = normalizeRoadmap({ ...parsed.roadmap, updatedAt: nowIso() }, project);
+  }
+
+  if (parsed.proposal && typeof parsed.proposal === 'object') {
+    project.proposal = normalizeProposal({ ...parsed.proposal, updatedAt: nowIso() });
+  }
+
+  if (parsed.implementation && typeof parsed.implementation === 'object') {
+    const current = normalizeImplementation(project.implementation, project);
+    const incoming = parsed.implementation;
+    const merged = { ...current };
+    if (incoming.stack && typeof incoming.stack === 'object') {
+      // Preserve user confirmation only if the stack content is unchanged-ish;
+      // a regenerated stack should be re-confirmed by a human.
+      merged.stack = { ...incoming.stack, confirmed: false, confirmedAt: '' };
+    }
+    if (Array.isArray(incoming.tasks)) {
+      // Re-running task generation replaces the task list but keeps the human's
+      // execution state (chosen model, status, results) for tasks with the same title+phase.
+      const prevByKey = new Map(current.tasks.map((t) => [`${t.roadmapPhaseId}::${t.title.toLowerCase()}`, t]));
+      merged.tasks = incoming.tasks.map((t) => {
+        const key = `${textOr(t?.roadmapPhaseId || t?.phaseId)}::${textOr(t?.title || t?.name).toLowerCase()}`;
+        const prev = prevByKey.get(key);
+        if (!prev) return t;
+        return {
+          ...t,
+          llmSize: prev.llmSize,
+          status: prev.status,
+          resultMarkdown: prev.resultMarkdown,
+          outputLinks: prev.outputLinks,
+          executedModel: prev.executedModel,
+          executedAt: prev.executedAt,
+        };
+      });
+    }
+    merged.updatedAt = nowIso();
+    project.implementation = normalizeImplementation(merged, project);
+  }
+
   if (parsed.transitionSummaryMarkdown) {
     project.nextDecision = textOr(parsed.nextDecision, parsed.transitionSummaryMarkdown.slice(0, 200));
   } else if (parsed.nextDecision) {
@@ -1436,14 +2904,26 @@ function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
   }
 
   if (parsed.stakeholderRequirements || parsed.technicalRequirements) {
-    const newReqs = [];
-    for (const sr of ensureArray(parsed.stakeholderRequirements)) {
-      newReqs.push(normalizeRequirementRecord({ ...sr, type: 'stakeholder' }));
-    }
-    for (const tr of ensureArray(parsed.technicalRequirements)) {
-      newReqs.push(normalizeRequirementRecord({ ...tr, type: 'functional' }));
-    }
-    project.requirements = [...ensureArray(project.requirements), ...newReqs];
+    const incoming = [
+      ...ensureArray(parsed.stakeholderRequirements).map((sr) => ({ ...sr, type: 'stakeholder', deliveryStageId: 'requirements' })),
+      ...ensureArray(parsed.technicalRequirements).map((tr) => ({ ...tr, type: 'functional', deliveryStageId: 'requirements' })),
+    ];
+    // Dedupe so re-running the agent updates existing requirements instead of
+    // appending duplicates (which previously caused runaway growth).
+    mergeRequirementsDedup(project, incoming, normalizeRequirementRecord);
+  }
+
+  if (ensureArray(parsed.updates).length) {
+    project.requirements = ensureArray(project.requirements).map((req) => {
+      const patch = parsed.updates.find((u) => u.id === req.id);
+      if (!patch) return req;
+      return normalizeRequirementRecord({
+        ...req,
+        ...patch,
+        id: req.id,
+        updatedAt: nowIso(),
+      });
+    });
   }
 
   if (parsed.artifacts) {
@@ -1452,6 +2932,13 @@ function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
       id: a.id || `art_${crypto.randomUUID().slice(0, 8)}`,
       bodyMarkdown: a.bodyMarkdown || a.descriptionMarkdown || a.description,
     }))];
+  }
+
+  if (run.agentType === 'diagram_to_requirements') {
+    const newRequirementIds = ensureArray(project.requirements)
+      .filter((r) => !beforeReqIds.has(r.id))
+      .map((r) => r.id);
+    traceability.applyDiagramToRequirementsResult(project, run, parsed, { newRequirementIds });
   }
 
   project.traceLinks = mergeTraceLinks(project.traceLinks, autoDeriveTraceLinks(project));
@@ -1946,12 +3433,38 @@ function registerDeliveryOsRoutes(app, deps) {
       } else if (agentType === 'reverse_idea') {
         fullPrompt = buildReverseIdeaPrompt(project);
         targetOutput = 'idea_brief';
+      } else if (agentType === 'discovery_research') {
+        fullPrompt = buildDiscoveryPrompt(project);
+        targetOutput = 'discovery_v1';
+      } else if (agentType === 'roadmap_plan') {
+        fullPrompt = buildRoadmapPrompt(project);
+        targetOutput = 'roadmap_v1';
+      } else if (agentType === 'implementation_stack') {
+        fullPrompt = buildImplementationStackPrompt(project);
+        targetOutput = 'implementation_stack_v1';
+      } else if (agentType === 'implementation_tasks') {
+        fullPrompt = buildImplementationTasksPrompt(project);
+        targetOutput = 'implementation_tasks_v1';
+      } else if (agentType === 'commercial_proposal') {
+        fullPrompt = buildCommercialProposalPrompt(project, { instructions: body.instructions });
+        contextPack = { hasInstructions: Boolean(textOr(body.instructions)) };
+        targetOutput = 'commercial_proposal_v1';
       } else if (agentType === 'diagram_to_requirements') {
-        fullPrompt = buildDiagramToRequirementsPrompt(project, body.bodyMarkdown);
-        targetOutput = 'requirements_from_diagram';
+        let diagramArtifact = null;
+        if (body.diagramArtifactId) {
+          diagramArtifact = ensureArray(project.diagramArtifacts).find((d) => d.id === body.diagramArtifactId) || null;
+        }
+        fullPrompt = buildDiagramToRequirementsPrompt(project, {
+          bodyMarkdown: body.bodyMarkdown,
+          diagramArtifact,
+          stageId: body.stageId,
+        });
+        contextPack = { diagramArtifactId: body.diagramArtifactId || null, hasPaste: Boolean(body.bodyMarkdown) };
+        targetOutput = 'diagram_to_requirements_v2';
       } else if (agentType === 'requirements_to_architecture') {
+        contextPack = buildArchitectureContextPack(project, body.capabilityId, body.moduleTag);
         fullPrompt = buildArchitecturePackPrompt(project, body.capabilityId, body.moduleTag);
-        targetOutput = 'architecture_pack';
+        targetOutput = 'architecture_pack_v2';
       } else if (agentType === 'capability_requirements') {
         fullPrompt = buildCapabilityRequirementsPrompt(project, body.capabilityId);
         targetOutput = 'capability_requirements';
@@ -2098,6 +3611,224 @@ function registerDeliveryOsRoutes(app, deps) {
     }
   });
 
+  // Cria um job em lotes para um agente batchavel (ex.: requirement_grouping).
+  app.post('/api/projects/projects/:projectId/agent-jobs', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const body = req.body || {};
+      const agentType = textOr(body.agentType, 'requirement_grouping');
+      const spec = BATCHABLE_AGENTS[agentType];
+      if (!spec) return res.status(400).json({ message: `O agente ${agentType} nao suporta divisao em lotes.` });
+      const project = req.loadedProject;
+      const chunkDefs = spec.partition(project, { maxChunkSize: numberOr(body.maxChunkSize, 20) });
+      if (!chunkDefs.length) return res.status(400).json({ message: 'Sem requisitos suficientes para dividir em lotes.' });
+      const chunks = chunkDefs.map((c, i) => normalizeAgentJobChunk({ ...c, prompt: spec.buildChunkPrompt(project, c) }, i));
+      const job = normalizeAgentJob({
+        agentType,
+        strategy: textOr(body.strategy, 'module'),
+        stageId: textOr(body.stageId),
+        status: 'collecting',
+        chunks,
+        createdBy: req.auth.user.id,
+      });
+
+      await updateStore(async (store) => {
+        const p = store.projects.find((e) => e.id === projectId);
+        if (!p) throw new Error('Projeto nao encontrado.');
+        p.agentJobs = ensureArray(p.agentJobs);
+        p.agentJobs.unshift(job);
+        p.agentJobs = p.agentJobs.slice(0, 20);
+        p.updatedAt = nowIso();
+      });
+
+      return res.json({ agentJob: job });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Submete o output parcial de um lote. Quando todos os lotes obrigatorios
+  // (nao-deferidos) estao concluidos, constroi o prompt de reconciliacao.
+  app.post('/api/projects/projects/:projectId/agent-jobs/:jobId/chunks/:index', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+    try {
+      const { projectId, jobId } = req.params;
+      const index = Number(req.params.index);
+      const rawInput = String(req.body?.rawOutput || (req.body?.parsedOutput ? JSON.stringify(req.body.parsedOutput) : ''));
+      const parsedFromRaw = parseAgentJsonOutput(rawInput);
+      const parsed = req.body?.parsedOutput || parsedFromRaw.parsed;
+      const rawOutput = parsedFromRaw.rawOutput || rawInput;
+      if (rawOutput && !parsed) {
+        return res.status(400).json({ message: 'JSON inválido. Verifique aspas rectas (" ") e vírgulas.' });
+      }
+
+      let resultJob = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((e) => e.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const job = ensureArray(project.agentJobs).find((j) => j.id === jobId);
+        if (!job) throw new Error('Job nao encontrado.');
+        if (['review_pending', 'applied'].includes(job.status)) throw new Error('Este job ja foi consolidado.');
+        const spec = BATCHABLE_AGENTS[job.agentType];
+        if (!spec) throw new Error('Agente nao suporta lotes.');
+        const chunk = ensureArray(job.chunks).find((c) => Number(c.index) === index);
+        if (!chunk) throw new Error('Lote nao encontrado.');
+
+        chunk.rawOutput = rawOutput;
+        chunk.parsedOutput = parsed;
+        chunk.status = 'done';
+
+        const required = ensureArray(job.chunks).filter((c) => !c.deferred);
+        const allRequiredDone = required.length > 0 && required.every((c) => c.status === 'done');
+        if (allRequiredDone) {
+          const partials = ensureArray(job.chunks)
+            .filter((c) => c.status === 'done' && c.parsedOutput)
+            .map((c) => c.parsedOutput);
+          const merged = spec.mergePartials(partials);
+          job.reconcilePrompt = spec.buildReconcilePrompt(project, merged);
+          job.status = 'reconciling';
+        }
+        job.updatedAt = nowIso();
+        project.updatedAt = nowIso();
+        resultJob = job;
+      });
+
+      return res.json({ agentJob: normalizeAgentJob(resultJob) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Recalcula o prompt de consolidacao a partir dos lotes concluidos (util para
+  // jobs antigos pegarem a versao mais recente/compacta do prompt).
+  app.post('/api/projects/projects/:projectId/agent-jobs/:jobId/refresh-reconcile', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+    try {
+      const { projectId, jobId } = req.params;
+      let resultJob = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((e) => e.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const job = ensureArray(project.agentJobs).find((j) => j.id === jobId);
+        if (!job) throw new Error('Job nao encontrado.');
+        if (['review_pending', 'applied'].includes(job.status)) throw new Error('Este job ja foi consolidado.');
+        const spec = BATCHABLE_AGENTS[job.agentType];
+        if (!spec) throw new Error('Agente nao suporta lotes.');
+        const partials = ensureArray(job.chunks)
+          .filter((c) => c.status === 'done' && c.parsedOutput)
+          .map((c) => c.parsedOutput);
+        if (!partials.length) throw new Error('Sem lotes concluídos para consolidar.');
+        const merged = spec.mergePartials(partials);
+        job.reconcilePrompt = spec.buildReconcilePrompt(project, merged);
+        const required = ensureArray(job.chunks).filter((c) => !c.deferred);
+        if (required.length > 0 && required.every((c) => c.status === 'done')) job.status = 'reconciling';
+        job.updatedAt = nowIso();
+        project.updatedAt = nowIso();
+        resultJob = job;
+      });
+      return res.json({ agentJob: normalizeAgentJob(resultJob) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Finaliza o job: cria um promptRun + humanReview com o output consolidado,
+  // reutilizando o fluxo de revisao/aplicacao existente. Se nao for colado
+  // output, usa a fusao deterministica dos parciais como fallback.
+  app.post('/api/projects/projects/:projectId/agent-jobs/:jobId/reconcile', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+    try {
+      const { projectId, jobId } = req.params;
+      const rawInput = String(req.body?.rawOutput || (req.body?.parsedOutput ? JSON.stringify(req.body.parsedOutput) : ''));
+      const parsedFromRaw = parseAgentJsonOutput(rawInput);
+      let parsed = req.body?.parsedOutput || parsedFromRaw.parsed;
+      let rawOutput = parsedFromRaw.rawOutput || rawInput;
+      const useMergeFallback = !rawOutput.trim();
+
+      let resultRun = null;
+      let resultReview = null;
+      let resultJob = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((e) => e.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const job = ensureArray(project.agentJobs).find((j) => j.id === jobId);
+        if (!job) throw new Error('Job nao encontrado.');
+        const spec = BATCHABLE_AGENTS[job.agentType];
+        if (!spec) throw new Error('Agente nao suporta lotes.');
+
+        const partials = ensureArray(job.chunks)
+          .filter((c) => c.status === 'done' && c.parsedOutput)
+          .map((c) => c.parsedOutput);
+        const merged = spec.mergePartials(partials);
+
+        if (useMergeFallback) {
+          // Sem output da IA: usa a fusao deterministica dos lotes.
+          parsed = merged;
+          rawOutput = JSON.stringify(parsed, null, 2);
+        } else if (parsed && Array.isArray(parsed.groups) && spec.finalizeReconcile) {
+          // Output normal: grupos de fusao de capabilities -> schema completo.
+          parsed = spec.finalizeReconcile(merged, parsed);
+        } else if (parsed && (parsed.capabilities || parsed.requirementClusters)) {
+          // Compatibilidade: aceita schema de agrupamento completo colado.
+          // (mantem-se tal como veio)
+        } else {
+          throw new Error('Output de consolidação inválido: esperado { "groups": [...] }.');
+        }
+        if (!parsed) throw new Error('JSON inválido ou sem lotes concluídos para consolidar.');
+
+        const run = normalizePromptRun({
+          agentType: job.agentType,
+          stageId: job.stageId,
+          targetOutput: spec.targetOutput,
+          fullPrompt: job.reconcilePrompt,
+          rawOutput,
+          parsedOutput: parsed,
+          status: 'pending_review',
+          createdBy: req.auth.user.id,
+          summaryMarkdown: `Output final consolidado de ${job.agentType} (job em lotes${useMergeFallback ? ', fusao automatica' : ''}).`,
+        });
+        const payload = buildHumanReviewPayload(project, run, parsed, rawOutput);
+        const review = normalizeHumanReview({
+          type: 'agent_output',
+          title: `Rever consolidação: ${job.agentType}`,
+          summaryMarkdown: payload.summaryMarkdown,
+          bodyMarkdown: payload.bodyMarkdown,
+          suggestedChanges: payload.suggestedChanges,
+          decisionsCount: payload.decisionsCount,
+          promptRunId: run.id,
+          sourceType: 'prompt_run',
+          sourceId: run.id,
+          status: 'pending',
+        });
+
+        project.promptRuns = ensureArray(project.promptRuns);
+        project.promptRuns.unshift(run);
+        project.promptRuns = project.promptRuns.slice(0, 100);
+        project.humanReviews = ensureArray(project.humanReviews);
+        project.humanReviews.unshift(review);
+
+        job.reconcileRaw = rawOutput;
+        job.reconcileParsed = parsed;
+        job.promptRunId = run.id;
+        job.status = 'review_pending';
+        job.updatedAt = nowIso();
+        project.updatedAt = nowIso();
+
+        resultRun = run;
+        resultReview = review;
+        resultJob = job;
+      });
+
+      const store = await readStore();
+      const updated = store.projects.find((e) => e.id === projectId);
+      return res.json({
+        project: sanitizeProject(updated, req.auth.user),
+        agentJob: normalizeAgentJob(resultJob),
+        promptRun: resultRun,
+        review: resultReview,
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
   app.get('/api/projects/projects/:projectId/onion/:nodeType/:nodeId', authMiddleware, loadProjectForUser, async (req, res) => {
     const project = req.loadedProject;
     const { nodeType, nodeId } = req.params;
@@ -2122,6 +3853,8 @@ function registerDeliveryOsRoutes(app, deps) {
     const md = exportImpactReportMarkdown(report, req.loadedProject);
     return res.json({ markdown: md, html: renderMarkdownToHtml(md) });
   });
+
+  require('./diagrams').registerDiagramRoutes(app, deps);
 }
 
 module.exports = {
@@ -2142,7 +3875,15 @@ module.exports = {
   MEETING_IMPACT_PROPAGATION,
   buildMinutePropagationPlan,
   buildMinutePropagationPrompt,
+  buildMeetingClassificationPrompt,
+  applyMeetingClassificationParsed,
+  meetingImpactedStageIds,
   normalizeProjectV3Fields,
+  normalizeVision,
+  normalizeDiscovery,
+  normalizeRoadmap,
+  normalizeImplementation,
+  normalizeProposal,
   enrichRequirementWithModuleTags,
   autoDeriveTraceLinks,
   mergeTraceLinks,
@@ -2151,6 +3892,7 @@ module.exports = {
   buildReverseIdeaPrompt,
   buildDiagramToRequirementsPrompt,
   buildArchitecturePackPrompt,
+  buildArchitectureContextPack,
   buildCapabilityRequirementsPrompt,
   buildStageTransitionPrompt,
   applyGroupingResult,
@@ -2163,6 +3905,11 @@ module.exports = {
   normalizeCapability,
   normalizeCluster,
   normalizePromptRun,
+  normalizeAgentJob,
+  partitionRequirementsByModule,
+  mergeGroupingPartials,
+  applyReconcileGroups,
+  BATCHABLE_AGENTS,
   normalizeHumanReview,
   normalizeVersionSnapshot,
   registerDeliveryOsRoutes,
