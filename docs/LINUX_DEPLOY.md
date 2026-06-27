@@ -375,8 +375,19 @@ When you push new changes to GitHub, deploy them on the server with:
 
 ```bash
 cd /opt/yourlab/website
-git pull origin main
-cd server && npm install --production  # only needed if package.json changed
+./scripts/deploy-pull.sh
+```
+
+This script **fetches and hard-resets** to `origin/master`, then restores versioned project data (`projects/data/store.json`, `projects/uploads/`, `generated_proposals/`) from the repository. Any edits made directly on the server to those files are overwritten — the git repository is the source of truth for requirements and project documents.
+
+Manual alternative (same effect):
+
+```bash
+cd /opt/yourlab/website
+git fetch origin master
+git reset --hard origin/master
+git checkout HEAD -- projects/data/store.json projects/uploads generated_proposals
+cd server && npm install --production
 sudo systemctl restart yourlab
 ```
 
@@ -385,19 +396,18 @@ Or create a deploy script at `/opt/yourlab/deploy.sh`:
 ```bash
 #!/bin/bash
 set -e
-cd /opt/yourlab/website
-git pull origin main
-cd server
-npm install --production
-sudo systemctl restart yourlab
+/opt/yourlab/website/scripts/deploy-pull.sh
 echo "Deployed successfully."
 ```
 
 ```bash
 chmod +x /opt/yourlab/deploy.sh
+chmod +x /opt/yourlab/website/scripts/deploy-pull.sh
 ```
 
-Then deployments are just: `./opt/yourlab/deploy.sh`
+Then deployments are just: `/opt/yourlab/deploy.sh`
+
+**Important:** Project data is committed in git. After working locally, commit and push `projects/data/store.json` (and any new uploads or generated proposals) before running `deploy-pull.sh` on the server. A plain `git pull` may fail or merge if the server modified `store.json` at runtime — use `deploy-pull.sh` instead.
 
 ---
 

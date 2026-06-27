@@ -42,8 +42,18 @@ Definidas por variáveis de ambiente (opcional):
 - `public/`: frontend da plataforma
 - `api.js`: rotas e regras de negócio
 - `lib/`: utilitários (markdown, etc.)
-- `data/store.json`: armazenamento local (gerado automaticamente)
-- `uploads/`: documentos enviados
+- `data/store.json`: base de dados local (versionada em git — fonte de verdade)
+- `uploads/`: documentos enviados (versionados em git)
+- `../generated_proposals/`: inputs de propostas geradas (versionados quando aplicável)
+
+## Sincronizar dados com produção
+
+Os requisitos e documentos do projecto vivem em `data/store.json`, `uploads/` e `generated_proposals/`. Depois de alterar localmente:
+
+1. Commit e push desses ficheiros para `master`.
+2. No servidor: `./scripts/deploy-pull.sh` (hard reset + restaura dados do repositório).
+
+Não use `git pull` simples no servidor se `store.json` foi alterado em runtime — o script de deploy sobrescreve sempre com a versão do git.
 
 ## Observações
 
