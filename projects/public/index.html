@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=23" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=46" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -37,7 +37,7 @@
     <section id="workspace" class="workspace hidden">
 
       <header class="topbar">
-        <div class="brand">
+        <div class="topbar-brand">
           <img
             id="workspaceLogo"
             src="/Logos%20YourLab/10.png"
@@ -45,20 +45,34 @@
             data-logo-light="/Logos%20YourLab/8.png"
             alt="YourLab"
           />
-          <div>
-            <span class="topbar-title">Projects Platform</span>
-            <span class="topbar-sub">YourLab · Gestão de requisitos e geração técnica</span>
+          <div class="topbar-brand-text">
+            <span class="topbar-brand-name">YourLab</span>
+            <span class="topbar-brand-tag">Projects Platform</span>
           </div>
         </div>
-        <div class="topbar-actions">
-          <button class="btn ghost nav-menu-btn hidden" id="navRailOpenBtn" title="Abrir menu">Menu</button>
-          <button class="btn ghost btn-theme-toggle" id="themeToggleBtn" title="Alternar tema" aria-label="Alternar tema">
+        <div class="topbar-center">
+          <h1 class="topbar-project-name hidden" id="currentProjectTitle"></h1>
+          <button type="button" class="topbar-project-switch hidden" id="currentProjectSwitchBtn" title="Trocar projecto" aria-label="Trocar projecto">↔</button>
+        </div>
+        <div class="topbar-actions topbar-actions-icons">
+          <button type="button" class="topbar-icon-btn topbar-icon-theme" id="themeToggleBtn" title="Alternar tema claro/escuro" aria-label="Alternar tema">
             <svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button class="btn ghost" id="openSettingsBtn" title="Definições da plataforma e do projecto">Definições</button>
-          <div class="current-project-chip hidden" id="currentProjectChip"></div>
-          <div class="user-chip" id="userChip"></div>
-          <button class="btn ghost" id="logoutBtn">Sair</button>
+          <button type="button" class="topbar-icon-btn topbar-icon-settings" id="openSettingsBtn" title="Definições — utilizadores e projecto" aria-label="Definições">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l.8-4h-7l.8 4a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.8 4h7l.8-4a8 8 0 0 0 1.7-1l2.4 1 2-3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" class="topbar-icon-btn topbar-icon-help" id="platformHelpBtn" title="Ajuda da plataforma" aria-label="Ajuda da plataforma">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.3 1.8c0 1.8-2.8 2-2.8 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor"/></svg>
+          </button>
+          <div class="topbar-user-menu">
+            <button type="button" class="topbar-icon-btn topbar-icon-user" id="userMenuBtn" title="Sessão do utilizador" aria-label="Sessão do utilizador" aria-expanded="false" aria-haspopup="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <div class="topbar-user-popover hidden" id="userMenuPopover" role="menu">
+              <div class="topbar-user-info" id="userMenuInfo"></div>
+              <button type="button" class="btn ghost tiny topbar-logout-btn" id="logoutBtn" role="menuitem">Terminar sessão</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -69,14 +83,9 @@
             <button type="button" class="nav-rail-icon-btn" id="navRailExpandBtn" title="Expandir menu" aria-label="Expandir menu" aria-expanded="false">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
-            <button type="button" class="nav-rail-icon-btn" id="navRailDockBtn" title="Fixar barra" aria-label="Fixar barra lateral" aria-pressed="true">
-              <svg class="nav-icon-docked" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="12" y="4" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-              <svg class="nav-icon-overlay hidden" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5" fill="currentColor" opacity="0.25" stroke="currentColor" stroke-width="1.8"/><rect x="12" y="4" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-            </button>
           </div>
           <div id="navRailItems" class="nav-rail-items"></div>
         </nav>
-        <div id="navRailBackdrop" class="nav-rail-backdrop hidden" aria-hidden="true"></div>
 
         <!-- CONTENT -->
         <section class="content" id="contentArea">
@@ -95,11 +104,11 @@
               <button class="tab-btn" data-tab="projetos"><span>Projetos</span></button>
               <button class="tab-btn active" data-tab="projeto"><span>Projeto</span></button>
               <button class="tab-btn" data-tab="documentos"><span>Documentos</span></button>
-              <button class="tab-btn" data-tab="atas"><span>Atas</span></button>
               <button class="tab-btn" data-tab="perguntas"><span>Perguntas</span></button>
               <button class="tab-btn" data-tab="requisitos"><span>Requisitos</span></button>
               <button class="tab-btn" data-tab="fases"><span>Fases</span></button>
               <button class="tab-btn" data-tab="gerar"><span>Gerar</span></button>
+              <button class="tab-btn" data-tab="atas"><span>Atas</span></button>
               <button class="tab-btn" data-tab="deliveryos"><span>Entrega</span></button>
               <button class="tab-btn" data-tab="atividade"><span>Atividade</span></button>
               <button class="tab-btn" data-tab="definicoes"><span>Definições</span></button>
@@ -114,7 +123,6 @@
                   <h3 class="panel-heading"><span class="section-badge badge-blue">PROJ</span> Os seus projectos</h3>
                   <button class="btn tiny" id="refreshProjectsBtn" title="Atualizar lista">↺</button>
                 </div>
-                <p class="muted-text">Seleccione um projecto para trabalhar na linha de entrega, requisitos e documentação.</p>
                 <div id="projectsPageGrid" class="projects-page-grid mt-12"></div>
                 <div id="projectList" class="hidden" aria-hidden="true"></div>
               </section>
@@ -143,12 +151,13 @@
               </section>
               <section class="panel section-panel">
                 <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-gray">INFO</span> Resumo do Projeto</h3>
+                  <h3 class="panel-heading"><span class="section-badge badge-gray">INFO</span> Configuração do Projeto</h3>
                   <button class="btn tiny primary" id="saveProjectBtn">Guardar</button>
                 </div>
-                <div class="form-grid" id="projectForm">
-                  <label>Nome<input id="projectName" /></label>
-                  <label>Cliente<input id="projectClient" /></label>
+                <div class="form-grid config-form" id="projectForm">
+                  <p class="form-section-label full">Identificação</p>
+                  <label>Nome do projeto<input id="projectName" placeholder="Ex: City Pass" /></label>
+                  <label>Cliente<input id="projectClient" placeholder="Ex: Impakta" /></label>
                   <label>Status
                     <select id="projectStatus">
                       <option value="active">Ativo</option>
@@ -156,24 +165,42 @@
                       <option value="done">Concluído</option>
                     </select>
                   </label>
-                  <label>Proposal Code<input id="projectCode" /></label>
-                  <label data-sensitive-money>Rate/h<input id="projectRate" type="number" /></label>
-                  <label data-sensitive-money>Moeda<input id="projectCurrency" /></label>
-                  <label>Idioma<input id="projectLanguage" value="pt-PT" /></label>
-                  <label data-sensitive-money>Budget Min<input id="projectBudgetMin" type="number" value="0" /></label>
-                  <label data-sensitive-money>Budget Max<input id="projectBudgetMax" type="number" value="0" /></label>
-                  <label class="full">Descrição<textarea id="projectDescription" rows="2"></textarea></label>
-                  <label class="full">Contexto de negócio<textarea id="summaryBusinessContext" rows="3"></textarea></label>
-                  <label class="full">Objetivos (1 por linha)<textarea id="summaryGoals" rows="3"></textarea></label>
-                  <label class="full">Escopo simples (não técnico)<textarea id="summaryScope" rows="3"></textarea></label>
-                  <label class="full">Visão da solução<textarea id="summarySolution" rows="3"></textarea></label>
+                  <label>Proposal Code<input id="projectCode" placeholder="Ex: RP-CITY-PASS" /></label>
+                  <label>Idioma<input id="projectLanguage" value="pt-PT" placeholder="pt-PT" /></label>
+
+                  <p class="form-section-label full" data-sensitive-money>Comercial</p>
+                  <label data-sensitive-money>Rate por hora<input id="projectRate" type="number" min="0" placeholder="0" /></label>
+                  <label data-sensitive-money>Moeda<input id="projectCurrency" placeholder="EUR" /></label>
+                  <label data-sensitive-money>Budget mínimo<input id="projectBudgetMin" type="number" min="0" value="0" /></label>
+                  <label data-sensitive-money>Budget máximo<input id="projectBudgetMax" type="number" min="0" value="0" /></label>
+
+                  <p class="form-section-label full">Resumo e Visão</p>
+                  <label class="full">Descrição curta
+                    <textarea id="projectDescription" rows="3" placeholder="Uma a duas frases que descrevem o projeto."></textarea>
+                    <small class="field-help">Resumo rápido usado em listagens e cabeçalhos.</small>
+                  </label>
+                  <label class="full">Contexto de negócio
+                    <textarea id="summaryBusinessContext" rows="5" placeholder="Que problema de negócio resolve? Quem são os stakeholders e porquê agora?"></textarea>
+                  </label>
+                  <label class="full">Objetivos prioritários
+                    <textarea id="summaryGoals" rows="5" placeholder="Um objetivo por linha. Ex:&#10;Reduzir tempo de check-in&#10;Aumentar conversão de venda de passes"></textarea>
+                    <small class="field-help">Um objetivo por linha.</small>
+                  </label>
+                  <label class="full">Escopo em linguagem simples
+                    <textarea id="summaryScope" rows="5" placeholder="O que está incluído (e o que não está), explicado de forma não técnica."></textarea>
+                  </label>
+                  <label class="full">Visão da solução
+                    <textarea id="summarySolution" rows="5" placeholder="Como será a solução a alto nível: principais módulos, fluxos e resultado esperado."></textarea>
+                    <small class="field-help">Esta visão alimenta a aba Visão do Projeto.</small>
+                  </label>
                 </div>
               </section>
               <section class="panel section-panel">
                 <div class="panel-title-row">
                   <h3 class="panel-heading"><span class="section-badge badge-gray">EQUIPA</span> Membros do Projeto</h3>
                 </div>
-                <form id="assignMemberForm" class="form-grid compact">
+                <p class="muted-text docs-section-intro">Associe clientes e parceiros ao projeto. Clientes e parceiros têm acesso apenas de leitura, podendo adicionar perguntas e documentos. Altere o perfil ou remova membros abaixo.</p>
+                <form id="assignMemberForm" class="form-grid compact member-assign-form">
                   <label>Utilizador<select id="assignUserId"></select></label>
                   <label>Perfil no projeto
                     <select id="assignMemberRole">
@@ -183,7 +210,7 @@
                   </label>
                   <button class="btn primary" type="submit">Associar Membro</button>
                 </form>
-                <div id="projectMembers" class="simple-list mt-8"></div>
+                <div id="projectMembers" class="member-list mt-8"></div>
               </section>
             </div>
 
@@ -234,18 +261,19 @@
               </section>
             </div>
 
-            <!-- TAB: ATAS -->
+            <!-- TAB: ATAS (global — todas as fases) -->
             <div class="tab-panel hidden" data-panel="atas">
               <section class="panel section-panel">
                 <div class="panel-title-row">
                   <h3 class="panel-heading"><span class="section-badge badge-teal">ATAS</span> Atas de Reunião</h3>
                 </div>
+                <p class="muted-text docs-section-intro">Todas as atas do projecto num só lugar. A IA classifica o impacto em cada fase e requisito — não estão ligadas a uma única fase.</p>
                 <div class="subsection">
                   <p class="subsection-label">Registar nova ata</p>
                   <form id="addMeetingMinuteForm" class="form-grid compact">
                     <label>Data da reunião<input id="meetingMinuteDate" type="date" /></label>
                     <label>Título (opcional)<input id="meetingMinuteTitle" placeholder="Ex: Reunião de alinhamento MVP" /></label>
-                    <label>Impacto na linha de entrega
+                    <label>Fase principal (opcional)
                       <select id="meetingMinuteImpactScope">
                         <option value="discovery">Descoberta / alinhamento</option>
                         <option value="idea">Mudança na ideia ou visão</option>
@@ -253,11 +281,11 @@
                         <option value="architecture">Mudança na arquitectura</option>
                         <option value="delivery">Entrega final / scope</option>
                       </select>
+                      <small class="muted-text">A IA classifica automaticamente todas as fases e requisitos impactados depois de guardar.</small>
                     </label>
                     <label class="full">Ata (texto bruto)
                       <textarea id="meetingMinuteRaw" rows="8" placeholder="Cole aqui a ata exatamente como foi produzida na reunião..."></textarea>
                     </label>
-                    <p class="muted-text full">Alterações desta ata podem propagar para fases anteriores e posteriores — use o fluxo de alterações abaixo ou «+ Adicionar informação» no Processo de entrega.</p>
                     <button class="btn primary" type="submit">Guardar Ata</button>
                   </form>
                 </div>
@@ -269,9 +297,8 @@
                 <div class="section-divider"></div>
                 <div class="subsection">
                   <p class="subsection-label">Propagação na linha de entrega</p>
-                  <p class="muted-text">Seleccione atas no histórico e analise que fases são afectadas (para trás e para a frente).</p>
                   <div id="minutePropagationPanel" class="propagation-panel read-card mt-8">
-                    <p class="muted-text">Seleccione uma ou mais atas para ver o plano de propagação.</p>
+                    <p class="muted-text">Seleccione atas no histórico para analisar impacto.</p>
                   </div>
                   <div class="actions-row mt-8">
                     <button class="btn primary" type="button" id="analyzeMinutePropagationBtn">Analisar impacto nas fases</button>
@@ -413,9 +440,6 @@
                   </div>
                 </div>
                 <div id="reqTabFilterBanner" class="tab-filter-banner hidden"></div>
-                <div class="implementation-plan-wrap">
-                  <div id="implementationPlanView"></div>
-                </div>
                 <div class="req-toolbar">
                   <input id="reqSearch" placeholder="Pesquisar por ID, título, need, shall..." />
                   <select id="reqFilterType">
@@ -436,9 +460,16 @@
                     <option value="medium">Média</option>
                     <option value="low">Baixa</option>
                   </select>
+                  <select id="reqGroupBy" title="Como agrupar a lista de requisitos">
+                    <option value="module">Agrupar: Módulo</option>
+                    <option value="capability">Agrupar: Funcionalidade</option>
+                  </select>
                   <label class="checkline"><input id="reqOnlySmartIssues" type="checkbox" /> Só SMART lacunas</label>
                 </div>
-                <div id="requirementsMeta" class="mini-meta"></div>
+                <div class="req-toolbar-actions">
+                  <div id="requirementsMeta" class="mini-meta"></div>
+                  <button id="clearAllRequirementsBtn" type="button" class="btn tiny danger ghost" title="Apagar todos os requisitos e recomeçar">Limpar todos</button>
+                </div>
                 <datalist id="submoduleSuggestions"></datalist>
                 <details class="collapsible">
                   <summary>Adicionar requisito</summary>
@@ -540,13 +571,19 @@
               </section>
             </div>
 
-            <!-- TAB: FASES & RISCOS -->
+            <!-- TAB: FASES (gestão central das fases) -->
             <div class="tab-panel hidden" data-panel="fases">
               <section class="panel section-panel">
                 <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-teal">PLAN</span> Fases, Riscos e Assunções</h3>
+                  <h3 class="panel-heading"><span class="section-badge badge-teal">PLAN</span> Fases de Implementação</h3>
                 </div>
-                <p class="muted-text mb-8">Visão de leitura do plano comercial e técnico. Para editar JSON avançado, use <button type="button" class="btn link inline-link-btn" data-goto-tab="definicoes">Definições → Projecto</button>.</p>
+                <p class="muted-text docs-section-intro">Local central para gerir as fases do projecto. As fases são a mesma fonte de verdade usada nos requisitos: combinam o plano definido aqui com as fases atribuídas a cada requisito. Editar aqui reflecte-se em toda a aplicação.</p>
+                <div id="implementationPlanView"></div>
+              </section>
+              <section class="panel section-panel">
+                <div class="panel-title-row">
+                  <h3 class="panel-heading"><span class="section-badge badge-gray">PLAN</span> Riscos e Assunções</h3>
+                </div>
                 <div id="riskAssumptionView" class="readability-grid"></div>
               </section>
             </div>
@@ -574,7 +611,6 @@
                 <label class="checkline mt-12"><input id="dryRunToggle" type="checkbox" /> Dry-run (sem PDF)</label>
                 <details class="collapsible mt-8">
                   <summary>Geração modular — selecionar módulos</summary>
-                  <small class="muted-text">Quando selecionares módulos, a documentação será gerada apenas com os requisitos desses módulos.</small>
                   <div id="generationModules" class="module-chip-list"></div>
                 </details>
                 <div class="section-divider"></div>
@@ -590,35 +626,35 @@
 
                 <div class="pdos-timeline-block">
                   <div class="pdos-timeline-head">
-                    <div>
-                      <span class="pdos-section-label">Linha de entrega</span>
-                      <h3 class="pdos-timeline-title">Em que fase estás</h3>
-                      <p class="pdos-timeline-sub muted-text">Clica numa fase para ver o conteúdo. Entre fases, usa ⟷ para pedir ajuda à IA na transição.</p>
+                    <div class="pdos-timeline-head-main">
+                      <div class="pdos-timeline-head-row">
+                        <span class="pdos-section-label">Linha de entrega</span>
+                        <button type="button" class="help-btn help-btn-phase" id="pdosPhaseHelpBtn" title="Ajuda desta fase" aria-label="Ajuda desta fase">?</button>
+                      </div>
+                      <h3 class="pdos-timeline-title">Fases do projecto</h3>
                     </div>
                     <div id="pdosCurrentStageBadge" class="pdos-current-stage-badge"></div>
                   </div>
                   <div id="pdosGoldenTimeline" class="golden-timeline" aria-label="Fases de entrega do projecto"></div>
-                  <div id="pdosStageGuidance" class="pdos-stage-guidance"></div>
+                  <div id="pdosStageGuidance" class="pdos-stage-guidance hidden" aria-hidden="true"></div>
                 </div>
 
-                <div id="pdosConceptBanner" class="pdos-concept-banner-wrap"></div>
+                <div id="pdosHumanReviews" class="pdos-human-reviews hidden" aria-label="Revisões humanas pendentes"></div>
+
+                <div id="pdosConceptBanner" class="pdos-concept-banner-wrap hidden" aria-hidden="true"></div>
 
                 <div id="pdosCurrentFocus" class="pdos-current-focus"></div>
 
                 <div class="pdos-module-block">
-                  <span class="pdos-section-label">Filtrar por módulo técnico</span>
-                  <p class="pdos-module-hint muted-text">Frontend = ecrãs · Backend = serviços e APIs · Base de dados = persistência</p>
+                  <span class="pdos-section-label">Módulo técnico</span>
                   <nav id="pdosModuleNav" class="pdos-module-nav" aria-label="Módulos técnicos do projecto"></nav>
                 </div>
 
+                <div id="pdosDiagramsShell" class="pdos-diagrams-shell hidden" aria-label="Diagramas de arquitectura"></div>
+
                 <div id="pdosCardFeed" class="pdos-card-feed"></div>
 
-                <details class="collapsible mt-12 pdos-glossary-details">
-                  <summary>O que significa cada conceito?</summary>
-                  <div id="pdosPlatformGlossary" class="pdos-glossary"></div>
-                </details>
-
-                <details class="collapsible mt-12">
+                <details class="collapsible mt-12 pdos-advanced-trace hidden" id="pdosAdvancedTrace">
                   <summary>Mapa de ligações (rastreabilidade avançada)</summary>
                   <div class="delivery-os-head mt-8">
                     <div class="actions-row">
@@ -626,7 +662,6 @@
                       <button type="button" class="btn tiny ghost" data-goto-tab="definicoes">Nível de detalhe em Definições</button>
                     </div>
                   </div>
-                  <small id="traceMapMeta" class="trace-map-meta muted-text">Liga requisitos, funcionalidades e artefactos para saber de onde veio cada decisão.</small>
                   <div id="deliveryOsLayout" class="delivery-os-layout mt-12">
                     <div id="deliveryFeedPanel" class="delivery-feed-panel">
                       <div class="panel-header">
@@ -756,16 +791,9 @@
                 <div class="panel-title-row">
                   <h3 class="panel-heading"><span class="section-badge badge-gray">PLATAFORMA</span> Gestão da plataforma</h3>
                 </div>
-                <p class="muted-text">Utilizadores, aparência e opções globais — independentes do projecto seleccionado.</p>
                 <div class="settings-grid mt-12">
-                  <article class="read-card">
-                    <h4>Aparência</h4>
-                    <p class="muted-text">Alternar entre tema claro e escuro.</p>
-                    <button type="button" class="btn" id="settingsThemeToggleBtn">Alternar tema</button>
-                  </article>
                   <article class="read-card settings-users-card" id="settingsUsersCard">
                     <h4>Utilizadores</h4>
-                    <p class="muted-text">Criar contas client/partner com acesso aos projectos.</p>
                     <form id="createUserForm" class="form-grid compact mt-8">
                       <label>Nome<input id="newUserName" required /></label>
                       <label>Email<input id="newUserEmail" type="email" required /></label>
@@ -823,6 +851,20 @@
         <span>Requisitos · Progresso · Propostas</span>
       </footer>
     </section>
+  </div>
+
+  <div id="helpDrawer" class="help-drawer hidden" aria-hidden="true">
+    <div class="help-drawer-overlay" id="helpDrawerOverlay"></div>
+    <aside class="help-drawer-panel" role="dialog" aria-labelledby="helpDrawerTitle">
+      <header class="help-drawer-head">
+        <div class="help-drawer-head-titles">
+          <p class="help-drawer-eyebrow" id="helpDrawerEyebrow"></p>
+          <h2 id="helpDrawerTitle">Ajuda</h2>
+        </div>
+        <button type="button" class="help-drawer-close" id="helpDrawerClose" aria-label="Fechar">×</button>
+      </header>
+      <div id="helpDrawerContent" class="help-drawer-content"></div>
+    </aside>
   </div>
 
   <div id="globalStatus" class="toast hidden"></div>
@@ -897,8 +939,11 @@
     <div class="pdos-modal-backdrop"></div>
     <div class="pdos-modal-panel pdos-modal-wide">
       <h3>Prompt Workbench</h3>
+      <div id="pdosJobBar" class="pdos-job-bar hidden"></div>
       <p id="pdosPromptSummary" class="pdos-prompt-summary"></p>
       <input type="hidden" id="pdosPromptRunId" />
+      <input type="hidden" id="pdosJobId" />
+      <input type="hidden" id="pdosJobChunkIndex" />
       <details open class="collapsible">
         <summary>Ver instruções do agente</summary>
         <textarea id="pdosPromptRaw" class="prompt-box" rows="10" readonly></textarea>
@@ -915,6 +960,8 @@
         <p id="pdosAltDiff" class="muted-text"></p>
       </details>
       <div class="actions-row">
+        <button type="button" class="btn primary hidden" id="pdosJobAuto">Consolidar automaticamente (sem IA)</button>
+        <button type="button" class="btn hidden" id="pdosJobSubmit">Submeter lote e seguir</button>
         <button type="button" class="btn primary" id="pdosPromptApply">Submeter para revisão</button>
         <button type="button" class="btn ghost" id="pdosPromptClose">Fechar</button>
       </div>
@@ -963,7 +1010,8 @@
         <button type="button" class="btn tiny ghost" id="aiArtifactModalClose" aria-label="Fechar">✕</button>
       </div>
       <div id="aiArtifactModalMeta" class="ai-artifact-modal-meta"></div>
-      <div class="form-grid compact ai-artifact-form">
+      <div id="aiArtifactReadPane" class="markdown-body ai-artifact-read"></div>
+      <div id="aiArtifactEditForm" class="form-grid compact ai-artifact-form hidden">
         <label id="aiArtifactTitleField" class="full">
           Título
           <span class="field-hint">Nome identificador deste artefacto na fase.</span>
@@ -983,8 +1031,9 @@
       <div class="modal-actions">
         <button type="button" class="btn ghost" id="aiArtifactModalCopy">Copiar conteúdo</button>
         <div class="modal-actions-right">
-          <button type="button" class="btn ghost" id="aiArtifactModalCancel">Cancelar</button>
-          <button type="button" class="btn primary" id="aiArtifactModalSave">Guardar</button>
+          <button type="button" class="btn ghost" id="aiArtifactEditToggle">Editar conteúdo</button>
+          <button type="button" class="btn ghost hidden" id="aiArtifactModalCancel">Cancelar</button>
+          <button type="button" class="btn primary hidden" id="aiArtifactModalSave">Guardar</button>
         </div>
       </div>
     </div>
@@ -992,11 +1041,13 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
-  <script src="/projects/static/phase-content-client.js?v=1"></script>
-  <script src="/projects/static/app.js?v=18"></script>
-  <script src="/projects/static/requirements-ui.js?v=2"></script>
-  <script src="/projects/static/documents-ui.js?v=1"></script>
-  <script src="/projects/static/delivery-os-ui.js?v=20"></script>
+  <script src="/projects/static/phase-content-client.js?v=2"></script>
+  <script src="/projects/static/help-ui.js?v=2"></script>
+  <script src="/projects/static/app.js?v=29"></script>
+  <script src="/projects/static/requirements-ui.js?v=6"></script>
+  <script src="/projects/static/documents-ui.js?v=2"></script>
+  <script src="/projects/static/diagrams-ui.js?v=6"></script>
+  <script src="/projects/static/delivery-os-ui.js?v=38"></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

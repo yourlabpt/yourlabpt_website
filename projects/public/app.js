@@ -100,17 +100,17 @@ const els = {
   loginStatus: document.getElementById('loginStatus'),
   loginLogo: document.getElementById('loginLogo'),
   workspaceLogo: document.getElementById('workspaceLogo'),
-  userChip: document.getElementById('userChip'),
+  currentProjectTitle: document.getElementById('currentProjectTitle'),
+  currentProjectSwitchBtn: document.getElementById('currentProjectSwitchBtn'),
+  userMenuBtn: document.getElementById('userMenuBtn'),
+  userMenuPopover: document.getElementById('userMenuPopover'),
+  userMenuInfo: document.getElementById('userMenuInfo'),
   logoutBtn: document.getElementById('logoutBtn'),
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   appLayout: document.getElementById('appLayout'),
   navRail: document.getElementById('navRail'),
   navRailItems: document.getElementById('navRailItems'),
   navRailExpandBtn: document.getElementById('navRailExpandBtn'),
-  navRailDockBtn: document.getElementById('navRailDockBtn'),
-  navRailOpenBtn: document.getElementById('navRailOpenBtn'),
-  navRailBackdrop: document.getElementById('navRailBackdrop'),
-  currentProjectChip: document.getElementById('currentProjectChip'),
   refreshProjectsBtn: document.getElementById('refreshProjectsBtn'),
   projectsPageGrid: document.getElementById('projectsPageGrid'),
   projectList: document.getElementById('projectList'),
@@ -118,7 +118,6 @@ const els = {
   projectWorkspace: document.getElementById('projectWorkspace'),
   createProjectForm: document.getElementById('createProjectForm'),
   openSettingsBtn: document.getElementById('openSettingsBtn'),
-  settingsThemeToggleBtn: document.getElementById('settingsThemeToggleBtn'),
   settingsUsersCard: document.getElementById('settingsUsersCard'),
   settingsProjectSection: document.getElementById('settingsProjectSection'),
   settingsProjectHint: document.getElementById('settingsProjectHint'),
@@ -200,6 +199,7 @@ const els = {
   reqFilterStatus: document.getElementById('reqFilterStatus'),
   reqFilterModule: document.getElementById('reqFilterModule'),
   reqOnlySmartIssues: document.getElementById('reqOnlySmartIssues'),
+  clearAllRequirementsBtn: document.getElementById('clearAllRequirementsBtn'),
   requirementsMeta: document.getElementById('requirementsMeta'),
   submoduleSuggestions: document.getElementById('submoduleSuggestions'),
   reqModule: document.getElementById('reqModule'),
@@ -334,6 +334,13 @@ function isSuperAdmin() {
 
 function canEdit() {
   return isSuperAdmin();
+}
+
+// Clientes/parceiros são apenas visualizadores, mas podem contribuir
+// adicionando perguntas e documentos (sem apagar nem alterar o resto).
+function canContribute() {
+  const role = state.user?.role;
+  return role === 'super_admin' || role === 'client' || role === 'partner';
 }
 
 function canViewBudget() {
@@ -487,7 +494,12 @@ function getFilteredRequirements(items) {
   return items.filter((req) => {
     if (type && req.type !== type) return false;
     if (status && req.status !== status) return false;
-    if (module && normalizeModuleName(req.module) !== module) return false;
+    if (module) {
+      const tags = Array.isArray(req.moduleTags) && req.moduleTags.length
+        ? req.moduleTags
+        : [normalizeModuleName(req.module)].filter(Boolean);
+      if (!tags.includes(module)) return false;
+    }
     if (onlySmartIssues && !(req.type === 'functional' && !req.smartIsValid)) return false;
 
     if (!search) return true;
@@ -514,7 +526,7 @@ function setReadonlyByRole() {
 
   const editableIds = [
     'saveProjectBtn', 'saveAdvancedBtn', 'assignMemberForm', 'createProjectForm', 'createUserForm',
-    'uploadDocForm', 'addMeetingMinuteForm', 'addQuestionForm', 'saveSourceTextBtn', 'buildPromptBtn', 'buildMinutesPromptBtn', 'importRequirementChangesBtn', 'importAiBtn', 'addRequirementForm',
+    'addMeetingMinuteForm', 'saveSourceTextBtn', 'buildPromptBtn', 'buildMinutesPromptBtn', 'importRequirementChangesBtn', 'importAiBtn', 'addRequirementForm',
     'generateTechnicalBtn', 'generateCommercialBtn'
   ];
 
@@ -528,6 +540,17 @@ function setReadonlyByRole() {
       return;
     }
     el.disabled = readonly;
+  });
+
+  // Formulários de contribuição: perguntas e documentos. Disponíveis para
+  // clientes/parceiros (apenas adicionar), restantes ações continuam bloqueadas.
+  const contributeDisabled = !canContribute();
+  ['uploadDocForm', 'addQuestionForm'].forEach((id) => {
+    const el = els[id];
+    if (!el) return;
+    Array.from(el.querySelectorAll('input, textarea, select, button')).forEach((node) => {
+      node.disabled = contributeDisabled;
+    });
   });
 
   Array.from(els.requirementDetailForm.querySelectorAll('input, textarea, select')).forEach((node) => {
@@ -584,7 +607,7 @@ function renderProjects() {
     if (els.projectList) {
       els.projectList.innerHTML = '<div class="simple-item"><small>Sem projetos ainda.</small></div>';
     }
-    renderCurrentProjectChip();
+    renderTopbarProject();
     return;
   }
 
@@ -599,7 +622,7 @@ function renderProjects() {
       `;
     }).join('');
   }
-  renderCurrentProjectChip();
+  renderTopbarProject();
 }
 
 function renderProjectsPage() {
@@ -637,20 +660,37 @@ function renderProjectsPage() {
   }).join('');
 }
 
-function renderCurrentProjectChip() {
-  const chip = els.currentProjectChip;
-  if (!chip) return;
+function renderTopbarProject() {
+  const titleEl = els.currentProjectTitle;
+  const switchBtn = els.currentProjectSwitchBtn;
+  if (!titleEl) return;
+
   const project = state.selectedProject;
   if (!project) {
-    chip.classList.add('hidden');
-    chip.innerHTML = '';
+    titleEl.textContent = '';
+    titleEl.classList.add('hidden');
+    titleEl.classList.remove('has-project');
+    switchBtn?.classList.add('hidden');
     return;
   }
-  chip.classList.remove('hidden');
-  chip.innerHTML = `
-    <strong>${escapeHtml(project.name)}</strong>
-    <button type="button" class="btn tiny ghost" data-goto-tab="projetos" title="Trocar projecto">↔</button>
+
+  titleEl.textContent = project.name;
+  titleEl.classList.remove('hidden');
+  titleEl.classList.add('has-project');
+  switchBtn?.classList.remove('hidden');
+}
+
+function renderUserMenuInfo() {
+  if (!els.userMenuInfo || !state.user) return;
+  els.userMenuInfo.innerHTML = `
+    <strong>${escapeHtml(state.user.name)}</strong>
+    <span class="muted-text">${escapeHtml(state.user.role)}</span>
   `;
+}
+
+function setUserMenuOpen(open) {
+  els.userMenuPopover?.classList.toggle('hidden', !open);
+  els.userMenuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
 function navIconSvg(iconKey) {
@@ -752,15 +792,12 @@ function renderNavRail() {
 
 function applyNavRailLayout() {
   const layout = els.appLayout;
-  const rail = els.navRail;
-  if (!layout || !rail) return;
+  if (!layout) return;
 
-  const docked = localStorage.getItem(NAV_RAIL_DOCKED_KEY) !== 'false';
   const expanded = localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === 'true';
-  const overlayOpen = layout.classList.contains('nav-rail-open');
 
-  layout.classList.toggle('is-docked', docked);
-  layout.classList.toggle('is-overlay', !docked);
+  layout.classList.add('is-docked');
+  layout.classList.remove('is-overlay', 'nav-rail-open');
   layout.classList.toggle('is-expanded', expanded);
   layout.classList.toggle('is-collapsed', !expanded);
 
@@ -770,39 +807,13 @@ function applyNavRailLayout() {
     const path = els.navRailExpandBtn.querySelector('path');
     if (path) path.setAttribute('d', expanded ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6');
   }
-
-  if (els.navRailDockBtn) {
-    els.navRailDockBtn.setAttribute('aria-pressed', docked ? 'true' : 'false');
-    els.navRailDockBtn.title = docked ? 'Modo sobreposto (libertar espaço)' : 'Fixar barra lateral';
-    els.navRailDockBtn.querySelector('.nav-icon-docked')?.classList.toggle('hidden', !docked);
-    els.navRailDockBtn.querySelector('.nav-icon-overlay')?.classList.toggle('hidden', docked);
-  }
-
-  els.navRailOpenBtn?.classList.toggle('hidden', docked || overlayOpen);
-  els.navRailBackdrop?.classList.toggle('hidden', docked || !overlayOpen);
-
-  if (docked) {
-    layout.classList.remove('nav-rail-open');
-    rail.style.transform = '';
-    rail.style.left = '';
-    rail.style.top = '';
-  }
-}
-
-function setNavRailOverlayOpen(open) {
-  els.appLayout?.classList.toggle('nav-rail-open', open);
-  els.navRailBackdrop?.classList.toggle('hidden', !open);
-  els.navRailOpenBtn?.classList.toggle('hidden', open);
-  applyNavRailLayout();
 }
 
 function initNavRail() {
-  if (localStorage.getItem(NAV_RAIL_DOCKED_KEY) === null) {
-    localStorage.setItem(NAV_RAIL_DOCKED_KEY, 'true');
-  }
   if (localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === null) {
     localStorage.setItem(NAV_RAIL_EXPANDED_KEY, 'false');
   }
+  localStorage.setItem(NAV_RAIL_DOCKED_KEY, 'true');
 
   applyNavRailLayout();
   renderNavRail();
@@ -813,17 +824,6 @@ function initNavRail() {
     applyNavRailLayout();
     renderNavRail();
   });
-
-  els.navRailDockBtn?.addEventListener('click', () => {
-    const docked = localStorage.getItem(NAV_RAIL_DOCKED_KEY) !== 'false';
-    localStorage.setItem(NAV_RAIL_DOCKED_KEY, docked ? 'false' : 'true');
-    if (!docked) setNavRailOverlayOpen(false);
-    applyNavRailLayout();
-    renderNavRail();
-  });
-
-  els.navRailOpenBtn?.addEventListener('click', () => setNavRailOverlayOpen(true));
-  els.navRailBackdrop?.addEventListener('click', () => setNavRailOverlayOpen(false));
 
   els.navRailItems?.addEventListener('click', (event) => {
     const moreBtn = event.target.closest('[data-nav-more-toggle]');
@@ -838,9 +838,6 @@ function initNavRail() {
     const btn = event.target.closest('[data-nav-tab]');
     if (!btn) return;
     switchToTab(btn.dataset.navTab);
-    if (els.appLayout?.classList.contains('is-overlay')) {
-      setNavRailOverlayOpen(false);
-    }
   });
 
   els.navRailItems?.addEventListener('toggle', (event) => {
@@ -855,6 +852,7 @@ function initNavRail() {
 function renderProjectDetails() {
   renderSettingsAvailability();
   renderNavRail();
+  renderTopbarProject();
   const project = state.selectedProject;
 
   els.projectWorkspace.classList.remove('hidden');
@@ -923,6 +921,39 @@ function renderProjectDetails() {
   requestAnimationFrame(() => refreshAutoResize(els.projectWorkspace));
 }
 
+// Distribuição canónica por módulo e fase — usa as mesmas fontes únicas
+// (moduleTags e req.phase ∪ project.phases) que o resto da aplicação.
+function getCanonicalModuleDistribution(project) {
+  const reqs = Array.isArray(project?.requirements) ? project.requirements : [];
+  const counts = new Map();
+  reqs.forEach((req) => {
+    const tags = Array.isArray(req.moduleTags) && req.moduleTags.length
+      ? req.moduleTags
+      : [normalizeModuleName(req.module)].filter(Boolean);
+    (tags.length ? tags : ['Sem módulo']).forEach((tag) => {
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    });
+  });
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function getCanonicalPhaseDistribution(project) {
+  const reqs = Array.isArray(project?.requirements) ? project.requirements : [];
+  const phases = Array.isArray(project?.phases) ? project.phases : [];
+  const order = [];
+  const counts = new Map();
+  phases.forEach((p, i) => {
+    const name = String(p?.name || `Fase ${i + 1}`).trim();
+    if (!counts.has(name)) { counts.set(name, 0); order.push(name); }
+  });
+  reqs.forEach((req) => {
+    const name = String(req.phase || '').trim() || 'Sem fase';
+    if (!counts.has(name)) { counts.set(name, 0); order.push(name); }
+    counts.set(name, counts.get(name) + 1);
+  });
+  return order.map((name) => [name, counts.get(name) || 0]);
+}
+
 function renderProjectClarity(project) {
   const reqs = Array.isArray(project.requirements) ? project.requirements : [];
   const questions = Array.isArray(project.clarificationQuestions) ? project.clarificationQuestions : [];
@@ -932,18 +963,23 @@ function renderProjectClarity(project) {
   const functionalValid = functional.filter((entry) => entry.smartIsValid).length;
   const smartRate = functional.length ? Math.round((functionalValid / functional.length) * 100) : 100;
 
+  const moduleDist = getCanonicalModuleDistribution(project);
+  const phaseDist = getCanonicalPhaseDistribution(project);
+
   els.projectKpis.innerHTML = `
     <div class="kpi-box"><strong>${reqs.length}</strong><small>Requisitos totais</small></div>
     <div class="kpi-box"><strong>${byType('functional')}</strong><small>Funcionais</small></div>
     <div class="kpi-box"><strong>${byType('non_functional')}</strong><small>Não funcionais</small></div>
-    <div class="kpi-box"><strong>${byType('test_case')}</strong><small>Testes / Aceite</small></div>
+    <div class="kpi-box"><strong>${phaseDist.length}</strong><small>Fases</small></div>
+    <div class="kpi-box"><strong>${moduleDist.length}</strong><small>Módulos</small></div>
     <div class="kpi-box"><strong>${smartRate}%</strong><small>Cobertura SMART funcional</small></div>
-    <div class="kpi-box"><strong>${(project.risks || []).length}</strong><small>Riscos principais</small></div>
     <div class="kpi-box"><strong>${openQuestions}</strong><small>Perguntas em aberto</small></div>
   `;
 
   const goals = (project.summary?.goals || []).slice(0, 4);
   const risks = (project.risks || []).slice(0, 3);
+
+  const distItem = (label, count) => `<li><span class="dist-label">${escapeHtml(label)}</span><span class="dist-count">${count}</span></li>`;
 
   els.projectReadability.innerHTML = `
     <article class="read-card">
@@ -955,8 +991,22 @@ function renderProjectClarity(project) {
       <p>${escapeHtml(shortText(project.summary?.scopeInPlainLanguage || project.summary?.solutionOverview, 360))}</p>
     </article>
     <article class="read-card">
+      <h4>Visão da Solução</h4>
+      <p>${escapeHtml(shortText(project.summary?.solutionOverview, 360)) || 'N/A'}</p>
+    </article>
+    <article class="read-card">
       <h4>Objetivos Prioritários</h4>
       ${goals.length ? `<ul>${goals.map((goal) => `<li>${escapeHtml(goal)}</li>`).join('')}</ul>` : '<p>N/A</p>'}
+    </article>
+    <article class="read-card">
+      <h4>Distribuição por Módulo</h4>
+      <small class="muted-text">Fonte única: moduleTags da classificação</small>
+      ${moduleDist.length ? `<ul class="dist-list">${moduleDist.map(([m, c]) => distItem(m, c)).join('')}</ul>` : '<p>N/A</p>'}
+    </article>
+    <article class="read-card">
+      <h4>Distribuição por Fase</h4>
+      <small class="muted-text">Fonte única: fases dos requisitos + plano</small>
+      ${phaseDist.length ? `<ul class="dist-list">${phaseDist.map(([p, c]) => distItem(p, c)).join('')}</ul>` : '<p>N/A</p>'}
     </article>
     <article class="read-card">
       <h4>Riscos que Merecem Atenção</h4>
@@ -973,21 +1023,58 @@ function renderMembers(project) {
   }
 
   const usersById = new Map(state.users.map((user) => [user.id, user]));
+  const editable = canEdit();
   els.projectMembers.innerHTML = members.map((member) => {
     const user = usersById.get(member.userId);
-    const display = user ? `${user.name} (${user.email})` : member.userId;
-    const removeBtn = canEdit()
-      ? `<button class="btn tiny" data-action="remove-member" data-user-id="${escapeHtml(member.userId)}">Remover</button>`
+    const name = user ? user.name : member.userId;
+    const email = user ? user.email : '';
+    const role = member.role || 'client';
+    const initials = String(name || '?').trim().slice(0, 2).toUpperCase();
+
+    const roleControl = editable
+      ? `<select class="member-role-select" data-member-role data-user-id="${escapeHtml(member.userId)}">
+          <option value="client" ${role === 'client' ? 'selected' : ''}>Client</option>
+          <option value="partner" ${role === 'partner' ? 'selected' : ''}>Partner</option>
+        </select>`
+      : `<span class="member-role-badge member-role-${escapeHtml(role)}">${escapeHtml(role)}</span>`;
+    const removeBtn = editable
+      ? `<button class="btn tiny ghost danger" data-action="remove-member" data-user-id="${escapeHtml(member.userId)}" title="Remover membro">Remover</button>`
       : '';
 
     return `
-      <div class="simple-item">
-        <strong>${escapeHtml(display)}</strong>
-        <small>Perfil: ${escapeHtml(member.role || 'client')}</small>
-        ${removeBtn}
+      <div class="member-row">
+        <div class="member-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
+        <div class="member-info">
+          <strong class="member-name">${escapeHtml(name)}</strong>
+          ${email ? `<small class="member-email">${escapeHtml(email)}</small>` : ''}
+        </div>
+        <div class="member-actions">
+          ${roleControl}
+          ${removeBtn}
+        </div>
       </div>
     `;
   }).join('');
+
+  if (editable) {
+    els.projectMembers.querySelectorAll('[data-member-role]').forEach((sel) => {
+      sel.addEventListener('change', (e) => handleMemberRoleChange(e.target.dataset.userId, e.target.value));
+    });
+  }
+}
+
+async function handleMemberRoleChange(userId, role) {
+  if (!state.selectedProject || !userId || !canEdit()) return;
+  try {
+    await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/members`, {
+      method: 'POST',
+      body: { userId, role },
+    });
+    showToast('Perfil do membro atualizado.', 'ok');
+    await loadProjectById(state.selectedProject.id);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
 }
 
 function renderDocuments(project) {
@@ -1029,13 +1116,17 @@ function renderDocuments(project) {
   });
 }
 
+function meetingImpactedStages(minute) {
+  const fn = window.PhaseContent?.meetingImpactedStageIds;
+  if (fn) return fn(minute) || [];
+  const single = minute?.targetStageId || minute?.impactScope || 'requirements';
+  return Array.isArray(minute?.impactedStageIds) && minute.impactedStageIds.length
+    ? minute.impactedStageIds
+    : [single];
+}
+
 function renderMeetingMinutes(project) {
-  let minutes = Array.isArray(project.meetingMinutes) ? project.meetingMinutes : [];
-  const stageFilter = String(state.tabFilters?.deliveryStageId || '').trim();
-  if (stageFilter && state.activeTab === 'atas') {
-    const resolve = window.PhaseContent?.resolveMeetingStageId || ((m) => m.targetStageId || m.impactScope || 'requirements');
-    minutes = minutes.filter((m) => resolve(m) === stageFilter);
-  }
+  const minutes = Array.isArray(project.meetingMinutes) ? project.meetingMinutes : [];
   const promptHistory = Array.isArray(project.minutesPromptHistory) ? project.minutesPromptHistory : [];
 
   if (els.meetingMinuteDate && !els.meetingMinuteDate.value) {
@@ -1066,20 +1157,44 @@ function renderMeetingMinutes(project) {
   els.minutesHistoryList.innerHTML = minutes.slice(0, 80).map((entry) => {
     const checked = selectedSet.has(entry.id) ? 'checked' : '';
     const meetingDateLabel = entry.meetingDate || new Date(entry.createdAt).toISOString().slice(0, 10);
-    const impactLabel = impactScopeLabel(entry.impactScope || 'requirements');
-    const stageLabelText = stageLabel(entry.targetStageId || entry.impactScope || 'requirements');
+    const impactedStages = meetingImpactedStages(entry);
+    const classified = entry.classificationStatus === 'classified';
+    const phaseBadges = impactedStages
+      .map((sid) => `<span class="impact-badge">${escapeHtml(stageLabel(sid))}</span>`)
+      .join(' ');
+    const reqChips = (entry.impactedRequirementIds || [])
+      .slice(0, 10)
+      .map((id) => `<button type="button" class="req-link-chip" data-goto-requirement="${escapeHtml(id)}">${escapeHtml(id)}</button>`)
+      .join(' ');
+    const decisions = (entry.decisions || []).filter((d) => d && d.text);
+    const decisionsHtml = decisions.length
+      ? `<ul class="minute-decisions">${decisions.slice(0, 8).map((d) => `<li><span class="minute-decision-type">${escapeHtml(d.type || 'decisão')}</span> ${escapeHtml(d.text)}</li>`).join('')}</ul>`
+      : '';
+
     return `
-      <div class="simple-item">
+      <div class="simple-item minute-card" data-minute-card="${escapeHtml(entry.id)}">
         <label class="checkline">
           <input type="checkbox" data-minute-id="${escapeHtml(entry.id)}" ${checked} />
           <strong>${escapeHtml(entry.title || `Ata ${meetingDateLabel}`)}</strong>
         </label>
         <div class="minute-meta">
           <small>${escapeHtml(meetingDateLabel)}</small>
-          <span class="impact-badge">${escapeHtml(impactLabel)}</span>
-          <small>Fase: ${escapeHtml(stageLabelText)}</small>
-          <small>${new Date(entry.createdAt).toLocaleString('pt-PT')}</small>
+          ${classified
+            ? `<span class="minute-status is-classified">Impacto classificado por IA</span>`
+            : `<span class="minute-status is-pending">Impacto por classificar</span>`}
         </div>
+        <div class="minute-phases">
+          <span class="minute-phases-label">Fases impactadas:</span> ${phaseBadges || '<small class="muted-text">—</small>'}
+        </div>
+        ${entry.summaryMarkdown ? `<p class="minute-summary">${escapeHtml(entry.summaryMarkdown)}</p>` : ''}
+        ${reqChips ? `<div class="minute-reqs"><span class="minute-phases-label">Requisitos:</span> ${reqChips}</div>` : ''}
+        ${decisionsHtml}
+        <div class="minute-actions">
+          <button type="button" class="btn tiny primary" data-classify-minute="${escapeHtml(entry.id)}">
+            ${classified ? 'Reclassificar impacto (IA)' : 'Classificar impacto (IA)'}
+          </button>
+        </div>
+        <div class="minute-classify-panel hidden" data-classify-panel="${escapeHtml(entry.id)}"></div>
         <details class="collapsible">
           <summary>Ver texto raw</summary>
           <pre class="minute-raw">${escapeHtml(entry.rawText || '')}</pre>
@@ -1087,6 +1202,10 @@ function renderMeetingMinutes(project) {
       </div>
     `;
   }).join('');
+
+  els.minutesHistoryList.querySelectorAll('[data-classify-minute]').forEach((btn) => {
+    btn.addEventListener('click', () => openMinuteClassifyPanel(btn.dataset.classifyMinute));
+  });
 
   els.minutesPromptHistoryList.innerHTML = promptHistory.length
     ? promptHistory.slice(0, 15).map((entry) => `
@@ -1101,6 +1220,75 @@ function renderMeetingMinutes(project) {
     `).join('')
     : '<div class="simple-item"><small>Sem histórico de prompts.</small></div>';
   renderMinutePropagationPanel();
+}
+
+function openMinuteClassifyPanel(minuteId) {
+  const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
+  if (!panel) return;
+  if (!panel.classList.contains('hidden')) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+  panel.classList.remove('hidden');
+  panel.innerHTML = `
+    <div class="minute-classify-body">
+      <p class="muted-text">1. Gere o prompt &nbsp;→&nbsp; 2. Corra-o no seu modelo &nbsp;→&nbsp; 3. Cole o JSON &nbsp;→&nbsp; 4. Aplicar.</p>
+      <div class="actions-row">
+        <button type="button" class="btn tiny primary" data-minute-gen-prompt="${escapeHtml(minuteId)}">Gerar prompt</button>
+        <button type="button" class="btn tiny" data-minute-copy-prompt="${escapeHtml(minuteId)}" disabled>Copiar prompt</button>
+      </div>
+      <textarea class="minute-classify-prompt" data-minute-prompt="${escapeHtml(minuteId)}" rows="6" readonly placeholder="O prompt aparece aqui."></textarea>
+      <textarea class="minute-classify-output" data-minute-output="${escapeHtml(minuteId)}" rows="6" placeholder="Cole aqui o JSON de resposta da IA."></textarea>
+      <div class="actions-row">
+        <button type="button" class="btn tiny primary" data-minute-apply="${escapeHtml(minuteId)}">Aplicar classificação</button>
+      </div>
+    </div>
+  `;
+  panel.querySelector(`[data-minute-gen-prompt]`)?.addEventListener('click', () => generateMinuteClassifyPrompt(minuteId));
+  panel.querySelector(`[data-minute-copy-prompt]`)?.addEventListener('click', () => {
+    const ta = panel.querySelector(`[data-minute-prompt]`);
+    if (ta?.value) navigator.clipboard?.writeText(ta.value).then(() => showToast('Prompt copiado.', 'ok'));
+  });
+  panel.querySelector(`[data-minute-apply]`)?.addEventListener('click', () => applyMinuteClassification(minuteId));
+}
+
+async function generateMinuteClassifyPrompt(minuteId) {
+  if (!state.selectedProject) return;
+  try {
+    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/${encodeURIComponent(minuteId)}/classify-prompt`, { method: 'POST', body: {} });
+    const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
+    const ta = panel?.querySelector(`[data-minute-prompt]`);
+    if (ta) ta.value = payload.prompt || '';
+    const copyBtn = panel?.querySelector(`[data-minute-copy-prompt]`);
+    if (copyBtn) copyBtn.disabled = !payload.prompt;
+    showToast('Prompt de classificação gerado.', 'ok');
+  } catch (error) {
+    showToast(error.message || 'Erro ao gerar prompt.', 'error');
+  }
+}
+
+async function applyMinuteClassification(minuteId) {
+  if (!state.selectedProject) return;
+  const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
+  const rawOutput = panel?.querySelector(`[data-minute-output]`)?.value || '';
+  if (!rawOutput.trim()) {
+    showToast('Cole o JSON de resposta da IA.', 'error');
+    return;
+  }
+  try {
+    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/${encodeURIComponent(minuteId)}/classify`, {
+      method: 'POST',
+      body: { rawOutput },
+    });
+    if (payload.project) {
+      state.selectedProject = payload.project;
+      renderProjectDetails();
+    }
+    showToast('Impacto da ata classificado e aplicado.', 'ok');
+  } catch (error) {
+    showToast(error.message || 'Erro ao aplicar classificação.', 'error');
+  }
 }
 
 function renderMinutePropagationPanel(plan) {
@@ -1383,6 +1571,145 @@ function renderRequirementModuleControls(project) {
     .join('');
 }
 
+// Edição manual das fases de implementação (project.phases).
+let implPhasesEditing = false;
+let implPhasesDraft = null;
+
+function startEditImplementationPhases() {
+  const project = state.selectedProject;
+  if (!project) return;
+  implPhasesDraft = (Array.isArray(project.phases) ? project.phases : []).map((p, i) => ({
+    id: String(p?.id || '').trim() || `phase_${i + 1}`,
+    name: String(p?.name || `Fase ${i + 1}`).trim(),
+    durationWeeks: Number(p?.durationWeeks || 0) || 0,
+    objective: String(p?.objective || p?.description || '').trim(),
+  }));
+  implPhasesEditing = true;
+  renderImplementationPlan(project);
+}
+
+function cancelEditImplementationPhases() {
+  implPhasesEditing = false;
+  implPhasesDraft = null;
+  renderImplementationPlan(state.selectedProject);
+}
+
+function syncImplPhasesDraftFromDom() {
+  if (!implPhasesDraft) return;
+  const rows = els.implementationPlanView.querySelectorAll('.ip-pe-row');
+  implPhasesDraft = Array.from(rows).map((row) => {
+    const idx = Number(row.dataset.phaseIndex);
+    const prev = implPhasesDraft[idx] || {};
+    return {
+      id: prev.id || `phase_${idx + 1}`,
+      name: String(row.querySelector('.ip-pe-name')?.value || '').trim(),
+      durationWeeks: Number(row.querySelector('.ip-pe-dur')?.value || 0) || 0,
+      objective: String(row.querySelector('.ip-pe-obj')?.value || '').trim(),
+    };
+  });
+}
+
+async function saveImplementationPhases() {
+  const project = state.selectedProject;
+  if (!project) return;
+  syncImplPhasesDraftFromDom();
+  const phases = (implPhasesDraft || [])
+    .filter((p) => p.name)
+    .map((p, i) => ({ id: p.id || `phase_${i + 1}`, name: p.name, durationWeeks: p.durationWeeks, objective: p.objective }));
+  try {
+    await apiRequest(`/projects/${encodeURIComponent(project.id)}`, {
+      method: 'PATCH',
+      body: { phases },
+    });
+    implPhasesEditing = false;
+    implPhasesDraft = null;
+    showToast('Fases atualizadas.', 'ok');
+    await loadProjectById(project.id);
+  } catch (error) {
+    showToast(error.message || 'Erro ao guardar fases.', 'error');
+  }
+}
+
+function buildImplementationPhasesEditorHtml(requirements) {
+  const draft = implPhasesDraft || [];
+  const covered = new Set();
+  draft.forEach((p) => {
+    covered.add(normalizeForCompare(p.name));
+    if (p.id) covered.add(normalizeForCompare(p.id));
+  });
+  const autoNames = [];
+  const seen = new Set();
+  requirements.forEach((req) => {
+    const token = normalizeForCompare(req?.phase);
+    if (!token || covered.has(token) || seen.has(token)) return;
+    seen.add(token);
+    autoNames.push(String(req.phase).trim());
+  });
+  autoNames.sort((a, b) => a.localeCompare(b, 'pt-PT'));
+
+  const rows = draft.map((p, i) => `
+    <div class="ip-pe-row" data-phase-index="${i}">
+      <input class="ip-pe-name" type="text" value="${escapeHtml(p.name)}" placeholder="Nome da fase" />
+      <input class="ip-pe-dur" type="number" min="0" step="1" value="${p.durationWeeks || ''}" placeholder="sem." title="Duração em semanas" />
+      <input class="ip-pe-obj" type="text" value="${escapeHtml(p.objective || '')}" placeholder="Objetivo" />
+      <button type="button" class="btn tiny ghost ip-pe-remove" data-remove-phase="${i}" title="Remover fase">✕</button>
+    </div>
+  `).join('');
+
+  const autoChips = autoNames.map((name) =>
+    `<button type="button" class="ip-tag ip-tag--auto-add" data-add-auto-phase="${escapeHtml(name)}" title="Adicionar esta fase da classificação ao plano">+ ${escapeHtml(name)}</button>`
+  ).join('');
+
+  return `
+    <div class="ip-phase-editor">
+      <div class="ip-pe-head"><span>Fase</span><span>Sem.</span><span>Objetivo</span><span></span></div>
+      <div class="ip-pe-rows">${rows || '<p class="ip-muted">Sem fases. Adicione a primeira.</p>'}</div>
+      <button type="button" class="btn tiny ghost" data-add-phase>+ Adicionar fase</button>
+      ${autoNames.length ? `<div class="ip-pe-auto"><span class="ip-muted">Fases da classificação fora do plano:</span> ${autoChips}</div>` : ''}
+      <div class="ip-pe-actions">
+        <button type="button" class="btn small" data-save-phases>Guardar fases</button>
+        <button type="button" class="btn small ghost" data-cancel-phases>Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireImplementationPlanEvents() {
+  const root = els.implementationPlanView;
+  if (!root) return;
+  root.querySelector('[data-edit-phases]')?.addEventListener('click', () => startEditImplementationPhases());
+  root.querySelector('[data-cancel-phases]')?.addEventListener('click', () => cancelEditImplementationPhases());
+  root.querySelector('[data-save-phases]')?.addEventListener('click', () => saveImplementationPhases());
+  root.querySelector('[data-add-phase]')?.addEventListener('click', () => {
+    syncImplPhasesDraftFromDom();
+    implPhasesDraft = [...(implPhasesDraft || []), { id: `phase_${(implPhasesDraft || []).length + 1}_${Date.now()}`, name: '', durationWeeks: 0, objective: '' }];
+    renderImplementationPlan(state.selectedProject);
+  });
+  root.querySelectorAll('[data-remove-phase]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      syncImplPhasesDraftFromDom();
+      const idx = Number(btn.dataset.removePhase);
+      implPhasesDraft = (implPhasesDraft || []).filter((_, i) => i !== idx);
+      renderImplementationPlan(state.selectedProject);
+    });
+  });
+  root.querySelectorAll('[data-add-auto-phase]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      syncImplPhasesDraftFromDom();
+      const name = btn.dataset.addAutoPhase || '';
+      implPhasesDraft = [...(implPhasesDraft || []), { id: `phase_${(implPhasesDraft || []).length + 1}_${Date.now()}`, name, durationWeeks: 0, objective: '' }];
+      renderImplementationPlan(state.selectedProject);
+    });
+  });
+  root.querySelectorAll('[data-goto-req-phase]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.filters = state.filters || {};
+      state.filters.phase = btn.dataset.gotoReqPhase || '';
+      switchToTab('requisitos');
+    });
+  });
+}
+
 function renderImplementationPlan(project) {
   const requirements = Array.isArray(project?.requirements) ? project.requirements : [];
   const questions = Array.isArray(project?.clarificationQuestions) ? project.clarificationQuestions : [];
@@ -1399,34 +1726,54 @@ function renderImplementationPlan(project) {
   const pendingRequirements = requirements.filter((entry) => !doneStatuses.has(String(entry.status || '').toLowerCase()));
   const blockedRequirements = requirements.filter((entry) => blockedStatuses.has(String(entry.status || '').toLowerCase()));
 
-  const matchRequirementToPhase = (req) => {
-    const reqPhase = normalizeForCompare(req?.phase);
-    return phases.find((phase, index) => {
-      const phaseName = String(phase?.name || `Fase ${index + 1}`).trim();
-      const phaseToken = normalizeForCompare(phaseName);
-      const phaseIdToken = normalizeForCompare(phase?.id);
-      return Boolean(reqPhase && (reqPhase === phaseToken || reqPhase === phaseIdToken || reqPhase.includes(phaseToken)));
-    }) || null;
+  // As fases mostradas derivam da união entre o plano curado (project.phases,
+  // que fornece duração/objetivo) e as fases reais da classificação dos
+  // requisitos (req.phase). Assim a tabela fica coerente com o quadro de
+  // requisitos: qualquer fase usada na classificação aparece aqui.
+  const phaseDefs = phases.map((phase, index) => ({
+    id: String(phase?.id || '').trim(),
+    name: String(phase?.name || `Fase ${index + 1}`).trim(),
+    durationWeeks: Number(phase?.durationWeeks || 0),
+    objective: String(phase?.objective || phase?.description || '').trim(),
+    fromPlan: true,
+  }));
+  const coveredTokens = new Set();
+  phaseDefs.forEach((p) => {
+    coveredTokens.add(normalizeForCompare(p.name));
+    if (p.id) coveredTokens.add(normalizeForCompare(p.id));
+  });
+  const extraNames = [];
+  const seenExtra = new Set();
+  requirements.forEach((req) => {
+    const token = normalizeForCompare(req?.phase);
+    if (!token || coveredTokens.has(token) || seenExtra.has(token)) return;
+    seenExtra.add(token);
+    extraNames.push(String(req.phase).trim());
+  });
+  extraNames.sort((a, b) => a.localeCompare(b, 'pt-PT'));
+  extraNames.forEach((name) => {
+    phaseDefs.push({ id: '', name, durationWeeks: 0, objective: '', fromPlan: false });
+  });
+
+  const matchPhaseDef = (req) => {
+    const token = normalizeForCompare(req?.phase);
+    if (!token) return null;
+    return phaseDefs.find((p) => token === normalizeForCompare(p.name) || (p.id && token === normalizeForCompare(p.id))) || null;
   };
 
-  const outOfPlan = [];
-  const phaseRows = phases.map((phase, index) => {
-    const phaseName = String(phase?.name || `Fase ${index + 1}`).trim();
+  const outOfPlan = requirements.filter((req) => !matchPhaseDef(req));
+  const phaseRows = phaseDefs.map((phase, index) => {
+    const phaseName = phase.name;
     const phaseReqs = requirements
-      .filter((req) => {
-        const matched = matchRequirementToPhase(req);
-        if (!matched && !outOfPlan.find((entry) => entry.id === req.id)) {
-          outOfPlan.push(req);
-        }
-        return matched && matched.id === phase.id;
-      })
+      .filter((req) => matchPhaseDef(req) === phase)
       .slice()
       .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), 'pt-PT'));
     const approved = phaseReqs.filter((entry) => doneStatuses.has(String(entry.status || '').toLowerCase())).length;
     const pending = phaseReqs.length - approved;
     const durationWeeks = Number(phase?.durationWeeks || 0);
     const durationLabel = Number.isFinite(durationWeeks) && durationWeeks > 0 ? `${durationWeeks}sem` : '—';
-    const objective = escapeHtml(shortText(String(phase?.objective || phase?.description || '').trim() || '—', 100));
+    const objective = escapeHtml(shortText(String(phase?.objective || '').trim() || '—', 100));
+    const planTag = phase.fromPlan ? '' : ' <span class="ip-tag ip-tag--auto" title="Fase vinda da classificação dos requisitos">auto</span>';
     const highPri = phaseReqs
       .filter((e) => e.priority === 'high' && !doneStatuses.has(String(e.status || '').toLowerCase()))
       .slice(0, 3)
@@ -1435,7 +1782,7 @@ function renderImplementationPlan(project) {
 
     return `
       <tr class="ip-phase-row">
-        <td class="ip-phase-name">${index + 1}. ${escapeHtml(phaseName)}</td>
+        <td class="ip-phase-name">${index + 1}. ${escapeHtml(phaseName)}${planTag}</td>
         <td class="ip-phase-dur">${durationLabel}</td>
         <td class="ip-phase-reqs">${phaseReqs.length}</td>
         <td class="ip-phase-done"><span class="ip-pill ip-pill--ok">${approved} ok</span> <span class="ip-pill ip-pill--pend">${pending} pend.</span></td>
@@ -1444,6 +1791,34 @@ function renderImplementationPlan(project) {
       </tr>
     `;
   }).join('');
+
+  // Requisitos por fase — mesma fonte de verdade (req.phase) que a página de
+  // requisitos, centralizada aqui para gerir as fases.
+  const phaseBreakdown = phaseDefs.map((phase, index) => {
+    const phaseReqs = requirements
+      .filter((req) => matchPhaseDef(req) === phase)
+      .slice()
+      .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), 'pt-PT'));
+    const chips = phaseReqs.length
+      ? phaseReqs.map((req) => `<button type="button" class="ip-req-chip" data-goto-req-phase="${escapeHtml(phase.name)}" title="${escapeHtml(req.title || '')}"><span class="ip-req-chip-id">${escapeHtml(req.id)}</span> ${escapeHtml(shortText(req.title || req.shall || '', 48))}</button>`).join('')
+      : '<span class="ip-muted">Sem requisitos nesta fase.</span>';
+    return `
+      <div class="ip-phase-group">
+        <div class="ip-phase-group-head">
+          <strong>${index + 1}. ${escapeHtml(phase.name)}</strong>
+          <span class="ip-muted">${phaseReqs.length} req.</span>
+        </div>
+        <div class="ip-req-chips">${chips}</div>
+      </div>
+    `;
+  }).join('');
+  const unassignedChips = outOfPlan.length
+    ? outOfPlan
+      .slice()
+      .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), 'pt-PT'))
+      .map((req) => `<button type="button" class="ip-req-chip ip-req-chip--warn" title="${escapeHtml(req.title || '')}"><span class="ip-req-chip-id">${escapeHtml(req.id)}</span> ${escapeHtml(shortText(req.title || req.shall || '', 48))}</button>`)
+      .join('')
+    : '';
 
   const nextActions = [
     ...pendingRequirements
@@ -1455,7 +1830,12 @@ function renderImplementationPlan(project) {
   ].slice(0, 7);
 
   const moduleInsights = collectModules(project).map((moduleName) => {
-    const moduleReqs = requirements.filter((entry) => normalizeModuleName(entry.module) === moduleName);
+    const moduleReqs = requirements.filter((entry) => {
+      const tags = Array.isArray(entry.moduleTags) && entry.moduleTags.length
+        ? entry.moduleTags
+        : [normalizeModuleName(entry.module)].filter(Boolean);
+      return tags.includes(moduleName);
+    });
     const high = moduleReqs.filter((entry) => entry.priority === 'high').length;
     const blocked = moduleReqs.filter((entry) => blockedStatuses.has(String(entry.status || '').toLowerCase())).length;
     return `<tr><td>${escapeHtml(moduleName)}</td><td>${moduleReqs.length}</td><td>${high}</td><td>${blocked}</td></tr>`;
@@ -1480,15 +1860,32 @@ function renderImplementationPlan(project) {
 
     <details class="ip-section" open>
       <summary>Fases de Implementação</summary>
-      ${phases.length ? `
+      <div class="ip-section-actions">
+        ${implPhasesEditing
+          ? ''
+          : (canEdit() ? '<button type="button" class="btn tiny ghost" data-edit-phases>Editar fases</button>' : '')}
+      </div>
+      ${implPhasesEditing
+        ? buildImplementationPhasesEditorHtml(requirements)
+        : (phaseDefs.length ? `
         <div class="ip-table-wrap">
           <table class="ip-table">
             <thead><tr><th>Fase</th><th>Duração</th><th>Req.</th><th>Estado</th><th>Objetivo</th><th>Alta prioridade</th></tr></thead>
             <tbody>${phaseRows}</tbody>
           </table>
         </div>
-      ` : '<p class="ip-empty">Sem fases definidas.</p>'}
+      ` : '<p class="ip-empty">Sem fases definidas.</p>')}
     </details>
+
+    ${implPhasesEditing ? '' : `
+    <details class="ip-section" open>
+      <summary>Requisitos por fase</summary>
+      <div class="ip-phase-breakdown">${phaseBreakdown || '<p class="ip-empty">Sem fases.</p>'}</div>
+      ${unassignedChips ? `<div class="ip-phase-group ip-phase-group--warn">
+        <div class="ip-phase-group-head"><strong>Sem fase atribuída</strong><span class="ip-muted">${outOfPlan.length} req.</span></div>
+        <div class="ip-req-chips">${unassignedChips}</div>
+      </div>` : ''}
+    </details>`}
 
     <details class="ip-section">
       <summary>Próximos Passos</summary>
@@ -1521,6 +1918,8 @@ function renderImplementationPlan(project) {
       </div>
     </details>
   `;
+
+  wireImplementationPlanEvents();
 }
 
 function renderRequirements(project) {
@@ -1865,9 +2264,6 @@ function navigateToFilteredTab(tabId, filters = {}) {
   if (tabId === 'perguntas') {
     state.questionFilters.byCurrentStage = Boolean(filters.deliveryStageId);
   }
-  if (tabId === 'atas' && filters.deliveryStageId) {
-    state.tabFilters.deliveryStageId = filters.deliveryStageId;
-  }
   switchToTab(tabId);
 }
 
@@ -2019,7 +2415,7 @@ async function bootstrapAppAfterLogin() {
   await loadUsers();
   await loadProjects();
 
-  els.userChip.textContent = `${state.user.name} • ${state.user.role}`;
+  els.userMenuInfo && renderUserMenuInfo();
   els.loginCard.classList.add('hidden');
   els.workspace.classList.remove('hidden');
   setReadonlyByRole();
@@ -2033,6 +2429,7 @@ async function bootstrapAppAfterLogin() {
 }
 
 async function handleLogout() {
+  setUserMenuOpen(false);
   try {
     if (state.token) {
       await apiRequest('/auth/logout', { method: 'POST' });
@@ -2403,6 +2800,24 @@ async function handleAddRequirement(event) {
   }
 }
 
+async function handleClearAllRequirements() {
+  if (!state.selectedProject) return;
+  const count = (state.selectedProject.requirements || []).length;
+  if (!count) {
+    showToast('Não há requisitos para limpar.', 'ok');
+    return;
+  }
+  const confirmed = window.confirm(`Apagar TODOS os ${count} requisitos deste projeto? Esta ação não pode ser desfeita e serve para recomeçar o processo de requisitos.`);
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/requirements`, { method: 'DELETE' });
+    showToast('Todos os requisitos foram apagados.', 'ok');
+    await loadProjectById(state.selectedProject.id);
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
 async function handleRequirementsTableClick(event) {
   if (!state.selectedProject) return;
   const button = event.target.closest('button[data-action]');
@@ -2623,7 +3038,7 @@ function applyThemeLogos(theme) {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  els.themeToggleBtn.innerHTML = themeIconSvg(theme);
+  if (els.themeToggleBtn) els.themeToggleBtn.innerHTML = themeIconSvg(theme);
   applyThemeLogos(theme);
   localStorage.setItem(THEME_KEY, theme);
 }
@@ -2634,12 +3049,26 @@ function toggleTheme() {
 }
 
 function wireEvents() {
+  window.HelpUI?.wireHelpEvents?.();
   els.loginForm.addEventListener('submit', handleLogin);
   els.logoutBtn.addEventListener('click', handleLogout);
   els.themeToggleBtn.addEventListener('click', toggleTheme);
   els.refreshProjectsBtn.addEventListener('click', () => loadProjects(state.selectedProjectId).catch((e) => showToast(e.message, 'error')));
-  els.openSettingsBtn?.addEventListener('click', () => switchToTab('definicoes'));
-  els.settingsThemeToggleBtn?.addEventListener('click', toggleTheme);
+  els.openSettingsBtn?.addEventListener('click', () => {
+    setUserMenuOpen(false);
+    switchToTab('definicoes');
+  });
+  els.currentProjectSwitchBtn?.addEventListener('click', () => switchToTab('projetos'));
+  els.userMenuBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = els.userMenuPopover?.classList.contains('hidden') === false;
+    setUserMenuOpen(!open);
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.topbar-user-menu')) {
+      setUserMenuOpen(false);
+    }
+  });
   els.analyzeMinutePropagationBtn?.addEventListener('click', handleAnalyzeMinutePropagation);
   els.generateMinutePropagationPromptBtn?.addEventListener('click', handleGenerateMinutePropagationPrompt);
   document.addEventListener('click', (event) => {
@@ -2683,6 +3112,7 @@ function wireEvents() {
   els.importRequirementChangesBtn.addEventListener('click', handleImportRequirementChanges);
   els.importAiBtn.addEventListener('click', handleImportAi);
   els.addRequirementForm.addEventListener('submit', handleAddRequirement);
+  els.clearAllRequirementsBtn?.addEventListener('click', handleClearAllRequirements);
   els.assignMemberForm.addEventListener('submit', handleAssignMember);
   els.generateTechnicalBtn.addEventListener('click', () => handleGenerate('technical'));
   els.generateCommercialBtn.addEventListener('click', () => handleGenerate('commercial'));

@@ -5,7 +5,65 @@
     modalDirty: false,
     modalReqId: null,
     dragReqId: null,
+    groupMode: 'module',
+    groupingIndex: new Map(),
   };
+
+  // Liga cada requisito a funcionalidade/grupo a partir de project.capabilities
+  // e project.requirementClusters (o resultado do agrupamento com IA).
+  function buildGroupingIndex(project) {
+    const index = new Map();
+    const caps = Array.isArray(project?.capabilities) ? project.capabilities : [];
+    const clusters = Array.isArray(project?.requirementClusters) ? project.requirementClusters : [];
+    for (const cap of caps) {
+      for (const rid of (cap.requirementIds || [])) {
+        const key = String(rid);
+        if (!index.has(key)) index.set(key, { capabilityId: cap.id, capabilityName: cap.name, clusterId: '', clusterName: '' });
+      }
+    }
+    for (const cl of clusters) {
+      for (const rid of (cl.requirementIds || [])) {
+        const key = String(rid);
+        const entry = index.get(key) || { capabilityId: '', capabilityName: '', clusterId: '', clusterName: '' };
+        entry.clusterId = cl.id;
+        entry.clusterName = cl.name;
+        if (!entry.capabilityName && cl.capabilityId) {
+          const cap = caps.find((c) => c.id === cl.capabilityId);
+          if (cap) { entry.capabilityId = cap.id; entry.capabilityName = cap.name; }
+        }
+        index.set(key, entry);
+      }
+    }
+    return index;
+  }
+
+  // Agrupa por funcionalidade -> grupo (espelha a estrutura módulo -> fase).
+  function groupRequirementsByCapability(items) {
+    const index = reqUiState.groupingIndex;
+    const tree = new Map();
+    for (const req of items) {
+      const g = index.get(String(req.id));
+      const capName = (g && g.capabilityName) || 'Sem funcionalidade';
+      const clName = (g && g.clusterName) || 'Sem grupo';
+      if (!tree.has(capName)) tree.set(capName, new Map());
+      const cls = tree.get(capName);
+      if (!cls.has(clName)) cls.set(clName, []);
+      cls.get(clName).push(req);
+    }
+    const sortNames = (a, b, sentinel) => {
+      if (a === sentinel) return 1;
+      if (b === sentinel) return -1;
+      return a.localeCompare(b, 'pt');
+    };
+    return [...tree.keys()]
+      .sort((a, b) => sortNames(a, b, 'Sem funcionalidade'))
+      .map((cap) => ({
+        module: cap,
+        phases: [...tree.get(cap).keys()]
+          .sort((a, b) => sortNames(a, b, 'Sem grupo'))
+          .map((cl) => ({ phase: cl, requirements: tree.get(cap).get(cl) })),
+      }));
+  }
 
   const FIELD_HELP = {
     id: 'Identificador único do requisito no projecto.',
@@ -27,10 +85,26 @@
     return document.getElementById(id);
   }
 
+  // Módulos canónicos partilhados com a linha de entrega (moduleTags). A
+  // pagina de requisitos passa a usar moduleTags como fonte única, em vez do
+  // antigo campo único req.module, para manter tudo coerente.
+  const MODULE_PRIORITY = ['Database', 'Backend', 'Frontend'];
+  function moduleTagsOf(req) {
+    const tags = Array.isArray(req?.moduleTags) ? req.moduleTags.filter(Boolean) : [];
+    if (tags.length) return tags;
+    const m = normalizeModuleName(req?.module);
+    return m ? [m] : [];
+  }
+  function primaryModuleOf(req) {
+    const tags = moduleTagsOf(req);
+    if (!tags.length) return 'Outro';
+    return MODULE_PRIORITY.find((m) => tags.includes(m)) || tags[0];
+  }
+
   function groupRequirements(items) {
     const tree = new Map();
     for (const req of items) {
-      const mod = normalizeModuleName(req.module) || 'Outro';
+      const mod = primaryModuleOf(req);
       const phase = String(req.phase || 'Backlog').trim() || 'Backlog';
       if (!tree.has(mod)) tree.set(mod, new Map());
       const phases = tree.get(mod);
@@ -115,8 +189,13 @@
     if (!container) return;
 
     renderFilterBanner();
+    reqUiState.groupingIndex = buildGroupingIndex(project);
+    const groupBySel = $('reqGroupBy');
+    if (groupBySel) groupBySel.value = reqUiState.groupMode;
     const filtered = getFilteredForUi(project);
-    const grouped = groupRequirements(filtered);
+    const grouped = reqUiState.groupMode === 'capability'
+      ? groupRequirementsByCapability(filtered)
+      : groupRequirements(filtered);
 
     if (legacyTable) legacyTable.classList.add('hidden');
     $('requirementDetailPanel')?.classList.add('hidden');
@@ -148,7 +227,7 @@
                     <span class="req-count-badge">${requirements.length}</span>
                   </summary>
                   <div class="req-phase-dropzone" data-module="${escapeHtml(module)}" data-phase="${escapeHtml(phase)}">
-                    ${requirements.map((req) => renderReqCard(req)).join('')}
+                    ${requirements.map((req) => renderReqCard(req, project)).join('')}
                   </div>
                 </details>
               `;
@@ -163,19 +242,35 @@
     populatePhaseFilter(project);
   }
 
-  function renderReqCard(req) {
+  function renderReqCard(req, project) {
     const summary = shortText(req.shall || req.need || req.description || req.title, 100);
     const status = escapeHtml(req.status || 'draft');
     const priority = escapeHtml(req.priority || 'medium');
     const locked = !canEdit();
+    const draggable = !locked && reqUiState.groupMode !== 'capability';
+    const diagramCount = window.DiagramsUI?.diagramsForRequirement?.(project, req.id)?.length
+      || (req.linkedDiagramIds || []).length
+      || 0;
+    const grp = reqUiState.groupingIndex?.get(String(req.id));
+    let capBadge = '';
+    if (grp && grp.capabilityName) {
+      const label = grp.clusterName ? `${grp.capabilityName} · ${grp.clusterName}` : grp.capabilityName;
+      capBadge = `<span class="req-card-cap" title="Funcionalidade · grupo (agrupamento com IA)">${escapeHtml(label)}</span>`;
+    }
+    const modTags = moduleTagsOf(req);
+    const modBadges = modTags.length
+      ? `<span class="req-card-modules">${modTags.map((t) => `<span class="req-mod-badge">${escapeHtml(t)}</span>`).join('')}</span>`
+      : '';
     return `
-      <article class="req-card ${locked ? 'req-card-locked' : ''}" draggable="${locked ? 'false' : 'true'}" data-req-id="${escapeHtml(req.id)}">
+      <article class="req-card ${locked ? 'req-card-locked' : ''}" draggable="${draggable ? 'true' : 'false'}" data-req-id="${escapeHtml(req.id)}">
         <span class="req-drag-handle" title="Arrastar para outro módulo/fase" aria-hidden="true">⠿</span>
         <button type="button" class="req-card-main" data-open-req="${escapeHtml(req.id)}">
           <span class="req-card-id">${escapeHtml(req.id)}</span>
           <span class="req-card-type">${escapeHtml(req.type)}</span>
           <strong class="req-card-title">${escapeHtml(req.title || summary)}</strong>
-          <small class="req-card-meta">${status} · ${priority}</small>
+          ${modBadges}
+          ${capBadge}
+          <small class="req-card-meta">${status} · ${priority}${diagramCount ? ` · <span class="req-diagram-badge" title="${diagramCount} diagrama(s) ligado(s)">${diagramCount} diag</span>` : ''}</small>
         </button>
       </article>
     `;
@@ -228,7 +323,9 @@
       });
     });
 
-    if (!canEdit()) return;
+    // Em modo "por funcionalidade" o arrastar (que reatribui módulo/fase) não se
+    // aplica — a associação vem do agrupamento, não da posição.
+    if (!canEdit() || reqUiState.groupMode === 'capability') return;
 
     container.querySelectorAll('.req-card[draggable="true"]').forEach((card) => {
       card.addEventListener('dragstart', (e) => {
@@ -263,24 +360,29 @@
   async function moveRequirement(reqId, newModule, newPhase, project) {
     const req = (project.requirements || []).find((r) => r.id === reqId);
     if (!req) return;
-    const backup = { module: req.module, phase: req.phase };
-    if (normalizeModuleName(backup.module) === newModule && (backup.phase || 'Backlog') === newPhase) return;
+    const backup = { module: req.module, phase: req.phase, moduleTags: req.moduleTags };
+    if (primaryModuleOf(req) === newModule && (backup.phase || 'Backlog') === newPhase) return;
 
+    // Mover entre módulos reescreve moduleTags (fonte única partilhada com a
+    // linha de entrega), mantendo as duas vistas coerentes.
     req.module = newModule;
+    req.moduleTags = [newModule];
     req.phase = newPhase;
     renderGroupedRequirements(project);
 
     try {
       const res = await apiRequest(
         `/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(reqId)}`,
-        { method: 'PATCH', body: { module: newModule, phase: newPhase } }
+        { method: 'PATCH', body: { module: newModule, phase: newPhase, moduleTags: [newModule] } }
       );
       state.selectedProject = res.project;
       renderGroupedRequirements(state.selectedProject);
+      if (typeof renderImplementationPlan === 'function') renderImplementationPlan(state.selectedProject);
       showToast('Requisito movido com sucesso.', 'ok');
     } catch (error) {
       req.module = backup.module;
       req.phase = backup.phase;
+      req.moduleTags = backup.moduleTags;
       renderGroupedRequirements(project);
       showToast(error.message || 'Erro ao mover requisito.', 'error');
     }
@@ -326,6 +428,7 @@
       <label class="full">${helperLabel('Critérios de aceitação (Measure)', 'measure')}<textarea id="modalReqMeasure" rows="2"></textarea></label>
       <label class="full">${helperLabel('Dependências / IDs relacionados', 'related')}<textarea id="modalReqRelatedIds" rows="2"></textarea></label>
       <label class="full">${helperLabel('Notas', 'notes')}<textarea id="modalReqNotes" rows="2"></textarea></label>
+      ${window.DiagramsUI?.renderRequirementDiagramLinks?.(project, reqId) || ''}
     `;
 
     $('modalReqStatus').value = req.status || 'draft';
@@ -370,10 +473,12 @@
     const reqId = reqUiState.modalReqId;
     if (!project || !reqId) return;
 
+    const req = (project.requirements || []).find((r) => r.id === reqId);
+    const newModule = $('modalReqModule')?.value;
     const body = {
       status: $('modalReqStatus')?.value,
       priority: $('modalReqPriority')?.value,
-      module: $('modalReqModule')?.value,
+      module: newModule,
       phase: $('modalReqPhase')?.value,
       submodule: $('modalReqSubmodule')?.value,
       title: $('modalReqTitle')?.value,
@@ -383,6 +488,12 @@
       relatedRequirementIds: splitRequirementIds($('modalReqRelatedIds')?.value),
       notes: $('modalReqNotes')?.value,
     };
+
+    // Só reescreve moduleTags quando o módulo é alterado manualmente, para não
+    // apagar a classificação multi-módulo vinda do agrupamento.
+    if (req && normalizeModuleName(req.module) !== normalizeModuleName(newModule)) {
+      body.moduleTags = [newModule];
+    }
 
     if (!String(body.title || '').trim()) {
       showToast('O título é obrigatório.', 'error');
@@ -398,6 +509,7 @@
       reqUiState.modalDirty = false;
       $('reqModalDirty')?.classList.add('hidden');
       renderGroupedRequirements(state.selectedProject);
+      if (typeof renderImplementationPlan === 'function') renderImplementationPlan(state.selectedProject);
       showToast('Requisito guardado.', 'ok');
     } catch (error) {
       showToast(error.message, 'error');
@@ -418,6 +530,7 @@
       reqUiState.modalReqId = null;
       $('requirementEditModal')?.classList.add('hidden');
       renderGroupedRequirements(state.selectedProject);
+      if (typeof renderImplementationPlan === 'function') renderImplementationPlan(state.selectedProject);
       showToast('Requisito apagado.', 'ok');
     } catch (error) {
       showToast(error.message, 'error');
@@ -536,6 +649,10 @@
     });
     $('reqFilterPriority')?.addEventListener('change', (e) => {
       state.filters.priority = e.target.value;
+      if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
+    });
+    $('reqGroupBy')?.addEventListener('change', (e) => {
+      reqUiState.groupMode = e.target.value === 'capability' ? 'capability' : 'module';
       if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
     });
   }

@@ -410,6 +410,13 @@ function registerRequirementsPlatform(app, options) {
       sanitized.targetBudgetMin = numberOr(project.targetBudgetMin, 5000);
       sanitized.targetBudgetMax = numberOr(project.targetBudgetMax, 6000);
       sanitized.commercialTerms = project.commercialTerms || { ...DEFAULT_COMMERCIAL_TERMS };
+    } else if (sanitized.proposal) {
+      // Strip monetary values from the proposal for viewers without budget access.
+      sanitized.proposal = {
+        ...sanitized.proposal,
+        totalValue: 0,
+        phases: ensureArray(sanitized.proposal.phases).map((p) => ({ ...p, value: 0 })),
+      };
     }
 
     return sanitized;
@@ -670,12 +677,17 @@ function registerRequirementsPlatform(app, options) {
         clientRequests: [],
         businessObjectives: [],
         promptRuns: [],
+        agentJobs: [],
         humanReviews: [],
         versionSnapshots: [],
         alternativeResponses: [],
         informationEntries: [],
         nextDecision: '',
         ideaBriefMarkdown: '',
+        diagramArtifacts: [],
+        diagramVersions: [],
+        diagramReviews: [],
+        diagramGenerationJobs: [],
       };
 
       await updateStore(async (store) => {
@@ -795,6 +807,14 @@ function registerRequirementsPlatform(app, options) {
           title: artifact.name,
           status: artifact.status,
           stageId: artifact.stageId,
+        })),
+        ...ensureArray(project.diagramArtifacts).map((diagram) => ({
+          id: diagram.id,
+          nodeType: 'diagram',
+          type: diagram.type,
+          title: diagram.title,
+          status: diagram.status,
+          module: diagram.module,
         })),
       ],
       links,
@@ -1214,6 +1234,128 @@ function registerRequirementsPlatform(app, options) {
         review,
         project: sanitizeProject(updated, req.auth.user),
       });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Generate an AI prompt that classifies a single ata's impact across phases.
+  app.post('/api/projects/projects/:projectId/meeting-minutes/:minuteId/classify-prompt', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const { projectId, minuteId } = req.params;
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      if (!project) return res.status(404).json({ message: 'Projeto nao encontrado.' });
+      const minute = normalizeMeetingMinutes(project.meetingMinutes).find((m) => m.id === minuteId);
+      if (!minute) return res.status(404).json({ message: 'Ata nao encontrada.' });
+
+      const prompt = deliveryOs.buildMeetingClassificationPrompt(project, minute);
+      return res.json({ prompt, minuteId });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Apply the AI classification output directly onto the ata (metadata only).
+  app.post('/api/projects/projects/:projectId/meeting-minutes/:minuteId/classify', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const { projectId, minuteId } = req.params;
+      const rawInput = String(req.body?.rawOutput || (req.body?.parsedOutput ? JSON.stringify(req.body.parsedOutput) : ''));
+      const parsedFromRaw = deliveryOs.parseAgentJsonOutput(rawInput);
+      const parsed = req.body?.parsedOutput || parsedFromRaw.parsed;
+      if (rawInput && !parsed) {
+        return res.status(400).json({ message: 'JSON inválido. Verifique a estrutura do output da IA.' });
+      }
+      if (!parsed) {
+        return res.status(400).json({ message: 'Cole o output JSON da IA para classificar a ata.' });
+      }
+
+      await updateStore(async (mutableStore) => {
+        const project = mutableStore.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        project.meetingMinutes = normalizeMeetingMinutes(project.meetingMinutes);
+        const minute = project.meetingMinutes.find((m) => m.id === minuteId);
+        if (!minute) throw new Error('Ata nao encontrada.');
+
+        deliveryOs.applyMeetingClassificationParsed(project, minute, parsed);
+        project.meetingMinutes = normalizeMeetingMinutes(project.meetingMinutes);
+        project.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'meeting_minute_classified',
+          details: { minuteId, stages: minute.impactedStageIds, requirements: minute.impactedRequirementIds.length },
+        });
+      });
+
+      const updatedStore = await readStore();
+      const updated = updatedStore.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(updated, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Lightweight implementation edits: confirm the stack, update per-task LLM size/status.
+  app.post('/api/projects/projects/:projectId/implementation', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const body = req.body || {};
+      await updateStore(async (mutableStore) => {
+        const project = mutableStore.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const impl = deliveryOs.normalizeImplementation(project.implementation, project);
+
+        if (typeof body.confirmStack === 'boolean') {
+          impl.stack.confirmed = body.confirmStack;
+          impl.stack.confirmedAt = body.confirmStack ? nowIso() : '';
+        }
+
+        if (Array.isArray(body.taskUpdates)) {
+          const byId = new Map(impl.tasks.map((t) => [t.id, t]));
+          body.taskUpdates.forEach((u) => {
+            const task = u && u.id ? byId.get(String(u.id)) : null;
+            if (!task) return;
+            if (u.llmSize) task.llmSize = String(u.llmSize);
+            if (u.status) {
+              task.status = String(u.status);
+              if (task.status === 'done' && !task.executedAt) task.executedAt = nowIso();
+            }
+            if (typeof u.resultMarkdown === 'string') task.resultMarkdown = u.resultMarkdown;
+            if (typeof u.executedModel === 'string') task.executedModel = u.executedModel;
+            if (typeof u.executedAt === 'string') task.executedAt = u.executedAt;
+            if (Array.isArray(u.outputLinks)) task.outputLinks = u.outputLinks;
+            if (Array.isArray(u.subtaskDone)) {
+              const doneSet = new Set(u.subtaskDone.map(String));
+              const offSet = new Set(Array.isArray(u.subtaskUndone) ? u.subtaskUndone.map(String) : []);
+              task.subtasks = ensureArray(task.subtasks).map((st) => {
+                if (doneSet.has(st.id)) return { ...st, done: true };
+                if (offSet.has(st.id)) return { ...st, done: false };
+                return st;
+              });
+            }
+          });
+        }
+
+        impl.updatedAt = nowIso();
+        project.implementation = deliveryOs.normalizeImplementation(impl, project);
+        project.updatedAt = nowIso();
+
+        appendActivity(mutableStore, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'implementation_updated',
+          details: {
+            confirmStack: typeof body.confirmStack === 'boolean' ? body.confirmStack : undefined,
+            taskUpdates: Array.isArray(body.taskUpdates) ? body.taskUpdates.length : 0,
+          },
+        });
+      });
+
+      const updatedStore = await readStore();
+      const updated = updatedStore.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(updated, req.auth.user) });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -1816,6 +1958,10 @@ function registerRequirementsPlatform(app, options) {
           return normalized;
         });
 
+        const { removeRequirementFromDiagrams } = require('./lib/diagram-traceability');
+        require('./lib/diagrams').normalizeProjectDiagramFields(project);
+        removeRequirementFromDiagrams(project, requirementId);
+
         project.updatedAt = nowIso();
 
         appendActivity(store, {
@@ -1834,7 +1980,60 @@ function registerRequirementsPlatform(app, options) {
     }
   });
 
-  app.post('/api/projects/projects/:projectId/questions', authMiddleware, requireRole('super_admin'), async (req, res) => {
+  // Clear ALL requirements (and the structures derived from them) so the user
+  // can restart the requirements process from scratch.
+  app.delete('/api/projects/projects/:projectId/requirements', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      let removedCount = 0;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        removedCount = ensureArray(project.requirements).length;
+        project.requirements = [];
+
+        // Drop requirement references held by capabilities and clusters.
+        project.capabilities = ensureArray(project.capabilities).map((c) => ({ ...c, requirementIds: [] }));
+        project.requirementClusters = ensureArray(project.requirementClusters).map((c) => ({ ...c, requirementIds: [] }));
+
+        // Drop requirement links from diagrams.
+        project.diagramArtifacts = ensureArray(project.diagramArtifacts).map((d) => ({ ...d, linkedRequirementIds: [] }));
+
+        // Drop requirement links carried by roadmap / implementation.
+        if (project.roadmap && Array.isArray(project.roadmap.phases)) {
+          project.roadmap.phases = project.roadmap.phases.map((p) => ({ ...p, requirementIds: [] }));
+        }
+        if (project.implementation) {
+          if (Array.isArray(project.implementation.tasks)) {
+            project.implementation.tasks = project.implementation.tasks.map((t) => ({ ...t, requirementIds: [] }));
+          }
+          if (project.implementation.stack && Array.isArray(project.implementation.stack.modules)) {
+            project.implementation.stack.modules = project.implementation.stack.modules.map((m) => ({ ...m, requirementIds: [] }));
+          }
+        }
+
+        // Drop requirement-scoped trace links.
+        project.traceLinks = ensureArray(project.traceLinks).filter((l) => l?.fromType !== 'requirement' && l?.toType !== 'requirement');
+
+        project.updatedAt = nowIso();
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirements_cleared',
+          details: { removedCount },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user), removedCount });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/questions', authMiddleware, loadProjectForUser, async (req, res) => {
     try {
       const projectId = req.params.projectId;
       const questionText = String(req.body?.question || '').trim();
@@ -2413,6 +2612,7 @@ function normalizeRequirementRecord(entry) {
     riskComplexity: textOr(raw.riskComplexity || raw.risk || raw.complexity),
     linkedFunctionalRequirement,
     relatedRequirementIds: dedupRelatedRequirementIds,
+    linkedDiagramIds: normalizeRequirementIdList(raw.linkedDiagramIds || raw.diagramArtifactIds),
     businessValue: textOr(raw.businessValue),
     target: textOr(raw.target),
     reason: textOr(raw.reason),
@@ -3857,13 +4057,42 @@ function normalizeClarificationQuestions(list) {
 function normalizeMeetingMinuteRecord(raw) {
   const impactScope = normalizeMeetingImpactScope(raw?.impactScope, 'requirements');
   const scopeMeta = deliveryOs.MEETING_IMPACT_SCOPES.find((entry) => entry.id === impactScope);
+  const stageOrder = deliveryOs.STAGE_ORDER || [];
+  const targetStageId = textOr(raw?.targetStageId, scopeMeta?.stageId || impactScope);
+
+  // Multi-phase impacts (AI-classified). Atas are a global field — they can
+  // touch several phases at once. Migrate legacy single-phase records.
+  let impactedStageIds = normalizeStringArray(raw?.impactedStageIds)
+    .filter((id) => stageOrder.includes(id));
+  if (!impactedStageIds.length && stageOrder.includes(targetStageId)) {
+    impactedStageIds = [targetStageId];
+  }
+
+  const decisions = ensureArray(raw?.decisions).map((d) => {
+    if (typeof d === 'string') return { text: d, stageIds: [], type: 'decision' };
+    return {
+      text: textOr(d?.text || d?.decision),
+      stageIds: normalizeStringArray(d?.stageIds).filter((id) => stageOrder.includes(id)),
+      type: textOr(d?.type, 'decision'),
+    };
+  }).filter((d) => d.text);
+
   return {
     id: textOr(raw?.id, `min_${crypto.randomUUID()}`),
     title: textOr(raw?.title, 'Reunião com cliente'),
     meetingDate: textOr(raw?.meetingDate),
     rawText: typeof raw?.rawText === 'string' ? raw.rawText : String(raw?.rawText || ''),
     impactScope,
-    targetStageId: textOr(raw?.targetStageId, scopeMeta?.stageId || impactScope),
+    targetStageId,
+    impactedStageIds,
+    impactedRequirementIds: normalizeStringArray(raw?.impactedRequirementIds),
+    decisions,
+    summaryMarkdown: textOr(raw?.summaryMarkdown),
+    openQuestions: ensureArray(raw?.openQuestions)
+      .map((q) => textOr(typeof q === 'string' ? q : q?.text || q?.question))
+      .filter(Boolean),
+    classificationStatus: textOr(raw?.classificationStatus, 'pending'),
+    classifiedAt: textOr(raw?.classifiedAt),
     createdAt: textOr(raw?.createdAt, nowIso()),
     createdBy: textOr(raw?.createdBy),
   };
