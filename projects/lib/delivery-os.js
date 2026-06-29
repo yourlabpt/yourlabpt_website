@@ -50,6 +50,7 @@ const INFORMATION_TYPES = [
 
 const AGENT_TYPES = [
   'requirement_grouping',
+  'requirement_hierarchy',
   'reverse_idea',
   'diagram_to_requirements',
   'requirements_to_architecture',
@@ -584,12 +585,37 @@ function normalizeAgentJobChunk(raw, index) {
 }
 
 function normalizeAgentJob(raw) {
+  const mode = textOr(raw?.mode, raw?.yarJobId || raw?.agentId ? 'runtime' : 'batched');
+  if (mode === 'runtime') {
+    const runtimeStatuses = [
+      'dispatching', 'running', 'queued', 'planning', 'executing', 'paused',
+      'self_review', 'pending_human_review', 'completed', 'failed', 'cancelled',
+    ];
+    const status = textOr(raw?.status, 'dispatching');
+    const normalizedStatus = status === 'running' ? 'queued' : status;
+    return {
+      id: textOr(raw?.id, `aj_${crypto.randomUUID().slice(0, 8)}`),
+      mode: 'runtime',
+      agentType: textOr(raw?.platformAgentType || raw?.agentType),
+      agentId: textOr(raw?.agentId),
+      yarJobId: textOr(raw?.yarJobId) || null,
+      promptRunId: textOr(raw?.promptRunId),
+      projectId: textOr(raw?.projectId),
+      status: runtimeStatuses.includes(normalizedStatus) ? normalizedStatus : 'queued',
+      error: textOr(raw?.error),
+      createdBy: textOr(raw?.createdBy),
+      createdAt: textOr(raw?.createdAt, nowIso()),
+      updatedAt: textOr(raw?.updatedAt, nowIso()),
+      chunks: [],
+    };
+  }
+
   const status = textOr(raw?.status, 'collecting');
   const allowed = ['collecting', 'reconciling', 'review_pending', 'applied', 'failed'];
   return {
     id: textOr(raw?.id, `ajob_${crypto.randomUUID().slice(0, 8)}`),
     agentType: textOr(raw?.agentType, 'requirement_grouping'),
-    mode: textOr(raw?.mode, 'batched'),
+    mode: 'batched',
     status: allowed.includes(status) ? status : 'collecting',
     strategy: textOr(raw?.strategy, 'module'),
     stageId: textOr(raw?.stageId),
@@ -1043,10 +1069,23 @@ function autoDeriveTraceLinks(project) {
   for (const req of ensureArray(project.requirements)) {
     const type = String(req.type || '');
     const nodeType = type === 'stakeholder' ? 'stakeholder_requirement' : type === 'functional' ? 'technical_requirement' : 'requirement';
+    const parentIds = new Set([
+      textOr(req.stakeholderRequirementLink),
+      textOr(req.linkedFunctionalRequirement),
+      textOr(req.parentId),
+    ].filter(Boolean).map((id) => String(id).toUpperCase()));
+
     if (req.stakeholderRequirementLink) {
+      add(nodeType, req.id, 'stakeholder_requirement', req.stakeholderRequirementLink, 'decomposes_from', 0.95);
       add(nodeType, req.id, 'stakeholder_requirement', req.stakeholderRequirementLink, 'satisfies', 0.95);
     }
+    if (req.linkedFunctionalRequirement && type === 'test_case') {
+      add('test_case', req.id, 'technical_requirement', req.linkedFunctionalRequirement, 'verified_by', 0.95);
+      add('test_case', req.id, 'technical_requirement', req.linkedFunctionalRequirement, 'tests', 0.95);
+    }
     for (const relId of ensureArray(req.relatedRequirementIds)) {
+      const token = String(relId || '').toUpperCase();
+      if (!token || parentIds.has(token)) continue;
       add(nodeType, req.id, 'requirement', relId, 'depends_on', 0.8);
     }
   }
@@ -1218,7 +1257,27 @@ function buildContextPack(project, options = {}) {
       shall: textOr(r.shall).slice(0, 200),
       status: r.status,
       moduleTags: r.moduleTags || [],
+      parentId: textOr(r.parentId, r.stakeholderRequirementLink, r.linkedFunctionalRequirement),
+      vLevel: r.vLevel,
     })),
+    hierarchySummary: (() => {
+      try {
+        const rh = require('./requirement-hierarchy');
+        const analysis = rh.analyzeRequirementHierarchy(project);
+        return {
+          coveragePct: analysis.stats.coveragePct,
+          orphans: analysis.orphans.length,
+          nodes: analysis.nodes.slice(0, maxRequirements).map((n) => ({
+            id: n.id,
+            type: n.type,
+            parentId: n.parentId,
+            stakeholderRootId: n.stakeholderRootId,
+          })),
+        };
+      } catch {
+        return null;
+      }
+    })(),
     openQuestions: ensureArray(project.clarificationQuestions)
       .filter((q) => ['open', 'sent', 'blocked'].includes(q.status))
       .slice(0, 15)
@@ -1247,6 +1306,39 @@ Responde APENAS com JSON válido:
   "moduleMappings": [{ "requirementId": "", "moduleTags": ["Frontend","Backend"] }],
   "openQuestions": [],
   "assumptions": []
+}`;
+}
+
+function buildHierarchyReorganizePrompt(project) {
+  const ctx = buildContextPack(project, { maxRequirements: 120 });
+  return `Tu és um analista de systems engineering YourLab.
+
+Tarefa: reorganizar a **cadeia V** do projecto — ligações STK (L0) → FR → RNF → TC.
+
+Regras:
+- Cada FR/RNF/TC deve ter um stakeholder raiz (STK) claro via decomposes_from / constrains / verified_by.
+- Não inventes requisitos novos; apenas reorganiza ligações entre IDs existentes.
+- Propõe novos STK apenas quando um órfão não encaixa num STK existente (campo newStakeholders).
+- Prefere poucos STK bem definidos a um STK por requisito.
+
+Contexto:
+${JSON.stringify({
+  project: ctx.projectSummary,
+  hierarchySummary: ctx.hierarchySummary,
+  requirements: ctx.requirementsSummary,
+  openQuestions: ctx.openQuestions,
+}, null, 2)}
+
+Responde APENAS com JSON válido:
+{
+  "moves": [
+    { "requirementId": "FR-01", "type": "functional", "parentId": "STK-03", "note": "motivo curto" }
+  ],
+  "newStakeholders": [
+    { "id": "STK-21", "title": "...", "forRequirementIds": ["FR-05"], "need": "...", "shall": "..." }
+  ],
+  "orphansRemaining": ["FR-99"],
+  "notesMarkdown": "Resumo das decisões para revisão humana"
 }`;
 }
 
@@ -1640,6 +1732,315 @@ Schema de output (diagram_to_requirements_v2):
   "assumptions": [],
   "requiresHumanConfirmation": true
 }`;
+}
+
+const ARCHITECTURE_DIAGRAM_BY_MODULE = {
+  Frontend: { type: 'c4_container', notation: 'mermaid' },
+  Backend: { type: 'sequence', notation: 'mermaid' },
+  Database: { type: 'erd', notation: 'mermaid' },
+  API: { type: 'openapi_spec', notation: 'openapi' },
+  Integration: { type: 'api_flow', notation: 'mermaid' },
+};
+
+function architectureReqMatchesModule(req, moduleTag) {
+  if (!moduleTag) return true;
+  const tags = normalizeModuleTags(req.moduleTags, req.module);
+  return tags.includes(moduleTag) || textOr(req.module) === moduleTag;
+}
+
+function buildArchitectureTaskPlan(project, capabilityId, moduleTag, options = {}) {
+  const mod = textOr(moduleTag, 'Backend');
+  const cap = capabilityId
+    ? ensureArray(project.capabilities).find((c) => c.id === capabilityId)
+    : null;
+
+  let reqs = ensureArray(project.requirements);
+  if (cap) {
+    const capIds = new Set(ensureArray(cap.requirementIds).map(String));
+    reqs = reqs.filter((r) => capIds.has(String(r.id)));
+  }
+  reqs = reqs.filter((r) => architectureReqMatchesModule(r, mod));
+
+  const clusters = ensureArray(project.requirementClusters).filter((cluster) => {
+    if (!cap) return true;
+    const capName = textOr(cap.name).toLowerCase();
+    return textOr(cluster.capabilityId) === cap.id
+      || textOr(cluster.capabilityName).toLowerCase() === capName;
+  });
+
+  const groups = [];
+  const assigned = new Set();
+
+  for (const cluster of clusters) {
+    const ids = ensureArray(cluster.requirementIds)
+      .map(String)
+      .filter((id) => reqs.some((r) => String(r.id) === id));
+    if (!ids.length) continue;
+    ids.forEach((id) => assigned.add(id));
+    groups.push({
+      id: textOr(cluster.id, `cluster-${groups.length}`),
+      title: textOr(cluster.name, 'Grupo de requisitos'),
+      requirementIds: ids,
+    });
+  }
+
+  const loose = reqs.filter((r) => !assigned.has(String(r.id)));
+  const chunkSize = Math.max(4, numberOr(options.requirementsPerDiagram, 6));
+  for (let i = 0; i < loose.length; i += chunkSize) {
+    const slice = loose.slice(i, i + chunkSize);
+    groups.push({
+      id: `req-chunk-${i}`,
+      title: loose.length <= chunkSize ? 'Requisitos do âmbito' : `Requisitos (${Math.floor(i / chunkSize) + 1})`,
+      requirementIds: slice.map((r) => r.id),
+    });
+  }
+
+  if (!groups.length && reqs.length) {
+    groups.push({
+      id: 'scope-all',
+      title: cap?.name || 'Todo o âmbito',
+      requirementIds: reqs.map((r) => r.id),
+    });
+  }
+
+  const hasContextDiagram = ensureArray(project.diagramArtifacts).some((d) => d.type === 'c4_context');
+  const moduleDiagram = ARCHITECTURE_DIAGRAM_BY_MODULE[mod] || { type: 'sequence', notation: 'mermaid' };
+
+  const tasks = [];
+  let order = 0;
+
+  if (!hasContextDiagram && groups.length) {
+    const contextReqs = [...new Set(groups.flatMap((g) => g.requirementIds))].slice(0, 14);
+    tasks.push({
+      id: `arch-task-${order}`,
+      order: order++,
+      title: 'Contexto do sistema (C4)',
+      diagramType: 'c4_context',
+      notation: 'mermaid',
+      requirementIds: contextReqs,
+      dependsOn: [],
+      role: 'context',
+      deferred: false,
+    });
+  }
+
+  for (const group of groups) {
+    const deps = tasks.length ? [tasks[tasks.length - 1].id] : [];
+    tasks.push({
+      id: `arch-task-${order}`,
+      order: order++,
+      title: `Diagrama — ${group.title}`,
+      diagramType: moduleDiagram.type,
+      notation: moduleDiagram.notation,
+      requirementIds: group.requirementIds,
+      dependsOn: [...deps],
+      role: 'diagram',
+      groupId: group.id,
+      deferred: false,
+    });
+  }
+
+  if (tasks.length) {
+    tasks.push({
+      id: `arch-task-${order}`,
+      order: order++,
+      title: 'Consolidar pacote de arquitectura',
+      diagramType: 'consolidate',
+      notation: 'json',
+      requirementIds: reqs.map((r) => r.id),
+      dependsOn: tasks.filter((t) => t.role !== 'merge').map((t) => t.id),
+      role: 'merge',
+      deferred: false,
+    });
+  }
+
+  const diagramTaskCount = tasks.filter((t) => t.role === 'diagram' || t.role === 'context').length;
+  const masterPlanMarkdown = [
+    `## Plano de arquitectura — ${cap?.name || 'projecto'} / ${mod}`,
+    '',
+    `Este plano divide **${reqs.length} requisito(s)** em **${diagramTaskCount} diagrama(s)** ligados, seguidos de consolidação.`,
+    '',
+    '### Sequência',
+    ...tasks.map((t, i) => {
+      const deps = t.dependsOn.length
+        ? ` _(após: ${t.dependsOn.map((d) => tasks.find((x) => x.id === d)?.title || d).join(', ')})_`
+        : '';
+      return `${i + 1}. **${t.title}** — ${t.requirementIds.length} requisito(s)${deps}`;
+    }),
+    '',
+    'Cada tarefa de diagrama produz **um ou mais diagramArtifacts** rastreáveis aos requisitos indicados.',
+    'A consolidação final funde componentes, entidades, APIs e diagramas num único `architecture_pack_v2`.',
+  ].join('\n');
+
+  return {
+    masterPlanMarkdown,
+    tasks,
+    moduleTag: mod,
+    capabilityId: capabilityId || null,
+    capabilityName: cap?.name || null,
+    totalRequirements: reqs.length,
+    diagramTaskCount,
+  };
+}
+
+function buildArchitectureDiagramTaskPrompt(project, task, plan) {
+  const summary = requirementSummaryForIds(project, task.requirementIds);
+  const mod = textOr(plan.moduleTag, 'Backend');
+  const depTitles = ensureArray(task.dependsOn)
+    .map((id) => plan.tasks.find((t) => t.id === id)?.title)
+    .filter(Boolean);
+
+  if (task.role === 'merge') {
+    return `Tu és um agente de arquitectura YourLab.
+
+Tarefa: **consolidar** os outputs parciais das sub-tarefas anteriores num único pacote \`architecture_pack_v2\`.
+
+Plano global:
+${plan.masterPlanMarkdown}
+
+Regras:
+- Funde diagramArtifacts, architectureObjects, dataEntities e apiEndpoints sem duplicar IDs.
+- Preserve linkedRequirementIds em cada diagrama.
+- Responde APENAS com JSON válido (schema architecture_pack_v2 completo).
+- Módulo técnico: ${mod}
+
+Requisitos totais do âmbito (${summary.length}):
+${JSON.stringify(summary.slice(0, 40), null, 2)}`;
+  }
+
+  return `Tu és um agente de arquitectura YourLab.
+
+Sub-tarefa do plano: **${task.title}**
+Tipo de diagrama: **${task.diagramType}** (${task.notation})
+Módulo: **${mod}**
+${depTitles.length ? `Depende de: ${depTitles.join(' → ')}` : 'Primeira tarefa do plano.'}
+
+Plano global (resumo):
+${plan.masterPlanMarkdown}
+
+Tarefa desta sub-tarefa:
+- Produzir **um diagrama principal** do tipo \`${task.diagramType}\` para os requisitos abaixo.
+- Podes incluir objectos de apoio mínimos (architectureObjects, dataEntities, apiEndpoints) se necessário.
+- Cada diagramArtifacts[] deve ter linkedRequirementIds com IDs desta lista.
+
+Requisitos desta tarefa (${summary.length}):
+${JSON.stringify(summary, null, 2)}
+
+Responde APENAS com JSON válido:
+{
+  "architectureSummary": "breve descrição deste diagrama",
+  "architectureObjects": [],
+  "dataEntities": [],
+  "apiEndpoints": [],
+  "diagramArtifacts": [{
+    "title": "",
+    "description": "",
+    "type": "${task.diagramType}",
+    "notation": "${task.notation}",
+    "sourceText": "",
+    "module": "${mod}",
+    "linkedRequirementIds": [],
+    "linkedApiOperationIds": [],
+    "linkedEntityIds": [],
+    "assumptions": [],
+    "openQuestions": []
+  }],
+  "assumptions": [],
+  "openQuestions": []
+}`;
+}
+
+function applyArchitectureTaskPlanBudget(taskPlan, maxSubtasks = 8) {
+  const limit = Math.max(1, Number(maxSubtasks) || 8);
+  const mergeTask = taskPlan.tasks.find((t) => t.role === 'merge');
+  const workTasks = taskPlan.tasks.filter((t) => t.role !== 'merge');
+  const selected = workTasks.slice(0, Math.max(1, limit - (mergeTask ? 1 : 0)));
+  const deferred = workTasks.slice(selected.length);
+  const tasks = [
+    ...selected.map((t) => ({ ...t, deferred: false })),
+    ...deferred.map((t) => ({ ...t, deferred: true })),
+    ...(mergeTask ? [{ ...mergeTask, deferred: false }] : []),
+  ];
+  return {
+    ...taskPlan,
+    tasks,
+    selectedTaskCount: selected.length,
+    deferredTaskCount: deferred.length,
+    fitsBudget: deferred.length === 0,
+  };
+}
+
+function buildArchitectureTaskPlanForRuntime(project, capabilityId, moduleTag, options = {}) {
+  const plan = buildArchitectureTaskPlan(project, capabilityId, moduleTag, options);
+  const budgeted = applyArchitectureTaskPlanBudget(plan, options.maxSubtasks);
+  const activeTasks = budgeted.tasks.filter((t) => !t.deferred);
+  const tasksWithInstructions = activeTasks.map((task) => ({
+    ...task,
+    instruction: buildArchitectureDiagramTaskPrompt(project, task, budgeted),
+  }));
+  return {
+    ...budgeted,
+    tasks: tasksWithInstructions,
+    runtimeTasks: tasksWithInstructions.filter((t) => !t.deferred).map((t) => ({
+      id: t.id,
+      title: t.title,
+      instruction: t.instruction,
+      diagramType: t.diagramType,
+      requirementIds: t.requirementIds,
+      dependsOn: t.dependsOn,
+      role: t.role,
+    })),
+  };
+}
+
+function mergeArchitecturePartials(partials) {
+  const merged = {
+    architectureSummary: '',
+    architectureMermaid: '',
+    architectureObjects: [],
+    dataEntities: [],
+    apiEndpoints: [],
+    modules: [],
+    diagramArtifacts: [],
+    risks: [],
+    artifacts: [],
+    openQuestions: [],
+    assumptions: [],
+    validationNotes: [],
+  };
+  const seenDiagram = new Set();
+  const pushUniqueStrings = (arr, src) => {
+    for (const v of ensureArray(src).map(String)) {
+      if (v && !arr.includes(v)) arr.push(v);
+    }
+  };
+  const objKey = (arr, item, key) => {
+    const k = String(item?.[key] || item?.name || item?.title || '').toLowerCase();
+    if (!k || arr.some((e) => String(e?.[key] || e?.name || e?.title || '').toLowerCase() === k)) return;
+    arr.push(item);
+  };
+
+  for (const parsed of ensureArray(partials)) {
+    if (!parsed || typeof parsed !== 'object') continue;
+    if (parsed.architectureSummary) merged.architectureSummary = textOr(parsed.architectureSummary);
+    for (const d of ensureArray(parsed.diagramArtifacts)) {
+      const key = `${textOr(d.type)}::${textOr(d.title)}`;
+      if (seenDiagram.has(key)) continue;
+      seenDiagram.add(key);
+      merged.diagramArtifacts.push(d);
+    }
+    for (const o of ensureArray(parsed.architectureObjects)) objKey(merged.architectureObjects, o, 'name');
+    for (const e of ensureArray(parsed.dataEntities)) objKey(merged.dataEntities, e, 'name');
+    for (const a of ensureArray(parsed.apiEndpoints)) objKey(merged.apiEndpoints, a, 'path');
+    pushUniqueStrings(merged.openQuestions, parsed.openQuestions);
+    pushUniqueStrings(merged.assumptions, parsed.assumptions);
+    pushUniqueStrings(merged.risks, parsed.risks);
+  }
+
+  if (!merged.architectureSummary && merged.diagramArtifacts.length) {
+    merged.architectureSummary = `Pacote com ${merged.diagramArtifacts.length} diagrama(s) consolidado(s).`;
+  }
+  return merged;
 }
 
 function buildArchitectureContextPack(project, capabilityId, moduleTag) {
@@ -3430,6 +3831,9 @@ function registerDeliveryOsRoutes(app, deps) {
       if (agentType === 'requirement_grouping') {
         fullPrompt = buildGroupingPrompt(project);
         targetOutput = 'grouping_json';
+      } else if (agentType === 'requirement_hierarchy') {
+        fullPrompt = buildHierarchyReorganizePrompt(project);
+        targetOutput = 'hierarchy_json';
       } else if (agentType === 'reverse_idea') {
         fullPrompt = buildReverseIdeaPrompt(project);
         targetOutput = 'idea_brief';
@@ -3889,10 +4293,16 @@ module.exports = {
   mergeTraceLinks,
   buildContextPack,
   buildGroupingPrompt,
+  buildHierarchyReorganizePrompt,
   buildReverseIdeaPrompt,
   buildDiagramToRequirementsPrompt,
   buildArchitecturePackPrompt,
   buildArchitectureContextPack,
+  buildArchitectureTaskPlan,
+  buildArchitectureTaskPlanForRuntime,
+  buildArchitectureDiagramTaskPrompt,
+  mergeArchitecturePartials,
+  applyArchitectureTaskPlanBudget,
   buildCapabilityRequirementsPrompt,
   buildStageTransitionPrompt,
   applyGroupingResult,
@@ -3914,4 +4324,8 @@ module.exports = {
   normalizeVersionSnapshot,
   registerDeliveryOsRoutes,
   renderMarkdownToHtml,
+  buildDiscoveryPrompt,
+  buildImplementationStackPrompt,
+  buildImplementationTasksPrompt,
+  buildPromptRunFull,
 };

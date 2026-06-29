@@ -183,6 +183,30 @@
     });
   }
 
+  function stkRootForReq(req, project) {
+    if (!req || req.type === 'stakeholder') return '';
+    if (req.stakeholderRequirementLink) return req.stakeholderRequirementLink;
+    const reqs = project?.requirements || [];
+    if (req.parentId) {
+      const parent = reqs.find((r) => r.id === req.parentId);
+      if (parent?.type === 'stakeholder') return parent.id;
+    }
+    if (req.type === 'test_case' && req.linkedFunctionalRequirement) {
+      const fr = reqs.find((r) => r.id === req.linkedFunctionalRequirement);
+      if (fr?.stakeholderRequirementLink) return fr.stakeholderRequirementLink;
+    }
+    return '';
+  }
+
+  function syncReqViewTabs() {
+    const mode = reqUiState.groupMode || 'module';
+    document.querySelectorAll('#reqViewSwitcher .req-view-btn').forEach((btn) => {
+      const active = btn.dataset.reqView === mode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
   function renderGroupedRequirements(project) {
     const container = $('requirementsGroupedView');
     const legacyTable = $('requirementsTable')?.closest('.requirements-list-col');
@@ -192,7 +216,21 @@
     reqUiState.groupingIndex = buildGroupingIndex(project);
     const groupBySel = $('reqGroupBy');
     if (groupBySel) groupBySel.value = reqUiState.groupMode;
+    syncReqViewTabs();
     const filtered = getFilteredForUi(project);
+
+    if (reqUiState.groupMode === 'vmap' || reqUiState.groupMode === 'implmap') {
+      if (legacyTable) legacyTable.classList.add('hidden');
+      $('requirementDetailPanel')?.classList.add('hidden');
+      if (window.RequirementsMapUI?.renderRequirementsMap) {
+        window.RequirementsMapUI.renderRequirementsMap(project, reqUiState.groupMode);
+      } else {
+        container.innerHTML = '<p class="muted-text">Mapa indisponível.</p>';
+      }
+      return;
+    }
+
+    container.classList.remove('req-map-container');
     const grouped = reqUiState.groupMode === 'capability'
       ? groupRequirementsByCapability(filtered)
       : groupRequirements(filtered);
@@ -247,7 +285,7 @@
     const status = escapeHtml(req.status || 'draft');
     const priority = escapeHtml(req.priority || 'medium');
     const locked = !canEdit();
-    const draggable = !locked && reqUiState.groupMode !== 'capability';
+    const draggable = !locked && !['capability', 'vmap', 'implmap'].includes(reqUiState.groupMode);
     const diagramCount = window.DiagramsUI?.diagramsForRequirement?.(project, req.id)?.length
       || (req.linkedDiagramIds || []).length
       || 0;
@@ -261,6 +299,12 @@
     const modBadges = modTags.length
       ? `<span class="req-card-modules">${modTags.map((t) => `<span class="req-mod-badge">${escapeHtml(t)}</span>`).join('')}</span>`
       : '';
+    const stkRoot = stkRootForReq(req, project);
+    const stkBadge = stkRoot
+      ? `<span class="req-card-stk" title="Stakeholder raiz (V-cycle)">↑ ${escapeHtml(stkRoot)}</span>`
+      : (req.type !== 'stakeholder' && req.type !== 'out_of_scope'
+        ? '<span class="req-card-stk is-missing" title="Sem stakeholder ligado">Sem STK</span>'
+        : '');
     return `
       <article class="req-card ${locked ? 'req-card-locked' : ''}" draggable="${draggable ? 'true' : 'false'}" data-req-id="${escapeHtml(req.id)}">
         <span class="req-drag-handle" title="Arrastar para outro módulo/fase" aria-hidden="true">⠿</span>
@@ -269,6 +313,7 @@
           <span class="req-card-type">${escapeHtml(req.type)}</span>
           <strong class="req-card-title">${escapeHtml(req.title || summary)}</strong>
           ${modBadges}
+          ${stkBadge}
           ${capBadge}
           <small class="req-card-meta">${status} · ${priority}${diagramCount ? ` · <span class="req-diagram-badge" title="${diagramCount} diagrama(s) ligado(s)">${diagramCount} diag</span>` : ''}</small>
         </button>
@@ -508,6 +553,7 @@
       state.selectedProject = res.project;
       reqUiState.modalDirty = false;
       $('reqModalDirty')?.classList.add('hidden');
+      closeRequirementModal();
       renderGroupedRequirements(state.selectedProject);
       if (typeof renderImplementationPlan === 'function') renderImplementationPlan(state.selectedProject);
       showToast('Requisito guardado.', 'ok');
@@ -636,6 +682,7 @@
   }
 
   function initRequirementsUi() {
+    syncReqViewTabs();
     $('reqExportMd')?.addEventListener('click', () => handleExport('md'));
     $('reqExportJson')?.addEventListener('click', () => handleExport('json'));
     $('reqModalClose')?.addEventListener('click', closeRequirementModal);
@@ -652,9 +699,35 @@
       if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
     });
     $('reqGroupBy')?.addEventListener('change', (e) => {
-      reqUiState.groupMode = e.target.value === 'capability' ? 'capability' : 'module';
+      reqUiState.groupMode = e.target.value || 'module';
+      syncReqViewTabs();
       if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
     });
+    $('reqViewSwitcher')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-req-view]');
+      if (!btn) return;
+      reqUiState.groupMode = btn.dataset.reqView || 'module';
+      const sel = $('reqGroupBy');
+      if (sel) sel.value = reqUiState.groupMode;
+      syncReqViewTabs();
+      if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
+    });
+  }
+
+  function setGroupMode(mode) {
+    reqUiState.groupMode = mode || 'module';
+    const sel = $('reqGroupBy');
+    if (sel) sel.value = reqUiState.groupMode;
+    syncReqViewTabs();
+  }
+
+  function openRequirementsMap(mode, options = {}) {
+    setGroupMode(mode || 'vmap');
+    if (window.RequirementsMapUI?.setMapFocus) {
+      window.RequirementsMapUI.setMapFocus(options.focusStakeholderId, options.focusRequirementId);
+    }
+    if (typeof switchToTab === 'function') switchToTab('requisitos');
+    else if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
   }
 
   window.RequirementsUI = {
@@ -665,7 +738,13 @@
     groupRequirements,
     exportRequirementsMarkdown,
     exportRequirementsJson,
+    getFilteredForUi,
+    updateMeta,
+    setGroupMode,
+    openRequirementsMap,
   };
+
+  window.openRequirementsMap = openRequirementsMap;
 
   document.addEventListener('DOMContentLoaded', initRequirementsUi);
 })();

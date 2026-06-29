@@ -3,6 +3,7 @@
     activeView: 'uploads',
     modalItem: null,
     modalDirty: false,
+    searchQuery: '',
   };
 
   const KIND_LABELS = {
@@ -12,7 +13,6 @@
     document: 'Documento gerado',
   };
 
-  // Friendly names so the reader never sees agent slugs like "requirements_to_architecture".
   const AGENT_FRIENDLY = {
     requirement_grouping: 'Organização de requisitos',
     reverse_idea: 'Resumo da ideia',
@@ -55,8 +55,6 @@
     return window.state?.config?.stageOrder || STAGE_SEQUENCE;
   }
 
-  // Single readable place: when no phase filter is active, gather AI artifacts
-  // from EVERY phase (deduped); otherwise just the filtered phase.
   function getAiArtifacts(project) {
     const collect = window.PhaseContent?.collectAiArtifacts;
     if (!collect) return [];
@@ -89,37 +87,72 @@
       const resolve = window.PhaseContent?.resolveDocumentStageId || ((d) => d.deliveryStageId || 'discovery');
       docs = docs.filter((d) => resolve(d) === stageFilter);
     }
+    const q = docUiState.searchQuery.trim().toLowerCase();
+    if (q) {
+      docs = docs.filter((d) => {
+        const name = String(d.title || d.originalName || '').toLowerCase();
+        return name.includes(q);
+      });
+    }
     return docs;
   }
 
-  function renderDocumentsPage(project) {
-    if (!project) return;
+  function filterAiItems(items) {
+    const q = docUiState.searchQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) => {
+      const hay = `${item.title} ${item.preview} ${friendlyLabel(item)}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
 
-    const forcedView = state.tabFilters?.contentView;
-    if (forcedView === 'aiArtifacts') docUiState.activeView = 'aiArtifacts';
-    else if (forcedView === 'uploads') docUiState.activeView = 'uploads';
-
-    renderViewTabs();
-    renderFilterStrip(project);
-
-    if (docUiState.activeView === 'aiArtifacts') {
-      $('documentsUploadSection')?.classList.add('hidden');
-      $('documentsAiSection')?.classList.remove('hidden');
-      renderAiArtifactsList(project);
-    } else {
-      $('documentsUploadSection')?.classList.remove('hidden');
-      $('documentsAiSection')?.classList.add('hidden');
-      renderUploadsList(project);
-    }
+  function renderDocsHeader(project) {
+    const el = $('docsShellHeader');
+    if (!el || !project) return;
+    const uploads = getUploadDocuments(project);
+    const ai = getAiArtifacts(project);
+    el.innerHTML = `
+      <div class="pdos-header-grid pdos-header-compact">
+        <div class="pdos-header-main">
+          <p class="pdos-header-eyebrow">${escapeHtml(project.clientName || 'Cliente')}</p>
+          <h2>Documentos</h2>
+          <p class="content-shell-desc">Anexos do cliente, artefactos gerados pela IA e ferramentas de importação.</p>
+        </div>
+        <div class="pdos-header-side">
+          <div class="pdos-header-meta">
+            <span class="chip">${uploads.length} anexos</span>
+            <span class="chip accent">${ai.length} IA</span>
+          </div>
+          <div class="pdos-header-actions" role="group">
+            <button type="button" class="btn pdos-header-btn" id="docsGoDeliveryBtn">Linha de Entrega</button>
+            <button type="button" class="btn primary pdos-header-btn" id="docsUploadJumpBtn">Carregar ficheiro</button>
+          </div>
+        </div>
+      </div>
+    `;
+    $('docsGoDeliveryBtn')?.addEventListener('click', () => switchToTab?.('deliveryos'));
+    $('docsUploadJumpBtn')?.addEventListener('click', () => {
+      docUiState.activeView = 'uploads';
+      renderDocumentsPage(project);
+      $('docFile')?.click();
+    });
   }
 
   function renderViewTabs() {
     const el = $('documentsViewTabs');
     if (!el) return;
-    el.innerHTML = `
-      <button type="button" class="docs-view-tab ${docUiState.activeView === 'uploads' ? 'is-active' : ''}" data-docs-view="uploads">Anexos</button>
-      <button type="button" class="docs-view-tab ${docUiState.activeView === 'aiArtifacts' ? 'is-active' : ''}" data-docs-view="aiArtifacts">Artefactos IA</button>
-    `;
+    const views = [
+      { id: 'uploads', label: 'Anexos', icon: '📎' },
+      { id: 'aiArtifacts', label: 'Artefactos IA', icon: '✦' },
+      { id: 'tools', label: 'Ferramentas', icon: '⚙' },
+    ];
+    el.innerHTML = views.map((v) => `
+      <button type="button" class="content-view-tab ${docUiState.activeView === v.id ? 'is-active' : ''}"
+        data-docs-view="${escapeHtml(v.id)}" role="tab">
+        <span class="content-view-tab-icon" aria-hidden="true">${v.icon}</span>
+        <span>${escapeHtml(v.label)}</span>
+      </button>
+    `).join('');
     el.querySelectorAll('[data-docs-view]').forEach((btn) => {
       btn.addEventListener('click', () => {
         docUiState.activeView = btn.dataset.docsView;
@@ -134,127 +167,238 @@
     const el = $('documentsFilterStrip');
     if (!el) return;
     const stageId = getStageId();
-    const aiCount = getAiArtifacts(project).length;
-    const uploadCount = getUploadDocuments(project).length;
-
-    if (!stageId && docUiState.activeView !== 'aiArtifacts') {
-      el.classList.add('hidden');
-      el.innerHTML = '';
-      return;
-    }
+    const stageName = stageId ? stageLabel(stageId) : '';
 
     el.classList.remove('hidden');
-    const stageName = stageId ? stageLabel(stageId) : '';
-    const viewLabel = docUiState.activeView === 'aiArtifacts'
-      ? `${aiCount} artefacto(s) IA${stageName ? ` · ${stageName}` : ''}`
-      : `${uploadCount} anexo(s)${stageName ? ` · ${stageName}` : ''}`;
-
     el.innerHTML = `
-      <div class="phase-context-strip is-compact">
-        <div class="phase-context-strip-left">
-          ${stageName ? `<span class="phase-context-pill is-small">${escapeHtml(stageName)}</span>` : ''}
-          <span class="phase-context-tag is-muted">${escapeHtml(viewLabel)}</span>
-        </div>
-        ${stageId ? `<button type="button" class="phase-context-go is-ghost" id="docsClearStageFilter">Limpar filtro de fase</button>` : ''}
+      <div class="content-filter-bar">
+        <label class="content-search">
+          <span class="sr-only">Pesquisar</span>
+          <input type="search" id="docsSearchInput" placeholder="Pesquisar documentos..." value="${escapeHtml(docUiState.searchQuery)}" />
+        </label>
+        ${stageName ? `
+          <span class="phase-context-pill is-small">${escapeHtml(stageName)}</span>
+          <button type="button" class="btn tiny ghost" id="docsClearStageFilter">Limpar fase</button>
+        ` : ''}
       </div>
     `;
-    el.querySelector('#docsClearStageFilter')?.addEventListener('click', () => {
+    $('docsSearchInput')?.addEventListener('input', (e) => {
+      docUiState.searchQuery = e.target.value;
+      renderDocumentsPage(project);
+    });
+    $('docsClearStageFilter')?.addEventListener('click', () => {
       state.tabFilters.deliveryStageId = '';
-      state.tabFilters.contentView = docUiState.activeView === 'aiArtifacts' ? 'aiArtifacts' : '';
       renderDocumentsPage(state.selectedProject);
       renderPhaseContextBar?.();
     });
   }
 
-  function renderAiArtifactsList(project) {
-    const el = $('documentsAiList');
-    const meta = $('documentsAiMeta');
+  function renderStatTiles(project) {
+    const el = $('docsStatTiles');
     if (!el) return;
+    const uploads = getUploadDocuments(project);
+    const ai = filterAiItems(getAiArtifacts(project));
+    const withText = uploads.filter((d) => d.hasExtractedText || d.contentMarkdown).length;
+    el.innerHTML = `
+      <div class="content-stat-tile"><strong>${uploads.length}</strong><span>Anexos visíveis</span></div>
+      <div class="content-stat-tile"><strong>${ai.length}</strong><span>Artefactos IA</span></div>
+      <div class="content-stat-tile"><strong>${withText}</strong><span>Com texto</span></div>
+      <div class="content-stat-tile"><strong>${getStageId() ? stageLabel(getStageId()) : 'Todas'}</strong><span>Fase activa</span></div>
+    `;
+  }
 
-    const items = getAiArtifacts(project);
-    const scoped = Boolean(getStageId());
-    if (meta) {
-      meta.textContent = items.length
-        ? (scoped
-          ? `${items.length} resultado(s) da IA nesta fase. Clique em «Ler» para a versão completa.`
-          : `${items.length} resultado(s) gerados pela IA no projecto. Agrupados por fase — clique em «Ler».`)
-        : 'Ainda não há resultados da IA. Corra agentes na Linha de Entrega para gerar conteúdo.';
-    }
-
-    if (!items.length) {
-      el.innerHTML = `<p class="muted-text docs-empty-hint">Sem resultados da IA. Na fase Arquitectura use «Gerar pacote de arquitectura»; noutras fases, corra os agentes na Linha de Entrega.</p>`;
-      return;
-    }
-
-    const cardHtml = (item) => `
-      <article class="ai-read-card" data-ai-kind="${escapeHtml(item.kind)}" data-ai-id="${escapeHtml(item.id)}">
-        <div class="ai-read-card-head">
-          <span class="ai-read-kind">${escapeHtml(friendlyLabel(item))}</span>
-          ${friendlyDate(item.updatedAt) ? `<span class="ai-read-date">${escapeHtml(friendlyDate(item.updatedAt))}</span>` : ''}
+  function renderUploadCard(doc, project) {
+    const name = doc.title || doc.originalName;
+    const stage = doc.deliveryStageId ? stageLabel(doc.deliveryStageId) : '';
+    const hasText = doc.hasExtractedText || doc.contentMarkdown;
+    return `
+      <article class="pdos-card pdos-card-doc">
+        <div class="pdos-card-top">
+          <span class="delivery-card-kind">Anexo</span>
+          ${hasText ? '<span class="chip tiny">texto</span>' : ''}
         </div>
-        <h4 class="ai-read-title">${escapeHtml(item.title)}</h4>
-        <p class="ai-read-excerpt">${escapeHtml(item.preview || 'Sem resumo.')}</p>
-        <button type="button" class="btn tiny primary ai-read-open" data-open-ai-artifact="${escapeHtml(item.kind)}:${escapeHtml(item.id)}">Ler</button>
+        <h4>${escapeHtml(name)}</h4>
+        <div class="pdos-card-meta">
+          <span>${friendlyDate(doc.uploadedAt || doc.createdAt)}</span>
+          ${stage ? `<span class="module-badge">${escapeHtml(stage)}</span>` : ''}
+        </div>
+        <div class="pdos-card-actions">
+          <button type="button" class="btn tiny primary" data-open-doc="${escapeHtml(doc.id)}">Abrir</button>
+          <a class="btn tiny ghost" href="/api/projects/projects/${encodeURIComponent(project.id)}/documents/${encodeURIComponent(doc.id)}/download" target="_blank" rel="noopener">Download</a>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderAiCard(item) {
+    return `
+      <article class="pdos-card pdos-card-ai" data-ai-kind="${escapeHtml(item.kind)}" data-ai-id="${escapeHtml(item.id)}">
+        <div class="pdos-card-top">
+          <span class="delivery-card-kind">${escapeHtml(friendlyLabel(item))}</span>
+          ${friendlyDate(item.updatedAt) ? `<span>${escapeHtml(friendlyDate(item.updatedAt))}</span>` : ''}
+        </div>
+        <h4>${escapeHtml(item.title)}</h4>
+        <p class="pdos-card-summary-text">${escapeHtml(item.preview || 'Sem resumo.')}</p>
+        ${item.stageId ? `<div class="pdos-module-badges"><span class="module-badge">${escapeHtml(stageLabel(item.stageId))}</span></div>` : ''}
+        <div class="pdos-card-actions">
+          <button type="button" class="btn tiny primary" data-open-ai-artifact="${escapeHtml(item.kind)}:${escapeHtml(item.id)}">Ler</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderUploadsFeed(project) {
+    const feed = $('docsCardFeed');
+    if (!feed) return;
+    const docs = getUploadDocuments(project);
+
+    const composer = `
+      <article class="pdos-card pdos-card-composer grid-span-all" id="docsUploadComposer">
+        <span class="pdos-section-label">Carregar anexo</span>
+        <form id="uploadDocForm" class="inline-form content-upload-form" enctype="multipart/form-data">
+          <input id="docFile" type="file" />
+          <button class="btn primary" type="submit">Carregar ficheiro</button>
+        </form>
+        <p class="muted-text">PDF, Word, imagens — associados ao projecto e filtráveis por fase.</p>
       </article>
     `;
 
-    if (scoped) {
-      el.innerHTML = `<div class="ai-read-list">${items.map(cardHtml).join('')}</div>`;
+    if (!docs.length) {
+      feed.innerHTML = `${composer}<article class="pdos-card pdos-card-empty grid-span-all"><p>${getStageId() ? 'Sem anexos nesta fase.' : 'Sem anexos. Carregue o primeiro documento acima.'}</p></article>`;
     } else {
-      // Group by phase for a narrative, top-to-bottom reading order.
+      feed.innerHTML = composer + docs.map((d) => renderUploadCard(d, project)).join('');
+    }
+
+    feed.querySelectorAll('[data-open-doc]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const doc = docs.find((d) => d.id === btn.dataset.openDoc);
+        if (doc) window.RequirementsUI?.openDocumentViewer?.(doc, project);
+      });
+    });
+  }
+
+  function renderAiFeed(project) {
+    const feed = $('docsCardFeed');
+    const meta = $('documentsAiMeta');
+    if (!feed) return;
+
+    const items = filterAiItems(getAiArtifacts(project));
+    const scoped = Boolean(getStageId());
+    if (meta) {
+      meta.textContent = items.length
+        ? `${items.length} artefacto(s) — clique em «Ler» para conteúdo completo.`
+        : 'Sem artefactos IA. Corra agentes na Linha de Entrega.';
+    }
+
+    if (!items.length) {
+      feed.innerHTML = `
+        <article class="pdos-card pdos-card-empty grid-span-all">
+          <p>Sem resultados da IA${scoped ? ' nesta fase' : ''}.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny primary" id="docsEmptyGoDelivery">Ir para Entrega</button>
+          </div>
+        </article>
+      `;
+      $('docsEmptyGoDelivery')?.addEventListener('click', () => switchToTab?.('deliveryos'));
+      return;
+    }
+
+    if (scoped) {
+      feed.innerHTML = items.map((item) => renderAiCard(item)).join('');
+    } else {
       const byStage = new Map();
       for (const item of items) {
         const sid = item.stageId || 'requirements';
         if (!byStage.has(sid)) byStage.set(sid, []);
         byStage.get(sid).push(item);
       }
-      const orderedStages = stageOrderList().filter((sid) => byStage.has(sid));
-      el.innerHTML = orderedStages.map((sid) => `
-        <section class="ai-read-group">
-          <h3 class="ai-read-group-title">${escapeHtml(stageLabel(sid))}<span class="ai-read-group-count">${byStage.get(sid).length}</span></h3>
-          <div class="ai-read-list">${byStage.get(sid).map(cardHtml).join('')}</div>
-        </section>
+      feed.innerHTML = stageOrderList().filter((sid) => byStage.has(sid)).map((sid) => `
+        <article class="pdos-card grid-span-all pdos-card-stage-group">
+          <span class="pdos-section-label">${escapeHtml(stageLabel(sid))}</span>
+          <div class="content-nested-grid">${byStage.get(sid).map(renderAiCard).join('')}</div>
+        </article>
       `).join('');
     }
 
-    el.querySelectorAll('[data-open-ai-artifact]').forEach((btn) => {
+    feed.querySelectorAll('[data-open-ai-artifact]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const [kind, id] = btn.dataset.openAiArtifact.split(':');
-        const item = items.find((entry) => entry.kind === kind && entry.id === id);
+        const item = getAiArtifacts(project).find((e) => e.kind === kind && e.id === id);
         if (item) openAiArtifactModal(item, project);
       });
     });
   }
 
-  function renderUploadsList(project) {
-    const el = $('documentsList');
-    if (!el) return;
-    const docs = getUploadDocuments(project);
-
-    if (!docs.length) {
-      el.innerHTML = `<div class="simple-item"><small>${getStageId() ? 'Sem anexos nesta fase.' : 'Sem documentos carregados.'}</small></div>`;
-      return;
-    }
-
-    el.innerHTML = docs.map((doc) => {
-      const name = doc.title || doc.originalName;
-      const stage = doc.deliveryStageId ? stageLabel(doc.deliveryStageId) : '';
-      return `
-        <div class="simple-item doc-list-item">
-          <button type="button" class="nav-link-btn" data-open-doc="${escapeHtml(doc.id)}">
-            <strong>${escapeHtml(name)}</strong>
-          </button>
-          <small>${new Date(doc.uploadedAt || doc.createdAt).toLocaleString('pt-PT')}${stage ? ` · ${escapeHtml(stage)}` : ''}</small>
-          <a href="/api/projects/projects/${encodeURIComponent(project.id)}/documents/${encodeURIComponent(doc.id)}/download" target="_blank" rel="noopener">Download</a>
+  function renderToolsFeed(project) {
+    const feed = $('docsCardFeed');
+    if (!feed) return;
+    feed.innerHTML = `
+      <article class="pdos-card grid-span-all">
+        <span class="pdos-section-label">Texto base de requisitos</span>
+        <p class="pdos-card-summary-text">Cole o conteúdo extraído do documento do cliente para alimentar prompts e importação.</p>
+        <textarea id="sourceText" rows="8" placeholder="Texto base...">${escapeHtml(project.sourceText || '')}</textarea>
+        <div class="pdos-card-actions">
+          <button class="btn" id="saveSourceTextBtn" type="button">Guardar texto base</button>
+          <button class="btn primary" id="buildPromptBtn" type="button">Gerar pre-prompt IA</button>
         </div>
-      `;
-    }).join('');
+      </article>
+      <article class="pdos-card grid-span-all">
+        <span class="pdos-section-label">Importação estruturada</span>
+        <label class="full">Pre-prompt gerado<textarea id="aiPrompt" rows="8" readonly>${escapeHtml(project.aiPrompt || '')}</textarea></label>
+        <label class="full">Resposta JSON da IA<textarea id="aiJson" rows="10" placeholder="Cole o JSON..."></textarea></label>
+        <div class="pdos-card-actions">
+          <button class="btn primary" id="importAiBtn" type="button">Importar requisitos</button>
+        </div>
+      </article>
+    `;
+  }
 
-    el.querySelectorAll('[data-open-doc]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const doc = docs.find((d) => d.id === btn.dataset.openDoc);
-        if (doc) window.RequirementsUI?.openDocumentViewer?.(doc, project);
-      });
+  function renderDocumentsPage(project) {
+    if (!project) return;
+
+    const forcedView = state.tabFilters?.contentView;
+    if (forcedView === 'aiArtifacts') docUiState.activeView = 'aiArtifacts';
+    else if (forcedView === 'uploads') docUiState.activeView = 'uploads';
+
+    renderDocsHeader(project);
+    renderViewTabs();
+    renderFilterStrip(project);
+    renderStatTiles(project);
+
+    $('documentsAiSection')?.classList.add('hidden');
+    $('documentsUploadSection')?.classList.add('hidden');
+
+    if (docUiState.activeView === 'aiArtifacts') {
+      $('documentsAiMeta')?.classList.remove('hidden');
+      $('documentsAiSection')?.classList.remove('hidden');
+      renderAiFeed(project);
+    } else if (docUiState.activeView === 'tools') {
+      $('documentsAiMeta')?.classList.add('hidden');
+      renderToolsFeed(project);
+    } else {
+      $('documentsAiMeta')?.classList.add('hidden');
+      $('documentsUploadSection')?.classList.remove('hidden');
+      renderUploadsFeed(project);
+    }
+    if (typeof setReadonlyByRole === 'function') setReadonlyByRole();
+  }
+
+  function initDocumentsUi() {
+    $('docsCardFeed')?.addEventListener('submit', (e) => {
+      if (e.target?.id === 'uploadDocForm') window.handleUploadDocument?.(e);
+    });
+    $('docsCardFeed')?.addEventListener('click', (e) => {
+      if (e.target.closest('#saveSourceTextBtn')) window.handleSaveSourceText?.();
+      if (e.target.closest('#buildPromptBtn')) window.handleBuildPrompt?.();
+      if (e.target.closest('#importAiBtn')) window.handleImportAi?.();
+    });
+    $('aiArtifactModalClose')?.addEventListener('click', closeAiArtifactModal);
+    $('aiArtifactModalCancel')?.addEventListener('click', () => setAiModalMode('read'));
+    $('aiArtifactModalSave')?.addEventListener('click', saveAiArtifactModal);
+    $('aiArtifactEditToggle')?.addEventListener('click', () => setAiModalMode('edit'));
+    $('aiArtifactModalCopy')?.addEventListener('click', () => {
+      const text = $('aiArtifactContentInput')?.value || docUiState.modalItem?.contentMarkdown || '';
+      navigator.clipboard?.writeText(text).then(() => showToast('Copiado.', 'ok'));
     });
   }
 
@@ -263,7 +407,7 @@
     if (!pane) return;
     const md = String(markdown || '').trim();
     if (!md) {
-      pane.innerHTML = '<p class="muted-text">Sem conteúdo legível.</p>';
+      pane.innerHTML = '<p class="muted-text">Sem conteúdo.</p>';
       return;
     }
     try {
@@ -275,7 +419,6 @@
   }
 
   function setAiModalMode(mode) {
-    // mode: 'read' | 'edit'
     const editing = mode === 'edit';
     $('aiArtifactReadPane')?.classList.toggle('hidden', editing);
     $('aiArtifactEditForm')?.classList.toggle('hidden', !editing);
@@ -321,18 +464,14 @@
       <span>Tipo: <strong>${escapeHtml(friendlyLabel(item))}</strong></span>
     `;
 
-    // Read-first: render the content as readable markdown; editing is opt-in.
     renderReadPane(item.contentMarkdown);
     setAiModalMode('read');
     $('aiArtifactEditToggle')?.classList.toggle('hidden', readonly || !item.editable);
-
     $('aiArtifactModalSave').disabled = readonly || !item.editable;
     modal.classList.remove('hidden');
 
-    const contentInput = $('aiArtifactContentInput');
-    const titleInput = $('aiArtifactTitleInput');
-    if (contentInput) contentInput.oninput = markAiModalDirty;
-    if (titleInput) titleInput.oninput = markAiModalDirty;
+    $('aiArtifactContentInput').oninput = markAiModalDirty;
+    $('aiArtifactTitleInput') && ($('aiArtifactTitleInput').oninput = markAiModalDirty);
   }
 
   function markAiModalDirty() {
@@ -341,7 +480,7 @@
   }
 
   function closeAiArtifactModal() {
-    if (docUiState.modalDirty && !confirm('Existem alterações não guardadas. Fechar mesmo assim?')) return;
+    if (docUiState.modalDirty && !confirm('Alterações não guardadas. Fechar?')) return;
     $('aiArtifactModal')?.classList.add('hidden');
     docUiState.modalItem = null;
     docUiState.modalDirty = false;
@@ -374,10 +513,7 @@
       } else if (item.kind === 'document') {
         res = await apiRequest(`/projects/${encodeURIComponent(project.id)}/documents/${encodeURIComponent(item.id)}`, {
           method: 'PATCH',
-          body: {
-            title: title || item.title,
-            contentMarkdown,
-          },
+          body: { title: title || item.title, contentMarkdown },
         });
       } else if (item.kind === 'prompt_run') {
         res = await apiRequest(`/projects/${encodeURIComponent(project.id)}/prompt-runs/${encodeURIComponent(item.id)}`, {
@@ -400,23 +536,13 @@
         setAiModalMode('read');
         renderDocumentsPage(state.selectedProject);
         renderProjectDetails?.();
-        showToast('Artefacto guardado.', 'ok');
+        showToast('Guardado.', 'ok');
       }
     } catch (error) {
       showToast(error.message, 'error');
     }
   }
 
-  function initDocumentsUi() {
-    $('aiArtifactModalClose')?.addEventListener('click', closeAiArtifactModal);
-    $('aiArtifactModalCancel')?.addEventListener('click', () => setAiModalMode('read'));
-    $('aiArtifactModalSave')?.addEventListener('click', saveAiArtifactModal);
-    $('aiArtifactEditToggle')?.addEventListener('click', () => setAiModalMode('edit'));
-    $('aiArtifactModalCopy')?.addEventListener('click', () => {
-      const text = $('aiArtifactContentInput')?.value || docUiState.modalItem?.contentMarkdown || '';
-      navigator.clipboard?.writeText(text).then(() => showToast('Copiado.', 'ok'));
-    });
-  }
 
   window.DocumentsUI = {
     renderDocumentsPage,

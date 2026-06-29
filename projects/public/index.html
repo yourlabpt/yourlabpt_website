@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=47" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=54" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -216,125 +216,32 @@
 
             <!-- TAB: DOCUMENTOS -->
             <div class="tab-panel hidden" data-panel="documentos">
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-purple">DOCS</span> Documentos</h3>
-                </div>
-                <div id="documentsViewTabs" class="docs-view-tabs"></div>
-                <div id="documentsFilterStrip" class="hidden"></div>
-
-                <div id="documentsAiSection" class="hidden">
-                  <p id="documentsAiMeta" class="muted-text docs-section-intro"></p>
-                  <div id="documentsAiList" class="ai-artifacts-grid"></div>
-                </div>
-
-                <div id="documentsUploadSection">
-                  <div class="subsection">
-                    <p class="subsection-label">Anexos do cliente</p>
-                    <form id="uploadDocForm" class="inline-form" enctype="multipart/form-data">
-                      <input id="docFile" type="file" />
-                      <button class="btn" type="submit">Carregar</button>
-                    </form>
-                    <div id="documentsList" class="simple-list mt-8"></div>
-                  </div>
-                  <div class="section-divider"></div>
-                  <div class="subsection">
-                    <p class="subsection-label">Texto base de requisitos</p>
-                    <textarea id="sourceText" rows="8" placeholder="Cole aqui o conteúdo extraído do documento do cliente..."></textarea>
-                    <div class="actions-row mt-8">
-                      <button class="btn" id="saveSourceTextBtn">Guardar Texto Base</button>
-                      <button class="btn primary" id="buildPromptBtn">Gerar Pre-Prompt AI</button>
-                    </div>
-                  </div>
-                  <div class="section-divider"></div>
-                  <details class="collapsible">
-                    <summary>Fluxo AI — Pre-prompt e importação de JSON</summary>
-                    <div class="form-grid">
-                      <label class="full">Pre-Prompt gerado<textarea id="aiPrompt" rows="10" readonly></textarea></label>
-                      <label class="full">Resposta JSON da AI (colar aqui)<textarea id="aiJson" rows="12"></textarea></label>
-                    </div>
-                    <div class="actions-row mt-8">
-                      <button class="btn primary" id="importAiBtn">Importar Estrutura de Requisitos</button>
-                    </div>
-                  </details>
-                </div>
+              <section class="panel section-panel content-shell docs-shell">
+                <div id="docsShellHeader" class="content-shell-header"></div>
+                <div id="documentsViewTabs" class="content-view-switcher"></div>
+                <div id="documentsFilterStrip"></div>
+                <div id="docsStatTiles" class="content-stat-tiles"></div>
+                <p id="documentsAiMeta" class="muted-text docs-section-intro hidden"></p>
+                <div id="docsCardFeed" class="pdos-card-feed docs-card-feed"></div>
+                <div id="documentsAiSection" class="hidden"></div>
+                <div id="documentsUploadSection" class="hidden"></div>
               </section>
             </div>
 
             <!-- TAB: ATAS (global — todas as fases) -->
             <div class="tab-panel hidden" data-panel="atas">
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-teal">ATAS</span> Atas de Reunião</h3>
-                </div>
-                <p class="muted-text docs-section-intro">Todas as atas do projecto num só lugar. A IA classifica o impacto em cada fase e requisito — não estão ligadas a uma única fase.</p>
-                <div class="subsection">
-                  <p class="subsection-label">Registar nova ata</p>
-                  <form id="addMeetingMinuteForm" class="form-grid compact">
-                    <label>Data da reunião<input id="meetingMinuteDate" type="date" /></label>
-                    <label>Título (opcional)<input id="meetingMinuteTitle" placeholder="Ex: Reunião de alinhamento MVP" /></label>
-                    <label>Fase principal (opcional)
-                      <select id="meetingMinuteImpactScope">
-                        <option value="discovery">Descoberta / alinhamento</option>
-                        <option value="idea">Mudança na ideia ou visão</option>
-                        <option value="requirements" selected>Discussão de requisitos</option>
-                        <option value="architecture">Mudança na arquitectura</option>
-                        <option value="delivery">Entrega final / scope</option>
-                      </select>
-                      <small class="muted-text">A IA classifica automaticamente todas as fases e requisitos impactados depois de guardar.</small>
-                    </label>
-                    <label class="full">Ata (texto bruto)
-                      <textarea id="meetingMinuteRaw" rows="8" placeholder="Cole aqui a ata exatamente como foi produzida na reunião..."></textarea>
-                    </label>
-                    <button class="btn primary" type="submit">Guardar Ata</button>
-                  </form>
-                </div>
-                <div class="section-divider"></div>
-                <div class="subsection">
-                  <p class="subsection-label">Histórico de atas</p>
-                  <div id="minutesHistoryList" class="simple-list"></div>
-                </div>
-                <div class="section-divider"></div>
-                <div class="subsection">
-                  <p class="subsection-label">Propagação na linha de entrega</p>
-                  <div id="minutePropagationPanel" class="propagation-panel read-card mt-8">
-                    <p class="muted-text">Seleccione atas no histórico para analisar impacto.</p>
-                  </div>
-                  <div class="actions-row mt-8">
-                    <button class="btn primary" type="button" id="analyzeMinutePropagationBtn">Analisar impacto nas fases</button>
-                    <button class="btn" type="button" id="generateMinutePropagationPromptBtn">Gerar prompt de propagação (IA)</button>
-                  </div>
-                </div>
-                <div class="section-divider"></div>
-                <details class="collapsible">
-                  <summary>Atualizar requisitos a partir de atas e respostas</summary>
-                  <div class="form-grid compact">
-                    <label>Objetivo
-                      <select id="minutesPromptObjective">
-                        <option value="requirements_update">Atualizar requisitos</option>
-                        <option value="scope_change">Alteração de escopo</option>
-                        <option value="app_description_update">Atualizar descrição/visão da app</option>
-                        <option value="full_alignment">Alinhamento completo</option>
-                      </select>
-                    </label>
-                    <label class="full">Instruções extra (opcional)
-                      <textarea id="minutesPromptExtraInstructions" rows="3" placeholder="Ex: Priorizar fase 1 e manter escopo técnico mínimo."></textarea>
-                    </label>
-                  </div>
-                  <div class="actions-row mt-8">
-                    <button class="btn primary" type="button" id="buildMinutesPromptBtn">Gerar Pre-Prompt de Alterações</button>
-                  </div>
-                  <label>Prompt gerado<textarea id="minutesPromptOutput" rows="12" readonly></textarea></label>
-                  <label class="full mt-12">Resposta JSON da AI para aplicar alterações
-                    <textarea id="requirementsChangeJson" rows="10" placeholder='Cole aqui o JSON com addRequirements, updateRequirements, removeRequirements e clarifications...'></textarea>
-                  </label>
-                  <div class="actions-row mt-8">
-                    <button class="btn primary" type="button" id="importRequirementChangesBtn">Aplicar Alterações aos Requisitos</button>
-                  </div>
-                  <p class="subsection-label mt-16">Histórico de prompts gerados</p>
-                  <div id="minutesPromptHistoryList" class="simple-list mt-8"></div>
-                </details>
+              <section class="panel section-panel content-shell minutes-shell">
+                <div id="minutesShellHeader" class="content-shell-header"></div>
+                <div id="minutesViewTabs" class="content-view-switcher"></div>
+                <div id="minutesStatTiles" class="content-stat-tiles"></div>
+                <div id="minutesCardFeed" class="pdos-card-feed minutes-card-feed"></div>
               </section>
+              <div id="minutesDetailDrawer" class="pdos-drawer hidden">
+                <div id="minutesDrawerOverlay" class="pdos-drawer-overlay"></div>
+                <div class="pdos-drawer-panel">
+                  <div id="minutesDrawerContent"></div>
+                </div>
+              </div>
             </div>
 
             <!-- TAB: PERGUNTAS -->
@@ -460,11 +367,32 @@
                     <option value="medium">Média</option>
                     <option value="low">Baixa</option>
                   </select>
-                  <select id="reqGroupBy" title="Como agrupar a lista de requisitos">
+                  <select id="reqGroupBy" class="sr-only" aria-hidden="true" tabindex="-1">
                     <option value="module">Agrupar: Módulo</option>
                     <option value="capability">Agrupar: Funcionalidade</option>
+                    <option value="vmap">Mapa V (hierarquia)</option>
+                    <option value="implmap">Mapa Implementação</option>
                   </select>
                   <label class="checkline"><input id="reqOnlySmartIssues" type="checkbox" /> Só SMART lacunas</label>
+                </div>
+                <div class="req-view-switcher" id="reqViewSwitcher" role="tablist" aria-label="Modo de visualização dos requisitos">
+                  <button type="button" class="req-view-btn" data-req-view="module" role="tab" aria-selected="false">
+                    <span class="req-view-btn-icon" aria-hidden="true">▦</span>
+                    <span class="req-view-btn-label">Módulo</span>
+                  </button>
+                  <button type="button" class="req-view-btn" data-req-view="capability" role="tab" aria-selected="false">
+                    <span class="req-view-btn-icon" aria-hidden="true">◎</span>
+                    <span class="req-view-btn-label">Funcionalidade</span>
+                  </button>
+                  <button type="button" class="req-view-btn req-view-btn-vmap" data-req-view="vmap" role="tab" aria-selected="false">
+                    <span class="req-view-btn-icon" aria-hidden="true">◇</span>
+                    <span class="req-view-btn-label">Mapa V</span>
+                    <span class="req-view-btn-tag">V-cycle</span>
+                  </button>
+                  <button type="button" class="req-view-btn req-view-btn-impl" data-req-view="implmap" role="tab" aria-selected="false">
+                    <span class="req-view-btn-icon" aria-hidden="true">⬡</span>
+                    <span class="req-view-btn-label">Implementação</span>
+                  </button>
                 </div>
                 <div class="req-toolbar-actions">
                   <div id="requirementsMeta" class="mini-meta"></div>
@@ -651,6 +579,8 @@
                 </div>
 
                 <div id="pdosDiagramsShell" class="pdos-diagrams-shell hidden" aria-label="Diagramas de arquitectura"></div>
+
+                <div id="pdosAgentRuntimeBar" class="pdos-agent-runtime-bar hidden" role="status" aria-live="polite"></div>
 
                 <div id="pdosCardFeed" class="pdos-card-feed"></div>
 
@@ -934,7 +864,138 @@
     </div>
   </div>
 
-  <!-- Prompt Workbench (modo avançado) -->
+  <!-- YourLab Agent — configurar antes de executar -->
+  <div id="pdosAgentConfigModal" class="pdos-modal pdos-agent-config-modal hidden">
+    <div class="pdos-modal-backdrop" data-close-agent-config></div>
+    <div class="pdos-modal-panel pdos-modal-wide">
+      <div class="pdos-agent-panel-head">
+        <h3 id="pdosAgentConfigTitle">Configurar YourLab Agent</h3>
+        <button type="button" class="btn tiny ghost" data-close-agent-config aria-label="Fechar">Fechar</button>
+      </div>
+      <p id="pdosAgentConfigDesc" class="muted-text">Defina orçamento e opções antes de iniciar a execução.</p>
+      <p id="pdosAgentConfigHealth" class="pdos-agent-config-health hidden" role="status"></p>
+
+      <form id="pdosAgentConfigForm" class="pdos-agent-config-form">
+        <div class="pdos-agent-config-grid">
+          <label>Tokens máximos
+            <input type="number" id="pdosAgentCfgMaxTokens" min="10000" max="500000" step="5000" required />
+          </label>
+          <label>Tempo máximo (minutos)
+            <input type="number" id="pdosAgentCfgMaxMinutes" min="5" max="240" step="5" required />
+          </label>
+          <label>Sub-tarefas máximas
+            <input type="number" id="pdosAgentCfgMaxSubtasks" min="1" max="24" step="1" required />
+          </label>
+        </div>
+        <label class="checkline">
+          <input type="checkbox" id="pdosAgentCfgWebSearch" />
+          Permitir pesquisa web durante a execução
+        </label>
+
+        <section id="pdosAgentConfigPlanWrap" class="pdos-agent-plan-wrap hidden">
+          <h4 class="pdos-agent-plan-heading">Plano de execução</h4>
+          <p id="pdosAgentConfigPlanSummary" class="muted-text"></p>
+          <ol id="pdosAgentConfigPlanList" class="pdos-agent-plan-list"></ol>
+        </section>
+
+        <div class="actions-row pdos-agent-config-actions">
+          <button type="submit" class="btn primary" id="pdosAgentConfigRun">Executar YourLab Agent</button>
+          <button type="button" class="btn" id="pdosAgentConfigManual">Ver prompt (modo manual)</button>
+          <button type="button" class="btn ghost" data-close-agent-config>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Manual task prompts (diagram plan) -->
+  <div id="pdosAgentManualTasksModal" class="pdos-modal hidden">
+    <div class="pdos-modal-backdrop" data-close-manual-tasks></div>
+    <div class="pdos-modal-panel pdos-modal-wide">
+      <div class="pdos-agent-panel-head">
+        <h3>Prompts por tarefa (modo manual)</h3>
+        <button type="button" class="btn tiny ghost" data-close-manual-tasks>Fechar</button>
+      </div>
+      <p class="muted-text">Cada tarefa gera um diagrama ou consolida o pacote. Abra o prompt, execute externamente e cole no workbench.</p>
+      <div id="pdosAgentManualTasksList" class="pdos-agent-manual-tasks"></div>
+    </div>
+  </div>
+
+  <!-- Continue paused agent (extend budget) -->
+  <div id="pdosAgentContinueModal" class="pdos-modal hidden">
+    <div class="pdos-modal-backdrop" data-close-continue-modal></div>
+    <div class="pdos-modal-panel">
+      <h3>Continuar execução</h3>
+      <p id="pdosAgentContinueReason" class="muted-text"></p>
+      <form id="pdosAgentContinueForm" class="pdos-agent-config-form">
+        <div class="pdos-agent-config-grid">
+          <label>Tokens adicionais
+            <input type="number" id="pdosAgentContinueTokens" min="5000" step="5000" value="30000" />
+          </label>
+          <label>Minutos adicionais
+            <input type="number" id="pdosAgentContinueMinutes" min="5" step="5" value="15" />
+          </label>
+        </div>
+        <div class="actions-row pdos-agent-config-actions">
+          <button type="submit" class="btn primary">Continuar execução</button>
+          <button type="button" class="btn" id="pdosAgentFinishPartial">Concluir parcial</button>
+          <button type="button" class="btn ghost" data-close-continue-modal>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- YourLab Agent — painel único de execução -->
+  <div id="pdosYourlabAgentPanel" class="pdos-modal hidden">
+    <div class="pdos-modal-backdrop" data-close-agent-panel></div>
+    <div class="pdos-modal-panel pdos-modal-wide">
+      <div class="pdos-agent-panel-head">
+        <h3>YourLab Agent</h3>
+        <button type="button" class="btn tiny ghost" data-close-agent-panel aria-label="Fechar">Fechar</button>
+      </div>
+
+      <section id="pdosAgentRuntimeLive" class="pdos-agent-runtime" aria-live="polite">
+        <div class="pdos-agent-runtime-head">
+          <div>
+            <strong id="pdosAgentRuntimeTitle">—</strong>
+            <span id="pdosAgentRuntimeStatus" class="pdos-agent-runtime-badge">—</span>
+          </div>
+          <div class="pdos-agent-runtime-actions">
+            <button type="button" class="btn tiny primary hidden" id="pdosAgentRuntimeRerun">Repetir</button>
+            <button type="button" class="btn tiny primary hidden" id="pdosAgentRuntimeResume">Continuar</button>
+            <button type="button" class="btn tiny danger hidden" id="pdosAgentRuntimeCancel">Parar</button>
+            <button type="button" class="btn tiny ghost hidden" id="pdosAgentRuntimeDismiss">Remover</button>
+          </div>
+        </div>
+        <div id="pdosAgentRuntimeProgress" class="pdos-agent-runtime-progress muted-text">Sem execução activa.</div>
+        <div class="pdos-agent-runtime-meter hidden" id="pdosAgentRuntimeMeter">
+          <div class="pdos-agent-runtime-meter-fill" id="pdosAgentRuntimeMeterFill"></div>
+        </div>
+        <p id="pdosAgentRuntimeError" class="pdos-agent-runtime-error hidden"></p>
+      </section>
+
+      <section id="pdosAgentPlanWrap" class="pdos-agent-plan-wrap hidden">
+        <h4 class="pdos-agent-plan-heading">Plano da execução</h4>
+        <ol id="pdosAgentPlanList" class="pdos-agent-plan-list"></ol>
+      </section>
+
+      <section id="pdosAgentSubtasksWrap" class="pdos-agent-subtasks-wrap hidden">
+        <h4 class="pdos-agent-subtasks-title">Sub-tarefas</h4>
+        <ol id="pdosAgentSubtasksList" class="pdos-agent-subtasks-list"></ol>
+      </section>
+
+      <details id="pdosAgentRuntimeLogWrap" class="collapsible pdos-agent-log-wrap">
+        <summary>Registo desta execução</summary>
+        <ol id="pdosAgentRuntimeLog" class="pdos-agent-runtime-log"></ol>
+      </details>
+
+      <details id="pdosAgentRuntimeHistoryWrap" class="collapsible">
+        <summary>Histórico de execuções</summary>
+        <div id="pdosAgentRuntimeHistory" class="pdos-agent-runtime-history muted-text">Sem execuções anteriores.</div>
+      </details>
+    </div>
+  </div>
+
+  <!-- Prompt Workbench (modo manual / fallback) -->
   <div id="pdosPromptWorkbench" class="pdos-modal hidden">
     <div class="pdos-modal-backdrop"></div>
     <div class="pdos-modal-panel pdos-modal-wide">
@@ -1043,11 +1104,13 @@
   <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
   <script src="/projects/static/phase-content-client.js?v=3"></script>
   <script src="/projects/static/help-ui.js?v=3"></script>
-  <script src="/projects/static/app.js?v=30"></script>
-  <script src="/projects/static/requirements-ui.js?v=7"></script>
-  <script src="/projects/static/documents-ui.js?v=3"></script>
+  <script src="/projects/static/app.js?v=32"></script>
+  <script src="/projects/static/requirements-map-ui.js?v=6"></script>
+  <script src="/projects/static/requirements-ui.js?v=10"></script>
+  <script src="/projects/static/documents-ui.js?v=4"></script>
+  <script src="/projects/static/minutes-ui.js?v=1"></script>
   <script src="/projects/static/diagrams-ui.js?v=7"></script>
-  <script src="/projects/static/delivery-os-ui.js?v=39"></script>
+  <script src="/projects/static/delivery-os-ui.js?v=41"></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

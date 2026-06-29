@@ -54,10 +54,12 @@
     pendingPromptRun: null,
     activeJob: null,
     activeJobStep: '',
+    activeRuntimeRun: null,
   };
 
   const AGENT_TYPE_LABELS = {
     requirement_grouping: 'Agrupar requisitos',
+    requirement_hierarchy: 'Reorganizar cadeia V',
   };
   function agentTypeLabel(agentType) {
     return AGENT_TYPE_LABELS[agentType] || agentType;
@@ -65,6 +67,392 @@
   // Agentes que suportam divisao em lotes no cliente (espelha BATCHABLE_AGENTS).
   const BATCHABLE_AGENT_TYPES = ['requirement_grouping'];
   const AGENT_JOB_THRESHOLD = 25;
+
+  const YAR_AGENT_BY_PLATFORM_TYPE = {
+    reverse_idea: 'idea-to-requirements',
+    requirements_to_architecture: 'requirements-to-architecture',
+    roadmap_plan: 'architecture-to-roadmap',
+    implementation_tasks: 'roadmap-to-implementation',
+  };
+
+  const RUNTIME_ACTIVE_STATUSES = new Set([
+    'dispatching', 'running', 'queued', 'planning', 'executing', 'self_review',
+  ]);
+  const RUNTIME_PAUSED_STATUSES = new Set(['paused']);
+  const RUNTIME_DONE_STATUSES = new Set(['pending_human_review', 'completed']);
+  const RUNTIME_ERROR_STATUSES = new Set(['failed', 'cancelled']);
+
+  const RUNTIME_STATUS_LABELS = {
+    dispatching: 'A iniciar…',
+    running: 'Em execução',
+    queued: 'Na fila',
+    planning: 'A planear tarefas',
+    executing: 'A executar',
+    self_review: 'Revisão automática',
+    paused: 'Pausado',
+    pending_human_review: 'Concluído — revisão humana',
+    completed: 'Concluído',
+    failed: 'Falhou',
+    cancelled: 'Cancelado',
+  };
+
+  function yarAgentIdForPlatformType(agentType) {
+    return YAR_AGENT_BY_PLATFORM_TYPE[agentType] || null;
+  }
+
+  function isAgentRuntimeEnabled() {
+    const cfg = window.state?.config?.agentRuntime;
+    return Boolean(cfg?.enabled);
+  }
+
+  function canRunViaAgentRuntime(agentType) {
+    if (!isAgentRuntimeEnabled()) return false;
+    const supported = window.state?.config?.agentRuntime?.supportedAgentTypes || Object.keys(YAR_AGENT_BY_PLATFORM_TYPE);
+    return supported.includes(agentType) && Boolean(YAR_AGENT_BY_PLATFORM_TYPE[agentType]);
+  }
+
+  function runtimeStatusLabel(status) {
+    return RUNTIME_STATUS_LABELS[status] || status || '—';
+  }
+
+  function agentButtonLabel(text, agentType) {
+    if (!canRunViaAgentRuntime(agentType)) return text;
+    return text.replace(/com IA/gi, 'com YourLab Agent');
+  }
+
+  function buildAgentRuntimeOptions(agentType, project) {
+    return {
+      stageId: window.state?.deliverySelectedStageId,
+      capabilityId: $('archGenCapability')?.value,
+      moduleTag: $('archGenModule')?.value || pdosState.moduleFilter || undefined,
+      enableWebSearch: ['discovery_research', 'reverse_idea', 'requirements_to_architecture'].includes(agentType),
+    };
+  }
+
+  function closeAgentConfigModal() {
+    $('pdosAgentConfigModal')?.classList.add('hidden');
+    pdosState.pendingAgentConfig = null;
+  }
+
+  function readAgentConfigFromForm() {
+    const cfg = pdosState.pendingAgentConfig;
+    if (!cfg) return null;
+    return {
+      agentType: cfg.agentType,
+      project: cfg.project,
+      prepare: cfg.prepare,
+      options: {
+        ...cfg.options,
+        enableWebSearch: Boolean($('pdosAgentCfgWebSearch')?.checked),
+      },
+      budget: {
+        maxTokens: Number($('pdosAgentCfgMaxTokens')?.value) || cfg.prepare?.budget?.maxTokens || 120000,
+        maxWallClockMinutes: Number($('pdosAgentCfgMaxMinutes')?.value) || cfg.prepare?.budget?.maxWallClockMinutes || 45,
+        maxSubtasks: Number($('pdosAgentCfgMaxSubtasks')?.value) || cfg.prepare?.budget?.maxSubtasks || 8,
+      },
+    };
+  }
+
+  async function openAgentConfigModal(agentType, project, extraOptions = {}) {
+    if (!canRunViaAgentRuntime(agentType)) {
+      return false;
+    }
+    const options = { ...buildAgentRuntimeOptions(agentType, project), ...extraOptions };
+    pdosState.pendingAgentConfig = { agentType, project, options, prepare: null };
+    $('pdosAgentConfigModal')?.classList.remove('hidden');
+    $('pdosAgentConfigTitle').textContent = `Configurar — ${agentFriendlyLabel(agentType)}`;
+    $('pdosAgentConfigDesc').textContent = 'Defina orçamento e opções. A execução só começa quando clicar em Executar.';
+    const healthEl = $('pdosAgentConfigHealth');
+    healthEl?.classList.add('hidden');
+
+    try {
+      const prepare = await apiRequest('/agent-runs/prepare', {
+        method: 'POST',
+        body: { projectId: project.id, agentType, options },
+      });
+      pdosState.pendingAgentConfig.prepare = prepare;
+      pdosState.pendingAgentConfig.options = options;
+
+      $('pdosAgentCfgMaxTokens').value = prepare.budget?.maxTokens ?? 120000;
+      $('pdosAgentCfgMaxMinutes').value = prepare.budget?.maxWallClockMinutes ?? 45;
+      $('pdosAgentCfgMaxSubtasks').value = prepare.budget?.maxSubtasks ?? 8;
+      $('pdosAgentCfgWebSearch').checked = options.enableWebSearch !== false;
+      renderAgentConfigPlan(prepare, Number($('pdosAgentCfgMaxSubtasks').value));
+
+      $('pdosAgentCfgMaxSubtasks')?.addEventListener('change', () => {
+        renderAgentConfigPlan(pdosState.pendingAgentConfig?.prepare, Number($('pdosAgentCfgMaxSubtasks').value));
+      });
+
+      if (healthEl) {
+        if (prepare.runtimeReachable) {
+          healthEl.textContent = 'Agent Runtime ligado e pronto.';
+          healthEl.classList.remove('hidden');
+          healthEl.classList.add('is-ok');
+        } else {
+          healthEl.textContent = `Agent Runtime indisponível: ${prepare.runtimeHealth?.error || 'sem ligação'}. Verifique se o serviço e o Ollama estão a correr.`;
+          healthEl.classList.remove('hidden', 'is-ok');
+        }
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+      if (healthEl) {
+        healthEl.textContent = err.message;
+        healthEl.classList.remove('hidden', 'is-ok');
+      }
+    }
+    return true;
+  }
+
+  function buildRuntimeTaskPlanForSubmit(prepare, maxSubtasks) {
+    const plan = prepare?.taskPlan;
+    if (!plan?.tasks?.length) return null;
+    const limit = Math.max(1, Number(maxSubtasks) || 8);
+    const mergeTask = plan.tasks.find((t) => t.role === 'merge');
+    const work = plan.tasks.filter((t) => t.role !== 'merge');
+    const selected = work.slice(0, Math.max(1, limit - (mergeTask ? 1 : 0)));
+    const deferred = work.slice(selected.length);
+    const active = [...selected, ...(mergeTask ? [mergeTask] : [])];
+    return {
+      masterPlanMarkdown: plan.masterPlanMarkdown,
+      deferredTaskCount: deferred.length,
+      runtimeTasks: active.map((t) => ({
+        id: t.id,
+        title: t.title,
+        instruction: t.instruction,
+        diagramType: t.diagramType,
+        role: t.role,
+        requirementIds: t.requirementIds,
+        dependsOn: t.dependsOn,
+      })),
+    };
+  }
+
+  function renderAgentPlanList(tasks, { listId = 'pdosAgentPlanList', wrapId = 'pdosAgentPlanWrap', subtaskStatuses = [] } = {}) {
+    const wrap = $(wrapId);
+    const list = $(listId);
+    if (!wrap || !list || !tasks?.length) {
+      wrap?.classList.add('hidden');
+      return;
+    }
+    wrap.classList.remove('hidden');
+    list.innerHTML = tasks.map((task, index) => {
+      const st = subtaskStatuses[index];
+      let stateClass = task.deferred ? 'is-deferred' : '';
+      if (st === 'running') stateClass = 'is-running';
+      if (st === 'done') stateClass = 'is-done';
+      const tag = task.deferred
+        ? 'Adiada (orçamento)'
+        : task.role === 'merge'
+          ? 'Consolidação'
+          : task.diagramType || 'diagrama';
+      const meta = `${task.requirementIds?.length || 0} requisito(s)${task.dependsOn?.length ? ` · após ${task.dependsOn.length} tarefa(s)` : ''}`;
+      return `
+        <li class="pdos-agent-plan-node ${stateClass}">
+          <span class="pdos-agent-plan-step">${index + 1}</span>
+          <div class="pdos-agent-plan-body">
+            <strong>${escapeHtml(task.title)}</strong>
+            <div class="pdos-agent-plan-meta">${escapeHtml(meta)}</div>
+          </div>
+          <span class="pdos-agent-plan-tag${task.deferred ? ' is-deferred' : ''}">${escapeHtml(tag)}</span>
+        </li>`;
+    }).join('');
+  }
+
+  function renderAgentConfigPlan(prepare, maxSubtasks) {
+    const wrap = $('pdosAgentConfigPlanWrap');
+    const summary = $('pdosAgentConfigPlanSummary');
+    const list = $('pdosAgentConfigPlanList');
+    if (!prepare?.taskPlan?.tasks?.length) {
+      wrap?.classList.add('hidden');
+      return;
+    }
+    wrap?.classList.remove('hidden');
+    const plan = prepare.taskPlan;
+    if (summary) {
+      summary.textContent = `${plan.totalRequirements || 0} requisitos → ${plan.diagramTaskCount || 0} diagrama(s) planeados. O orçamento de sub-tarefas limita quantas correm nesta execução.`;
+    }
+    const limit = Math.max(1, Number(maxSubtasks) || 8);
+    const mergeTask = plan.tasks.find((t) => t.role === 'merge');
+    const work = plan.tasks.filter((t) => t.role !== 'merge');
+    const selected = work.slice(0, Math.max(1, limit - (mergeTask ? 1 : 0)));
+    const deferred = work.slice(selected.length);
+    const displayTasks = [
+      ...selected.map((t) => ({ ...t, deferred: false })),
+      ...deferred.map((t) => ({ ...t, deferred: true })),
+      ...(mergeTask ? [{ ...mergeTask, deferred: false }] : []),
+    ];
+    renderAgentPlanList(displayTasks, { listId: 'pdosAgentConfigPlanList', wrapId: 'pdosAgentConfigPlanWrap' });
+    if (deferred.length && list) {
+      const note = document.createElement('p');
+      note.className = 'muted-text pdos-agent-plan-deferred-note';
+      note.textContent = `${deferred.length} tarefa(s) adiada(s) — aumente sub-tarefas ou continue depois de pausar.`;
+      if (!wrap.querySelector('.pdos-agent-plan-deferred-note')) wrap.appendChild(note);
+      else wrap.querySelector('.pdos-agent-plan-deferred-note').textContent = note.textContent;
+    }
+  }
+
+  function closeManualTasksModal() {
+    $('pdosAgentManualTasksModal')?.classList.add('hidden');
+  }
+
+  function closeAgentContinueModal() {
+    $('pdosAgentContinueModal')?.classList.add('hidden');
+  }
+
+  function openAgentContinueModal(reason) {
+    $('pdosAgentContinueReason').textContent = reason || 'Execução pausada — pode continuar com mais orçamento ou concluir parcialmente.';
+    $('pdosAgentContinueModal')?.classList.remove('hidden');
+  }
+
+  async function openManualPromptFromConfig() {
+    const cfg = readAgentConfigFromForm();
+    if (!cfg) return;
+    const taskPlan = buildRuntimeTaskPlanForSubmit(cfg.prepare || pdosState.pendingAgentConfig?.prepare, cfg.budget.maxSubtasks);
+    closeAgentConfigModal();
+
+    if (taskPlan?.runtimeTasks?.length) {
+      const list = $('pdosAgentManualTasksList');
+      $('pdosAgentManualTasksModal')?.classList.remove('hidden');
+      if (list) {
+        list.innerHTML = taskPlan.runtimeTasks.map((task, index) => `
+          <article class="pdos-agent-manual-task-card">
+            <h4>${index + 1}. ${escapeHtml(task.title)}</h4>
+            <p>${escapeHtml(task.diagramType || task.role || 'tarefa')} · ${task.requirementIds?.length || 0} requisito(s)</p>
+            <button type="button" class="btn tiny primary" data-manual-task-prompt="${index}">Abrir prompt desta tarefa</button>
+          </article>`).join('');
+        pdosState.manualTaskPrompts = taskPlan.runtimeTasks;
+        list.querySelectorAll('[data-manual-task-prompt]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const task = pdosState.manualTaskPrompts[Number(btn.dataset.manualTaskPrompt)];
+            try {
+              const res = await apiRequest(`/projects/${cfg.project.id}/prompt-runs`, {
+                method: 'POST',
+                body: {
+                  agentType: cfg.agentType,
+                  stageId: cfg.options.stageId || 'architecture',
+                  capabilityId: cfg.options.capabilityId,
+                  moduleTag: cfg.options.moduleTag,
+                },
+              });
+              pdosState.pendingPromptRun = res.promptRun;
+              openPromptWorkbench({
+                ...res,
+                prompt: task.instruction,
+                promptRun: { ...res.promptRun, summaryMarkdown: `Tarefa manual: ${task.title}` },
+              });
+              closeManualTasksModal();
+            } catch (err) {
+              showToast(err.message, 'error');
+            }
+          });
+        });
+      }
+      return;
+    }
+
+    try {
+      const res = await apiRequest(`/projects/${cfg.project.id}/prompt-runs`, {
+        method: 'POST',
+        body: {
+          agentType: cfg.agentType,
+          stageId: cfg.options.stageId,
+          capabilityId: cfg.options.capabilityId,
+          moduleTag: cfg.options.moduleTag,
+        },
+      });
+      pdosState.pendingPromptRun = res.promptRun;
+      openPromptWorkbench(res);
+      showToast('Prompt gerado — modo manual (copiar/colar no workbench)');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function startAgentFromConfig(ev) {
+    ev?.preventDefault();
+    const cfg = readAgentConfigFromForm();
+    if (!cfg) return;
+    const prepare = pdosState.pendingAgentConfig?.prepare;
+    const taskPlan = buildRuntimeTaskPlanForSubmit(prepare, cfg.budget.maxSubtasks);
+    closeAgentConfigModal();
+    await runYourlabAgent(cfg.agentType, cfg.project, {
+      options: {
+        ...cfg.options,
+        taskPlan,
+        maxSubtasks: cfg.budget.maxSubtasks,
+      },
+      budget: cfg.budget,
+      taskPlan,
+    });
+  }
+
+  const SUBTASK_STATUS_LABELS = {
+    pending: 'Pendente',
+    running: 'A executar',
+    done: 'Concluída',
+    failed: 'Falhou',
+  };
+
+  function renderAgentSubtasks(payload) {
+    const wrap = $('pdosAgentSubtasksWrap');
+    const list = $('pdosAgentSubtasksList');
+    if (!wrap || !list) return;
+
+    let subtasks = ensureArray(payload?.subtasks);
+    if (subtasks.length) {
+      pdosState.lastRuntimeSubtasks = subtasks;
+    } else if (pdosState.lastRuntimeSubtasks?.length) {
+      subtasks = pdosState.lastRuntimeSubtasks;
+    }
+
+    const yarStatus = payload?.yarJob?.status || payload?.agentJob?.status;
+
+    if (!subtasks.length) {
+      if (['planning', 'dispatching', 'queued', 'running'].includes(yarStatus)) {
+        wrap.classList.remove('hidden');
+        list.innerHTML = '<li class="muted-text">A planear sub-tarefas…</li>';
+        return;
+      }
+      wrap.classList.add('hidden');
+      list.innerHTML = '';
+      return;
+    }
+
+    const runningFromEvents = new Set();
+    const doneFromEvents = new Set();
+    ensureArray(payload?.events).forEach((ev) => {
+      const idx = ev.data?.index;
+      if (idx === undefined || idx === null) return;
+      if (ev.type === 'subtask_started') runningFromEvents.add(idx);
+      if (ev.type === 'subtask_done') {
+        doneFromEvents.add(idx);
+        runningFromEvents.delete(idx);
+      }
+    });
+
+    wrap.classList.remove('hidden');
+    list.innerHTML = subtasks.map((st, index) => {
+      let status = st.status || 'pending';
+      if (status === 'pending' && doneFromEvents.has(index)) status = 'done';
+      else if ((status === 'pending' || status === 'running') && runningFromEvents.has(index)) status = 'running';
+      const icon = status === 'done' ? '✓' : status === 'running' ? '▶' : '○';
+      return `
+        <li class="pdos-agent-subtask-row is-${status}">
+          <span class="pdos-agent-subtask-icon" aria-hidden="true">${icon}</span>
+          <div class="pdos-agent-subtask-body">
+            <strong>${escapeHtml(st.title || `Sub-tarefa ${index + 1}`)}</strong>
+            <span class="pdos-agent-subtask-status">${escapeHtml(SUBTASK_STATUS_LABELS[status] || status)}</span>
+          </div>
+        </li>`;
+    }).join('');
+
+    const planTasks = pdosState.activeTaskPlan?.runtimeTasks
+      || pdosState.pendingAgentConfig?.prepare?.taskPlan?.tasks;
+    if (planTasks?.length) {
+      const statuses = subtasks.map((st) => st.status || 'pending');
+      renderAgentPlanList(planTasks, { subtaskStatuses: statuses });
+    }
+  }
 
   function ensureArray(value) {
     return Array.isArray(value) ? value : [];
@@ -285,6 +673,7 @@
       implementation_tasks: 'Tarefas',
       commercial_proposal: 'Proposta comercial',
       requirement_grouping: 'Agrupamento',
+      requirement_hierarchy: 'Cadeia V',
       diagram_to_requirements: 'Diagrama → Requisitos',
       requirements_to_architecture: 'Arquitectura',
       capability_requirements: 'Requisitos',
@@ -588,6 +977,22 @@
             <button type="button" class="btn tiny primary" data-agent="requirement_grouping" title="Agrupa requisitos soltos em funcionalidades e grupos">Agrupar com IA</button>
             <button type="button" class="btn tiny" data-agent="reverse_idea">Resumo da ideia</button>
             <button type="button" class="btn tiny" data-unlinked-reqs>Sem funcionalidade</button>
+            <button type="button" class="btn tiny ghost" data-open-req-map="implmap">Mapa implementação</button>
+          </div>
+        </article>
+        <article class="pdos-card pdos-card-vchain" id="pdosVChainCard">
+          <h4>Cadeia V (STK → FR → RNF → TC)</h4>
+          <div class="pdos-summary-grid pdos-summary-grid-static" id="pdosVChainStats">
+            <div><strong>…</strong><span>STK (L0)</span></div>
+            <div><strong>…</strong><span>órfãos</span></div>
+            <div><strong>…</strong><span>cobertura V</span></div>
+          </div>
+          <p class="muted-text pdos-vchain-hint">Atribua requisitos arrastando no <strong>mapa V</strong>. Use IA ou lote só para reorganizar muitos de uma vez.</p>
+          <div class="pdos-card-actions">
+            <button type="button" class="btn tiny primary" data-agent="requirement_hierarchy" title="Gera proposta de ligações STK→FR→RNF→TC para revisão">Reorganizar cadeia V com IA</button>
+            <button type="button" class="btn tiny ghost" data-pdos-hierarchy-batch hidden>Atribuir órfãos em lote</button>
+            <button type="button" class="btn tiny ghost" data-pdos-hierarchy-revert hidden>Reverter STK automáticos</button>
+            <button type="button" class="btn tiny ghost" data-open-req-map="vmap">Abrir mapa V</button>
           </div>
         </article>
       `;
@@ -639,7 +1044,9 @@
 
     el.innerHTML = html;
 
-    if (stageId === 'idea') {
+    if (stageId === 'requirements') {
+      hydrateVChainCard(project);
+    } else if (stageId === 'idea') {
       hydrateIdeaStage(project);
     } else if (stageId === 'discovery') {
       hydrateDiscoveryStage(project);
@@ -653,6 +1060,40 @@
 
     wireCardFeedEvents(project);
     renderMermaidInFeed();
+  }
+
+  async function hydrateVChainCard(project) {
+    const statsEl = document.getElementById('pdosVChainStats');
+    const batchBtn = document.querySelector('[data-pdos-hierarchy-batch]');
+    const revertBtn = document.querySelector('[data-pdos-hierarchy-revert]');
+    if (!statsEl || !project?.id) return;
+    try {
+      const hierarchy = await apiRequest(`/projects/${encodeURIComponent(project.id)}/requirements/hierarchy`);
+      const stkCount = (hierarchy?.byLevel?.stakeholder || []).length;
+      const orphans = hierarchy?.stats?.orphans ?? (hierarchy?.orphans || []).length;
+      const coverage = hierarchy?.stats?.coveragePct ?? 0;
+      const suggestCount = (hierarchy?.suggestedStakeholders || []).length;
+      const revertable = hierarchy?.revertableRepairs || {};
+      statsEl.innerHTML = `
+        <div><strong>${stkCount}</strong><span>STK (L0)</span></div>
+        <div><strong>${orphans}</strong><span>órfãos</span></div>
+        <div><strong>${coverage}%</strong><span>cobertura V</span></div>
+      `;
+      if (batchBtn) {
+        batchBtn.hidden = !suggestCount;
+        batchBtn.textContent = `Atribuir ${suggestCount} órfão${suggestCount === 1 ? '' : 's'} em lote`;
+      }
+      if (revertBtn) {
+        revertBtn.hidden = !revertable.canRevert;
+        revertBtn.textContent = `Reverter ${revertable.count || 0} STK automático${revertable.count === 1 ? '' : 's'}`;
+      }
+    } catch {
+      statsEl.innerHTML = `
+        <div><strong>—</strong><span>STK (L0)</span></div>
+        <div><strong>—</strong><span>órfãos</span></div>
+        <div><strong>—</strong><span>cobertura V</span></div>
+      `;
+    }
   }
 
   function ideaVision(project) {
@@ -678,7 +1119,7 @@
 
   function renderIdeaStage(project) {
     const v = ideaVision(project);
-    const genLabel = ideaHasContent(v) ? 'Regenerar visão com IA' : 'Gerar visão com IA';
+    const genLabel = agentButtonLabel(ideaHasContent(v) ? 'Regenerar visão com IA' : 'Gerar visão com IA', 'reverse_idea');
 
     if (!ideaHasContent(v)) {
       return `
@@ -801,7 +1242,7 @@
 
   function renderDiscoveryStage(project) {
     const d = discoveryData(project);
-    const genLabel = discoveryHasContent(d) ? 'Regenerar descoberta com IA' : 'Gerar descoberta com IA';
+    const genLabel = agentButtonLabel(discoveryHasContent(d) ? 'Regenerar descoberta com IA' : 'Gerar descoberta com IA', 'discovery_research');
 
     if (!discoveryHasContent(d)) {
       return `
@@ -967,7 +1408,7 @@
 
   function renderRoadmapStage(project) {
     const r = roadmapData(project);
-    const genLabel = r.phases.length ? 'Regenerar roadmap com IA' : 'Gerar roadmap com IA';
+    const genLabel = agentButtonLabel(r.phases.length ? 'Regenerar roadmap com IA' : 'Gerar roadmap com IA', 'roadmap_plan');
 
     if (!r.phases.length) {
       return `
@@ -1767,6 +2208,37 @@
       const unlinked = (project.requirements || []).filter((r) => !linked.has(r.id));
       showToast(`${unlinked.length} requisito(s) ainda sem funcionalidade atribuída`);
     });
+    $('pdosCardFeed')?.querySelectorAll('[data-open-req-map]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window.RequirementsUI?.openRequirementsMap?.(btn.dataset.openReqMap);
+      });
+    });
+    $('pdosCardFeed')?.querySelector('[data-pdos-hierarchy-batch]')?.addEventListener('click', async () => {
+      try {
+        const hierarchy = await apiRequest(`/projects/${encodeURIComponent(project.id)}/requirements/hierarchy`);
+        const ids = (hierarchy?.suggestedStakeholders || []).map((s) => s.forRequirementId);
+        if (!ids.length) return;
+        if (!window.confirm(`Atribuir ${ids.length} órfão(s) a STK em lote?\n\nPrefira arrastar no mapa V para controlar cada ligação.`)) return;
+        await window.RequirementsMapUI?.repairOrphans?.(project, ids);
+        showToast('Atribuição em lote concluída.', 'ok');
+        await reloadProject(project.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+    $('pdosCardFeed')?.querySelector('[data-pdos-hierarchy-revert]')?.addEventListener('click', async () => {
+      try {
+        const hierarchy = await apiRequest(`/projects/${encodeURIComponent(project.id)}/requirements/hierarchy`);
+        const count = hierarchy?.revertableRepairs?.count || 0;
+        if (!count) return;
+        if (!window.confirm(`Reverter ${count} STK(s) criados automaticamente?`)) return;
+        await window.RequirementsMapUI?.revertStakeholderRepairs?.(project);
+        showToast('Atribuições automáticas revertidas.', 'ok');
+        await reloadProject(project.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
     $('pdosCardFeed')?.querySelectorAll('[data-scroll-target]').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
@@ -2054,6 +2526,13 @@
   }
 
   async function runArchitecturePackGeneration(project, options = {}) {
+    if (canRunViaAgentRuntime('requirements_to_architecture')) {
+      const caps = project.capabilities || [];
+      return openAgentConfigModal('requirements_to_architecture', project, {
+        capabilityId: options.capabilityId ?? $('archGenCapability')?.value ?? caps[0]?.id ?? '',
+        moduleTag: options.moduleTag ?? $('archGenModule')?.value ?? (pdosState.moduleFilter || 'Backend'),
+      });
+    }
     try {
       const caps = project.capabilities || [];
       const capabilityId = options.capabilityId ?? $('archGenCapability')?.value ?? caps[0]?.id ?? '';
@@ -2075,6 +2554,460 @@
     }
   }
 
+  function getRuntimeJobs(project) {
+    return ensureArray(project?.agentJobs).filter((j) => j.mode === 'runtime' || j.yarJobId);
+  }
+
+  function getActiveRuntimeJob(project) {
+    return getRuntimeJobs(project).find(
+      (j) => RUNTIME_ACTIVE_STATUSES.has(j.status) || RUNTIME_PAUSED_STATUSES.has(j.status)
+    ) || null;
+  }
+
+  function openYourlabAgentPanel() {
+    $('pdosYourlabAgentPanel')?.classList.remove('hidden');
+    const project = window.state?.selectedProject;
+    if (project) renderAgentRuntimeHistory(project);
+    $('pdosAgentRuntimeLogWrap')?.toggleAttribute('open', true);
+  }
+
+  function closeYourlabAgentPanel() {
+    $('pdosYourlabAgentPanel')?.classList.add('hidden');
+  }
+
+  function runtimeBadgeClass(status) {
+    if (RUNTIME_DONE_STATUSES.has(status)) return 'is-done';
+    if (RUNTIME_ERROR_STATUSES.has(status)) return 'is-error';
+    if (RUNTIME_PAUSED_STATUSES.has(status)) return 'is-paused';
+    return 'is-running';
+  }
+
+  function updateAgentRuntimePanel(payload) {
+    const yar = payload?.yarJob;
+    const agentJob = payload?.agentJob;
+    const yarError = payload?.yarError;
+    let status = yar?.status || agentJob?.status || 'dispatching';
+    if (yarError && RUNTIME_ACTIVE_STATUSES.has(status)) {
+      status = agentJob?.status || status;
+    }
+    const badge = $('pdosAgentRuntimeStatus');
+    const progress = $('pdosAgentRuntimeProgress');
+    const title = $('pdosAgentRuntimeTitle');
+    const errEl = $('pdosAgentRuntimeError');
+    const meter = $('pdosAgentRuntimeMeter');
+    const meterFill = $('pdosAgentRuntimeMeterFill');
+
+    if (title) {
+      title.textContent = agentFriendlyLabel(agentJob?.agentType || agentJob?.platformAgentType || 'Agente');
+    }
+    if (badge) {
+      badge.textContent = runtimeStatusLabel(status);
+      badge.className = `pdos-agent-runtime-badge ${runtimeBadgeClass(status)}`;
+    }
+
+    if (progress) {
+      if (yar) {
+        const parts = [];
+        if (yar.subtasksTotal) parts.push(`${yar.subtasksCompleted || 0}/${yar.subtasksTotal} sub-tarefas`);
+        if (yar.tokensUsed) parts.push(`${yar.tokensUsed.toLocaleString()} tokens`);
+        if (yar.budget?.maxTokens) {
+          const pct = Math.min(100, Math.round((yar.tokensUsed / yar.budget.maxTokens) * 100));
+          parts.push(`${pct}% orçamento`);
+        }
+        progress.textContent = parts.join(' · ') || runtimeStatusLabel(status);
+        if (meter && meterFill) {
+          meter.classList.remove('hidden');
+          const pct = yar.subtasksTotal
+            ? Math.round(((yar.subtasksCompleted || 0) / yar.subtasksTotal) * 100)
+            : (yar.budget?.maxTokens ? Math.min(100, Math.round((yar.tokensUsed / yar.budget.maxTokens) * 100)) : 15);
+          meterFill.style.width = `${Math.max(5, pct)}%`;
+        }
+      } else if (yarError) {
+        progress.textContent = yarError;
+        meter?.classList.add('hidden');
+      } else if (agentJob?.yarJobId) {
+        progress.textContent = 'A obter estado do Agent Runtime…';
+        meter?.classList.add('hidden');
+      } else if (status === 'dispatching') {
+        progress.textContent = 'A enviar pedido ao Agent Runtime…';
+        meter?.classList.add('hidden');
+      } else {
+        progress.textContent = runtimeStatusLabel(status);
+        meter?.classList.add('hidden');
+      }
+    }
+
+    const errorText = yar?.error || agentJob?.error || yarError;
+    if (errEl) {
+      if (errorText && (RUNTIME_ERROR_STATUSES.has(status) || (yarError && RUNTIME_ACTIVE_STATUSES.has(status)))) {
+        errEl.textContent = errorText;
+        errEl.classList.remove('hidden');
+      } else {
+        errEl.classList.add('hidden');
+        errEl.textContent = '';
+      }
+    }
+
+    const runId = agentJob?.promptRunId || pdosState.activeRuntimeRun?.runId;
+    const resumeBtn = $('pdosAgentRuntimeResume');
+    if (resumeBtn) {
+      resumeBtn.classList.toggle('hidden', !RUNTIME_PAUSED_STATUSES.has(status));
+      resumeBtn.textContent = RUNTIME_PAUSED_STATUSES.has(status) ? 'Continuar…' : 'Continuar';
+    }
+    $('pdosAgentRuntimeCancel')?.classList.toggle(
+      'hidden',
+      !RUNTIME_ACTIVE_STATUSES.has(status) && !RUNTIME_PAUSED_STATUSES.has(status)
+    );
+    $('pdosAgentRuntimeRerun')?.classList.toggle(
+      'hidden',
+      !(RUNTIME_ERROR_STATUSES.has(status) || RUNTIME_DONE_STATUSES.has(status))
+    );
+    $('pdosAgentRuntimeDismiss')?.classList.toggle('hidden', !runId);
+
+    if (payload?.events?.length) {
+      appendAgentRuntimeLog(payload.events);
+      const maxId = Math.max(...payload.events.map((e) => Number(e._id) || 0));
+      if (maxId && pdosState.activeRuntimeRun) {
+        pdosState.activeRuntimeRun.lastEventId = maxId;
+      }
+    }
+
+    pdosState.lastRuntimePoll = payload;
+    renderAgentSubtasks(payload);
+    renderAgentRuntimeBar(window.state?.selectedProject, payload);
+  }
+
+  function appendAgentRuntimeLog(events, replace = false) {
+    const log = $('pdosAgentRuntimeLog');
+    if (!log || !events?.length) return;
+    if (replace) log.innerHTML = '';
+    events.forEach((ev) => {
+      const li = document.createElement('li');
+      const time = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '';
+      li.textContent = `${time ? `${time} — ` : ''}${ev.message || ev.type}`;
+      log.appendChild(li);
+    });
+    while (log.children.length > 80) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function stopAgentRuntimeMonitor() {
+    if (pdosState.activeRuntimeRun?.intervalId) {
+      clearInterval(pdosState.activeRuntimeRun.intervalId);
+    }
+    if (pdosState.activeRuntimeRun) {
+      pdosState.activeRuntimeRun.intervalId = null;
+    }
+  }
+
+  function startAgentRuntimeMonitor(runId, projectId, { openPanel = false } = {}) {
+    stopAgentRuntimeMonitor();
+    pdosState.activeRuntimeRun = {
+      runId,
+      projectId,
+      lastEventId: 0,
+      intervalId: null,
+      agentType: null,
+      pollErrors: 0,
+    };
+    $('pdosAgentRuntimeLog').innerHTML = '';
+    pdosState.lastRuntimeSubtasks = [];
+    if (openPanel) openYourlabAgentPanel();
+
+    const tick = async () => {
+      if (!pdosState.activeRuntimeRun || pdosState.activeRuntimeRun.runId !== runId) return;
+      try {
+        const after = pdosState.activeRuntimeRun.lastEventId || 0;
+        const status = await apiRequest(
+          `/agent-runs/${encodeURIComponent(runId)}/status?afterEventId=${after}`
+        );
+        if (status.agentJob?.agentType) {
+          pdosState.activeRuntimeRun.agentType = status.agentJob.agentType;
+        }
+        updateAgentRuntimePanel(status);
+        const yarStatus = status.yarJob?.status || status.agentJob?.status;
+
+        if (status.yarError && !status.yarJob) {
+          pdosState.activeRuntimeRun.pollErrors = (pdosState.activeRuntimeRun.pollErrors || 0) + 1;
+        } else {
+          pdosState.activeRuntimeRun.pollErrors = 0;
+        }
+
+        if (RUNTIME_DONE_STATUSES.has(yarStatus)) {
+          stopAgentRuntimeMonitor();
+          showToast('YourLab Agent concluído — revise o resultado na revisão humana');
+          const project = await reloadProject(projectId);
+          renderAgentRuntimeHistory(project || window.state?.selectedProject);
+          return;
+        }
+        if (RUNTIME_ERROR_STATUSES.has(yarStatus)
+          || (status.yarError && pdosState.activeRuntimeRun.pollErrors >= 3)) {
+          stopAgentRuntimeMonitor();
+          showToast(status.yarJob?.error || status.agentJob?.error || status.yarError || `YourLab Agent: ${yarStatus}`, 'error');
+          const project = await reloadProject(projectId);
+          renderAgentRuntimeHistory(project || window.state?.selectedProject);
+          return;
+        }
+      } catch (err) {
+        const progress = $('pdosAgentRuntimeProgress');
+        if (progress) progress.textContent = `Erro ao actualizar: ${err.message}`;
+      }
+    };
+
+    tick();
+    pdosState.activeRuntimeRun.intervalId = setInterval(tick, 2000);
+  }
+
+  async function runYourlabAgent(agentType, project, runConfig = {}) {
+    if (!canRunViaAgentRuntime(agentType)) {
+      showToast('YourLab Agent não disponível para este tipo.', 'error');
+      return false;
+    }
+    const options = { ...buildAgentRuntimeOptions(agentType, project), ...runConfig.options };
+    if (runConfig.taskPlan) {
+      options.taskPlan = runConfig.taskPlan;
+    }
+    const budget = runConfig.budget;
+    pdosState.activeTaskPlan = runConfig.taskPlan || options.taskPlan || null;
+    try {
+      stopAgentRuntimeMonitor();
+      const body = {
+        projectId: project.id,
+        agentType,
+        options,
+        budget,
+      };
+      const res = await apiRequest('/agent-runs', { method: 'POST', body });
+      pdosState.pendingPromptRun = res.promptRun;
+      const runId = res.agentJob?.promptRunId || res.promptRun?.id;
+      openYourlabAgentPanel();
+      updateAgentRuntimePanel({ agentJob: res.agentJob, yarJob: res.yarJob, events: [], subtasks: [] });
+      startAgentRuntimeMonitor(runId, project.id);
+      showToast('YourLab Agent iniciado');
+      const updated = await reloadProject(project.id);
+      renderAgentRuntimeHistory(updated || project);
+      renderAgentRuntimeBar(updated || project);
+      return true;
+    } catch (err) {
+      showToast(err.message, 'error');
+      return false;
+    }
+  }
+
+  async function selectRuntimeHistoryRun(runId, project) {
+    pdosState.activeRuntimeRun = {
+      ...pdosState.activeRuntimeRun,
+      runId,
+      projectId: project.id,
+      lastEventId: 0,
+    };
+    $('pdosAgentRuntimeLog').innerHTML = '';
+    try {
+      const status = await apiRequest(`/agent-runs/${encodeURIComponent(runId)}/status?afterEventId=0`);
+      updateAgentRuntimePanel(status);
+      appendAgentRuntimeLog(status.events || [], false);
+      const yarStatus = status.yarJob?.status || status.agentJob?.status;
+      if (RUNTIME_ACTIVE_STATUSES.has(yarStatus) || RUNTIME_PAUSED_STATUSES.has(yarStatus)) {
+        startAgentRuntimeMonitor(runId, project.id);
+      } else {
+        stopAgentRuntimeMonitor();
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    renderAgentRuntimeHistory(project, runId);
+  }
+
+  async function cancelAgentRuntime(runId, projectId) {
+    try {
+      await apiRequest(`/agent-runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST', body: {} });
+      stopAgentRuntimeMonitor();
+      showToast('YourLab Agent parado');
+      const project = await reloadProject(projectId);
+      const status = await apiRequest(`/agent-runs/${encodeURIComponent(runId)}/status`);
+      updateAgentRuntimePanel(status);
+      renderAgentRuntimeHistory(project);
+      renderAgentRuntimeBar(project);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function resumeAgentRuntime(runId, projectId, { budget, finishPartial = false } = {}) {
+    try {
+      await apiRequest(`/agent-runs/${encodeURIComponent(runId)}/resume`, {
+        method: 'POST',
+        body: {
+          budget,
+          approveStage: true,
+          finishPartial,
+        },
+      });
+      closeAgentContinueModal();
+      showToast(finishPartial ? 'YourLab Agent a concluir parcialmente' : 'YourLab Agent retomado');
+      startAgentRuntimeMonitor(runId, projectId);
+      await reloadProject(projectId);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function submitAgentContinueForm(ev) {
+    ev?.preventDefault();
+    const runId = pdosState.activeRuntimeRun?.runId;
+    const projectId = pdosState.activeRuntimeRun?.projectId || window.state?.selectedProject?.id;
+    if (!runId || !projectId) return;
+    const yar = pdosState.lastRuntimePoll?.yarJob;
+    const extraTokens = Number($('pdosAgentContinueTokens')?.value) || 30000;
+    const extraMinutes = Number($('pdosAgentContinueMinutes')?.value) || 15;
+    await resumeAgentRuntime(runId, projectId, {
+      budget: {
+        maxTokens: (yar?.budget?.maxTokens || 0) + extraTokens,
+        maxWallClockMinutes: (yar?.budget?.maxWallClockMinutes || 45) + extraMinutes,
+      },
+    });
+  }
+
+  async function finishPartialAgentRuntime() {
+    const runId = pdosState.activeRuntimeRun?.runId;
+    const projectId = pdosState.activeRuntimeRun?.projectId || window.state?.selectedProject?.id;
+    if (!runId || !projectId) return;
+    await resumeAgentRuntime(runId, projectId, { finishPartial: true });
+  }
+
+  async function dismissAgentRuntime(runId, projectId) {
+    try {
+      await apiRequest(`/agent-runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+      if (pdosState.activeRuntimeRun?.runId === runId) {
+        stopAgentRuntimeMonitor();
+        pdosState.activeRuntimeRun = null;
+        $('pdosAgentRuntimeLog').innerHTML = '';
+        $('pdosAgentRuntimeProgress').textContent = 'Sem execução activa.';
+        $('pdosAgentRuntimeMeter')?.classList.add('hidden');
+      }
+      showToast('Execução removida do histórico');
+      const project = await reloadProject(projectId);
+      renderAgentRuntimeHistory(project);
+      renderAgentRuntimeBar(project);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function rerunAgentRuntime(agentType, project) {
+    const runId = pdosState.activeRuntimeRun?.runId;
+    if (runId) {
+      try {
+        await apiRequest(`/agent-runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+      } catch { /* ignore */ }
+    }
+    stopAgentRuntimeMonitor();
+    return openAgentConfigModal(agentType, project);
+  }
+
+  function renderAgentRuntimeBar(project, pollPayload) {
+    const bar = $('pdosAgentRuntimeBar');
+    if (!bar) return;
+    if (!isAgentRuntimeEnabled()) {
+      bar.classList.add('hidden');
+      return;
+    }
+
+    const poll = pollPayload || pdosState.lastRuntimePoll;
+    const activeRunId = pdosState.activeRuntimeRun?.runId;
+    let active = null;
+
+    if (poll?.agentJob && (poll.agentJob.promptRunId === activeRunId || poll.agentJob.id === activeRunId)) {
+      const st = poll.yarJob?.status || poll.agentJob.status;
+      if (RUNTIME_ACTIVE_STATUSES.has(st) || RUNTIME_PAUSED_STATUSES.has(st)) {
+        active = { ...poll.agentJob, status: st };
+      }
+    }
+
+    if (!active) active = getActiveRuntimeJob(project);
+    if (!active) {
+      bar.classList.add('hidden');
+      return;
+    }
+    bar.classList.remove('hidden');
+    const runId = active.promptRunId || active.id;
+    const status = active.status || 'running';
+    bar.innerHTML = `
+      <span>
+        <strong>YourLab Agent</strong>
+        <span class="pdos-agent-runtime-badge ${runtimeBadgeClass(status)}">${escapeHtml(runtimeStatusLabel(status))}</span>
+        <span class="muted-text"> · ${escapeHtml(agentFriendlyLabel(active.agentType))}</span>
+      </span>
+      <span class="muted-text">Clique para ver progresso</span>
+    `;
+    bar.onclick = () => {
+      openYourlabAgentPanel();
+      selectRuntimeHistoryRun(runId, project);
+    };
+  }
+
+  function renderAgentRuntimeHistory(project, selectedRunId) {
+    const el = $('pdosAgentRuntimeHistory');
+    if (!el || !project) return;
+    const jobs = getRuntimeJobs(project).slice(0, 12);
+    if (!jobs.length) {
+      el.innerHTML = '<p class="muted-text">Sem execuções anteriores.</p>';
+      return;
+    }
+    el.innerHTML = jobs.map((job) => {
+      const runId = job.promptRunId || job.id;
+      const status = job.status || '—';
+      const isSelected = selectedRunId === runId || pdosState.activeRuntimeRun?.runId === runId;
+      const when = job.updatedAt || job.createdAt || '';
+      return `
+        <div class="pdos-agent-history-row${isSelected ? ' is-selected' : ''}" data-history-run="${escapeHtml(runId)}">
+          <div>
+            <strong>${escapeHtml(agentFriendlyLabel(job.agentType))}</strong>
+            <span class="pdos-agent-runtime-badge ${runtimeBadgeClass(status)}">${escapeHtml(runtimeStatusLabel(status))}</span>
+            <span class="muted-text"> · ${escapeHtml(when ? new Date(when).toLocaleString() : '')}</span>
+            ${job.error ? `<br><span class="muted-text">${escapeHtml(job.error.slice(0, 120))}</span>` : ''}
+          </div>
+          <div class="pdos-agent-runtime-actions">
+            <button type="button" class="btn tiny" data-history-view="${escapeHtml(runId)}">Ver</button>
+            ${RUNTIME_ERROR_STATUSES.has(status) || RUNTIME_DONE_STATUSES.has(status)
+    ? `<button type="button" class="btn tiny" data-history-rerun="${escapeHtml(runId)}" data-agent-type="${escapeHtml(job.agentType)}">Repetir</button>`
+    : ''}
+            <button type="button" class="btn tiny ghost" data-history-dismiss="${escapeHtml(runId)}">Remover</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    el.querySelectorAll('[data-history-view]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectRuntimeHistoryRun(btn.dataset.historyView, project);
+      });
+    });
+    el.querySelectorAll('[data-history-rerun]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        rerunAgentRuntime(btn.dataset.agentType, project);
+      });
+    });
+    el.querySelectorAll('[data-history-dismiss]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissAgentRuntime(btn.dataset.historyDismiss, project.id);
+      });
+    });
+  }
+
+  function watchActiveAgentRuns(project) {
+    if (!project || !isAgentRuntimeEnabled()) return;
+    renderAgentRuntimeBar(project);
+    const active = getActiveRuntimeJob(project);
+    if (!active) return;
+    const runId = active.promptRunId || active.id;
+    if (!pdosState.activeRuntimeRun?.intervalId) {
+      startAgentRuntimeMonitor(runId, project.id);
+    }
+  }
+
   async function runAgent(agentType, project) {
     if (agentType === 'requirements_to_architecture') {
       return runArchitecturePackGeneration(project);
@@ -2082,11 +3015,12 @@
     if (agentType === 'diagram_to_requirements') {
       return runDiagramToRequirements(project);
     }
-    // Para agentes pesados com muitos requisitos, divide em lotes para nao
-    // sobrecarregar o pedido ao modelo.
     if (BATCHABLE_AGENT_TYPES.includes(agentType)
       && ensureArray(project.requirements).length > AGENT_JOB_THRESHOLD) {
       return startAgentJob(agentType, project);
+    }
+    if (canRunViaAgentRuntime(agentType)) {
+      return openAgentConfigModal(agentType, project);
     }
     try {
       const body = { agentType, stageId: window.state?.deliverySelectedStageId };
@@ -2117,7 +3051,7 @@
     modal.classList.remove('hidden');
     $('pdosPromptSummary').textContent = res.promptRun?.summaryMarkdown || 'Prompt gerado.';
     $('pdosPromptRaw').value = res.prompt || '';
-    $('pdosPromptOutput').value = '';
+    $('pdosPromptOutput').value = res.promptRun?.rawOutput || '';
     $('pdosPromptRunId').value = res.promptRun?.id || '';
   }
 
@@ -2524,6 +3458,7 @@
     window.state.selectedProject = res.project;
     renderPdosShell(res.project);
     if (typeof renderProjectDetails === 'function') renderProjectDetails();
+    return res.project;
   }
 
   function renderPdosShell(project) {
@@ -2536,6 +3471,7 @@
     renderStageConceptBanner();
     renderModuleNav();
     renderHumanReviewsSection(project);
+    renderAgentRuntimeBar(project);
     renderCardFeed(project);
     window.DiagramsUI?.renderShell?.(project);
   }
@@ -2688,6 +3624,118 @@
         } catch (err) { showToast(err.message, 'error'); }
       });
     });
+
+    wireDeliveryMapFocus(project, traceMap);
+  }
+
+  function nodeLabel(traceMap, nodeType, nodeId) {
+    const nodes = traceMap?.nodes || [];
+    const node = nodes.find((n) => n.id === nodeId && (n.nodeType === nodeType || !nodeType));
+    if (node) return node.title || node.id;
+    return nodeId;
+  }
+
+  function renderTraceLinkChip(link, direction, traceMap) {
+    const isUp = direction === 'upstream';
+    const peerType = isUp ? link.targetType : link.sourceType;
+    const peerId = isUp ? link.targetId : link.sourceId;
+    const rel = link.relationshipType || 'link';
+    return `
+      <button type="button" class="delivery-map-link-chip" data-trace-focus-type="${escapeHtml(peerType)}" data-trace-focus-id="${escapeHtml(peerId)}">
+        <span class="delivery-map-rel">${escapeHtml(rel)}</span>
+        <span class="delivery-map-peer">${escapeHtml(peerType)}:${escapeHtml(peerId)}</span>
+        <small>${escapeHtml(nodeLabel(traceMap, peerType, peerId))}</small>
+      </button>
+    `;
+  }
+
+  function renderDeliveryMapFocus(project, focusNodeId, traceMap) {
+    const focusCard = $('deliveryFocusCard');
+    const upEl = $('deliveryMapUpstream');
+    const downEl = $('deliveryMapDownstream');
+    if (!focusCard || !upEl || !downEl) return;
+
+    if (!focusNodeId) {
+      focusCard.classList.add('empty');
+      focusCard.innerHTML = '<p class="muted-text">Seleccione um item no feed para ver ligações.</p>';
+      upEl.innerHTML = '';
+      downEl.innerHTML = '';
+      return;
+    }
+
+    const nodes = traceMap?.nodes || [];
+    const links = traceMap?.links || [];
+    const focusNode = nodes.find((n) => n.id === focusNodeId)
+      || (project.requirements || []).find((r) => r.id === focusNodeId);
+    if (!focusNode) {
+      focusCard.classList.add('empty');
+      focusCard.innerHTML = '<p class="muted-text">Nó não encontrado.</p>';
+      return;
+    }
+
+    const title = focusNode.title || focusNode.name || focusNode.id;
+    const stk = focusNode.stakeholderRootId || focusNode.stakeholderRequirementLink || '';
+    focusCard.classList.remove('empty');
+    focusCard.innerHTML = `
+      <div class="delivery-focus-top"><span>${escapeHtml(focusNode.nodeType || focusNode.type || 'item')}</span><span>${escapeHtml(focusNode.id)}</span></div>
+      <strong>${escapeHtml(title)}</strong>
+      ${stk ? `<small class="req-card-stk">↑ ${escapeHtml(stk)}</small>` : ''}
+      <div class="delivery-focus-actions">
+        <button type="button" class="btn tiny ghost" data-open-req-map-focus="vmap">Mapa V</button>
+        <button type="button" class="btn tiny ghost" data-open-req-map-focus="implmap">Mapa impl.</button>
+      </div>
+    `;
+
+    focusCard.querySelectorAll('[data-open-req-map-focus]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window.RequirementsUI?.openRequirementsMap?.(btn.dataset.openReqMapFocus, {
+          focusRequirementId: focusNode.id,
+          focusStakeholderId: stk,
+        });
+      });
+    });
+
+    const upstream = links.filter((l) => l.sourceId === focusNodeId);
+    const downstream = links.filter((l) => l.targetId === focusNodeId);
+
+    if (window.RequirementsMapUI?.renderTraceLinkLists) {
+      window.RequirementsMapUI.renderTraceLinkLists(upEl, downEl, upstream, downstream, traceMap);
+    } else {
+      upEl.innerHTML = upstream.length
+        ? upstream.map((l) => renderTraceLinkChip(l, 'upstream', traceMap)).join('')
+        : '<span class="muted-text">Sem upstream.</span>';
+      downEl.innerHTML = downstream.length
+        ? downstream.map((l) => renderTraceLinkChip(l, 'downstream', traceMap)).join('')
+        : '<span class="muted-text">Sem downstream.</span>';
+    }
+
+    [upEl, downEl].forEach((panel) => {
+      panel?.querySelectorAll('[data-trace-focus-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          window.state.deliveryMapFocusId = btn.dataset.traceFocusId;
+          renderDeliveryMapFocus(project, window.state.deliveryMapFocusId, traceMap);
+          $('deliveryFeedRail')?.querySelectorAll('.delivery-card').forEach((c) => {
+            c.classList.toggle('is-selected', c.dataset.deliveryNodeId === window.state.deliveryMapFocusId);
+          });
+        });
+      });
+    });
+  }
+
+  function wireDeliveryMapFocus(project, traceMap) {
+    const focusId = window.state?.deliveryMapFocusId || '';
+    renderDeliveryMapFocus(project, focusId, traceMap);
+
+    $('deliveryFeedRail')?.querySelectorAll('.delivery-card').forEach((card) => {
+      card.classList.toggle('is-selected', card.dataset.deliveryNodeId === focusId);
+      card.addEventListener('click', () => {
+        window.state.deliveryMapFocusId = card.dataset.deliveryNodeId;
+        renderDeliveryMapFocus(project, window.state.deliveryMapFocusId, traceMap);
+        $('deliveryFeedRail')?.querySelectorAll('.delivery-card').forEach((c) => {
+          c.classList.toggle('is-selected', c.dataset.deliveryNodeId === window.state.deliveryMapFocusId);
+        });
+      });
+    });
   }
 
   function wireTraceEvents() {
@@ -2771,6 +3819,7 @@
     await loadTraceMap(project.id);
     renderPdosShell(project);
     renderTracePanel(project);
+    watchActiveAgentRuns(project);
   }
 
   function wirePdosEvents() {
@@ -2779,6 +3828,43 @@
     $('pdosPromptClose')?.addEventListener('click', closePromptWorkbench);
     $('pdosPromptCopy')?.addEventListener('click', () => {
       copyToClipboard($('pdosPromptRaw')?.value).then(() => showToast('Prompt copiado'));
+    });
+    $('pdosAgentConfigForm')?.addEventListener('submit', startAgentFromConfig);
+    $('pdosAgentConfigManual')?.addEventListener('click', openManualPromptFromConfig);
+    $('pdosAgentContinueForm')?.addEventListener('submit', submitAgentContinueForm);
+    $('pdosAgentFinishPartial')?.addEventListener('click', finishPartialAgentRuntime);
+    document.querySelectorAll('[data-close-manual-tasks]').forEach((el) => {
+      el.addEventListener('click', closeManualTasksModal);
+    });
+    document.querySelectorAll('[data-close-continue-modal]').forEach((el) => {
+      el.addEventListener('click', closeAgentContinueModal);
+    });
+    document.querySelectorAll('[data-close-agent-config]').forEach((el) => {
+      el.addEventListener('click', closeAgentConfigModal);
+    });
+    document.querySelectorAll('[data-close-agent-panel]').forEach((el) => {
+      el.addEventListener('click', closeYourlabAgentPanel);
+    });
+    $('pdosAgentRuntimeCancel')?.addEventListener('click', () => {
+      const runId = pdosState.activeRuntimeRun?.runId;
+      const projectId = pdosState.activeRuntimeRun?.projectId || window.state?.selectedProject?.id;
+      if (runId && projectId) cancelAgentRuntime(runId, projectId);
+    });
+    $('pdosAgentRuntimeResume')?.addEventListener('click', () => {
+      const reason = pdosState.lastRuntimePoll?.yarJob?.error
+        || pdosState.lastRuntimePoll?.agentJob?.error
+        || 'Limite de orçamento ou tempo atingido.';
+      openAgentContinueModal(reason);
+    });
+    $('pdosAgentRuntimeDismiss')?.addEventListener('click', () => {
+      const runId = pdosState.activeRuntimeRun?.runId;
+      const projectId = pdosState.activeRuntimeRun?.projectId || window.state?.selectedProject?.id;
+      if (runId && projectId) dismissAgentRuntime(runId, projectId);
+    });
+    $('pdosAgentRuntimeRerun')?.addEventListener('click', () => {
+      const project = window.state?.selectedProject;
+      const agentType = pdosState.activeRuntimeRun?.agentType || pdosState.pendingPromptRun?.agentType;
+      if (project && agentType) rerunAgentRuntime(agentType, project);
     });
     $('pdosPromptApply')?.addEventListener('click', applyPromptOutput);
     $('pdosJobSubmit')?.addEventListener('click', submitJobStep);
@@ -2792,6 +3878,10 @@
       if (e.key === 'Escape') {
         closeDrawer();
         closeAddInfoModal();
+        closeAgentConfigModal();
+        closeManualTasksModal();
+        closeAgentContinueModal();
+        closeYourlabAgentPanel();
         closePromptWorkbench();
         closeTransitionModal();
       }
@@ -2809,6 +3899,9 @@
     openPromptWorkbench,
     runArchitecturePackGeneration,
     runDiagramToRequirements,
+    runYourlabAgent,
+    openYourlabAgentPanel,
+    openAgentConfigModal,
     pdosState,
   };
   window.refreshTraceMap = () => loadTraceMap(window.state?.selectedProject?.id);

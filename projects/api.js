@@ -4,7 +4,9 @@ const fs = require('fs').promises;
 const { execFileSync } = require('child_process');
 const multer = require('multer');
 const deliveryOs = require('./lib/delivery-os');
+const { registerAgentRuntimeRoutes } = require('./lib/agent-runtime-routes');
 const phaseContent = require('./lib/phase-content');
+const reqHierarchy = require('./lib/requirement-hierarchy');
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 const sessions = new Map();
@@ -65,6 +67,10 @@ const ARTIFACT_TYPES = [
 const TRACE_RELATIONSHIP_TYPES = [
   'derives_from',
   'satisfies',
+  'decomposes_from',
+  'constrains',
+  'verified_by',
+  'contains',
   'implements',
   'tests',
   'documents',
@@ -490,6 +496,16 @@ function registerRequirementsPlatform(app, options) {
       traceNodeTypes: deliveryOs.TRACE_NODE_TYPES,
       defaultAdminEmail: process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local',
       note: 'Se for primeiro acesso, use a password definida em REQ_PLATFORM_SUPER_ADMIN_PASSWORD ou change-me-now.',
+      agentRuntime: {
+        enabled: Boolean(String(process.env.AGENT_RUNTIME_API_KEY || '').trim()),
+        url: String(process.env.AGENT_RUNTIME_URL || 'http://127.0.0.1:3847').replace(/\/$/, ''),
+        supportedAgentTypes: [
+          'reverse_idea',
+          'requirements_to_architecture',
+          'roadmap_plan',
+          'implementation_tasks',
+        ],
+      },
     });
   });
 
@@ -808,6 +824,21 @@ function registerRequirementsPlatform(app, options) {
 
     return res.json({
       nodes: [
+        ...ensureArray(project.capabilities).map((cap) => ({
+          id: cap.id,
+          nodeType: 'capability',
+          type: 'capability',
+          title: cap.name || cap.title || cap.id,
+          status: cap.status || 'draft',
+        })),
+        ...ensureArray(project.requirementClusters).map((clu) => ({
+          id: clu.id,
+          nodeType: 'cluster',
+          type: 'cluster',
+          title: clu.name || clu.title || clu.id,
+          status: 'draft',
+          capabilityId: clu.capabilityId,
+        })),
         ...requirements.map((reqItem) => ({
           id: reqItem.id,
           nodeType: 'requirement',
@@ -815,6 +846,9 @@ function registerRequirementsPlatform(app, options) {
           title: reqItem.title,
           status: reqItem.status,
           module: normalizeModuleName(reqItem.module),
+          parentId: reqItem.parentId || reqItem.stakeholderRequirementLink || reqItem.linkedFunctionalRequirement || '',
+          vLevel: reqItem.vLevel,
+          stakeholderRootId: reqHierarchy.getStakeholderAncestorId(reqItem, reqHierarchy.buildIdIndex(requirements)),
         })),
         ...artifacts.map((artifact) => ({
           id: artifact.id,
@@ -1942,6 +1976,168 @@ function registerRequirementsPlatform(app, options) {
     }
   });
 
+  app.get('/api/projects/projects/:projectId/requirements/hierarchy', authMiddleware, loadProjectForUser, async (req, res) => {
+    const project = req.loadedProject;
+    const focusStakeholderId = textOr(req.query?.focusStakeholderId);
+    const focusRequirementId = textOr(req.query?.focusRequirementId);
+    const store = await readStore();
+    const tree = reqHierarchy.buildHierarchyTree(project, { focusStakeholderId, focusRequirementId });
+    tree.revertableRepairs = reqHierarchy.getRevertableStakeholderRepairs(project, store.activity);
+    return res.json(tree);
+  });
+
+  app.post('/api/projects/projects/:projectId/requirements/hierarchy/repair', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const selections = ensureArray(req.body?.forRequirementIds);
+
+      let repairUndo = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        const { requirements, created, repaired, undo } = reqHierarchy.repairHierarchyOrphans(project, selections);
+        repairUndo = undo;
+        project.requirements = requirements.map((entry) => normalizeRequirementRecord(entry));
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_hierarchy_repaired',
+          details: { created, repaired, undo },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/requirements/hierarchy/repair/revert', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const stakeholderIds = ensureArray(req.body?.stakeholderIds);
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        const { requirements, removed, unlinked } = reqHierarchy.revertStakeholderRepairs(project, {
+          stakeholderIds,
+          activity: store.activity,
+        });
+        if (!removed.length) {
+          throw new Error('Não existem atribuições automáticas STK para reverter.');
+        }
+
+        project.requirements = requirements.map((entry) => normalizeRequirementRecord(entry));
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_hierarchy_repair_reverted',
+          details: { removed, unlinked },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/projects/:projectId/requirements/hierarchy/drop', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const body = req.body || {};
+      let dropResult = null;
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        dropResult = reqHierarchy.applyHierarchyDrop(project, body.requirementId, {
+          zoneType: body.zoneType,
+          targetRequirementId: body.targetRequirementId,
+          focusStakeholderId: body.focusStakeholderId,
+        });
+
+        project.requirements = dropResult.requirements.map((entry) => normalizeRequirementRecord(entry));
+        project.updatedAt = nowIso();
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_hierarchy_dropped',
+          details: {
+            requirementId: body.requirementId,
+            zoneType: body.zoneType,
+            targetRequirementId: body.targetRequirementId || '',
+            focusStakeholderId: body.focusStakeholderId || '',
+            createdStakeholderId: dropResult.createdStakeholderId || '',
+          },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user), ...dropResult });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch('/api/projects/projects/:projectId/requirements/:requirementId/hierarchy', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const requirementId = req.params.requirementId;
+      const patch = req.body || {};
+
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+
+        project.requirements = ensureArray(project.requirements);
+        const requirement = project.requirements.find((entry) => entry.id === requirementId);
+        if (!requirement) throw new Error('Requisito nao encontrado.');
+
+        const moved = reqHierarchy.applyHierarchyMove(requirement, patch, project);
+        Object.assign(requirement, normalizeRequirementRecord({
+          ...requirement,
+          ...moved,
+          id: requirement.id,
+          updatedAt: nowIso(),
+          updatedBy: req.auth.user.id,
+        }));
+
+        project.updatedAt = nowIso();
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'requirement_hierarchy_moved',
+          details: {
+            requirementId,
+            type: requirement.type,
+            parentId: requirement.parentId || requirement.stakeholderRequirementLink || requirement.linkedFunctionalRequirement,
+          },
+        });
+      });
+
+      const store = await readStore();
+      const project = store.projects.find((entry) => entry.id === projectId);
+      return res.json({ project: sanitizeProject(project, req.auth.user) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
   app.delete('/api/projects/projects/:projectId/requirements/:requirementId', authMiddleware, requireRole('super_admin'), async (req, res) => {
     try {
       const projectId = req.params.projectId;
@@ -2325,6 +2521,21 @@ function registerRequirementsPlatform(app, options) {
     numberOr,
   });
 
+  registerAgentRuntimeRoutes(app, {
+    authMiddleware,
+    requireRole,
+    loadProjectForUser,
+    readStore,
+    updateStore,
+    appendActivity,
+    sanitizeProject,
+    normalizePromptRun: deliveryOs.normalizePromptRun,
+    normalizeHumanReview: deliveryOs.normalizeHumanReview,
+    buildHumanReviewPayload: deliveryOs.buildHumanReviewPayload,
+    ensureArray,
+    nowIso,
+  });
+
   ensureStore().catch((error) => {
     console.error('Erro ao inicializar Requirements Platform:', error.message);
   });
@@ -2596,11 +2807,11 @@ function normalizeRequirementRecord(entry) {
   const relatedRequirementIds = normalizeRequirementIdList(
     raw.relatedRequirementIds || raw.dependencies || raw.dependsOn || raw.requirementLinks || raw.links
   );
-
-  if (stakeholderRequirementLink) relatedRequirementIds.push(normalizeRequirementIdToken(stakeholderRequirementLink));
-  if (linkedFunctionalRequirement) relatedRequirementIds.push(normalizeRequirementIdToken(linkedFunctionalRequirement));
-
-  const dedupRelatedRequirementIds = Array.from(new Set(relatedRequirementIds.filter(Boolean)));
+  const hierarchyLinks = ensureArray(raw.hierarchyLinks).map((link) => ({
+    role: textOr(link?.role, 'parent'),
+    targetId: normalizeRequirementIdToken(link?.targetId),
+    linkType: textOr(link?.linkType, 'decomposes_from'),
+  })).filter((link) => link.targetId);
 
   const normalized = {
     id: textOr(raw.id),
@@ -2627,7 +2838,8 @@ function normalizeRequirementRecord(entry) {
     owner: textOr(raw.owner),
     riskComplexity: textOr(raw.riskComplexity || raw.risk || raw.complexity),
     linkedFunctionalRequirement,
-    relatedRequirementIds: dedupRelatedRequirementIds,
+    hierarchyLinks,
+    relatedRequirementIds,
     linkedDiagramIds: normalizeRequirementIdList(raw.linkedDiagramIds || raw.diagramArtifactIds),
     businessValue: textOr(raw.businessValue),
     target: textOr(raw.target),
@@ -2638,6 +2850,8 @@ function normalizeRequirementRecord(entry) {
     createdAt: textOr(raw.createdAt, nowIso()),
     updatedAt: textOr(raw.updatedAt, nowIso()),
     updatedBy: textOr(raw.updatedBy),
+    synthesized: Boolean(raw.synthesized),
+    synthesizedForRequirementId: textOr(raw.synthesizedForRequirementId),
   };
 
   if (normalizedType === 'out_of_scope' && !textOr(raw.status)) {
@@ -2646,9 +2860,13 @@ function normalizeRequirementRecord(entry) {
   if (normalizedType === 'undefined' && !textOr(raw.priority)) {
     normalized.priority = 'high';
   }
-  normalized.relatedRequirementIds = normalizeRequirementIdList(normalized.relatedRequirementIds).filter((id) => id !== normalized.id);
 
-  return normalized;
+  const index = reqHierarchy.buildIdIndex([normalized]);
+  const synced = reqHierarchy.syncRequirementHierarchyFields(normalized, index);
+  synced.relatedRequirementIds = normalizeRequirementIdList(synced.relatedRequirementIds)
+    .filter((id) => id !== synced.id);
+
+  return synced;
 }
 
 function getSmartRequirementValidationErrors(requirement) {

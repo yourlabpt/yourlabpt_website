@@ -180,7 +180,7 @@
             ${modules.map((m) => `<option value="${escapeHtml(m)}"${m === selectedMod ? ' selected' : ''}>${escapeHtml(m)}</option>`).join('')}
           </select>
         </label>
-        <button type="button" class="btn primary" id="archGenPackBtn">Gerar prompt</button>
+        <button type="button" class="btn primary" id="archGenPackBtn">Gerar com YourLab Agent</button>
       </div>
     `;
   }

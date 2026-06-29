@@ -548,8 +548,8 @@ function setReadonlyByRole() {
   // Formulários de contribuição: perguntas e documentos. Disponíveis para
   // clientes/parceiros (apenas adicionar), restantes ações continuam bloqueadas.
   const contributeDisabled = !canContribute();
-  ['uploadDocForm', 'addQuestionForm'].forEach((id) => {
-    const el = els[id];
+  ['uploadDocForm', 'addQuestionForm', 'addMeetingMinuteForm'].forEach((id) => {
+    const el = document.getElementById(id);
     if (!el) return;
     Array.from(el.querySelectorAll('input, textarea, select, button')).forEach((node) => {
       node.disabled = contributeDisabled;
@@ -893,11 +893,12 @@ function renderProjectDetails() {
   els.summaryScope.value = project.summary?.scopeInPlainLanguage || '';
   els.summarySolution.value = project.summary?.solutionOverview || '';
 
-  els.sourceText.value = project.sourceText || '';
-  els.aiPrompt.value = project.aiPrompt || '';
-  if (els.requirementsChangeJson && !els.requirementsChangeJson.value) {
-    els.requirementsChangeJson.value = '';
-  }
+  const sourceTextEl = document.getElementById('sourceText');
+  if (sourceTextEl) sourceTextEl.value = project.sourceText || '';
+  const aiPromptEl = document.getElementById('aiPrompt');
+  if (aiPromptEl) aiPromptEl.value = project.aiPrompt || '';
+  const reqChangeEl = document.getElementById('requirementsChangeJson');
+  if (reqChangeEl && !reqChangeEl.value) reqChangeEl.value = '';
 
   els.phasesJson.value = JSON.stringify(project.phases || [], null, 2);
   els.integrationsJson.value = JSON.stringify(project.integrations || [], null, 2);
@@ -976,6 +977,8 @@ function renderProjectClarity(project) {
     <div class="kpi-box"><strong>${phaseDist.length}</strong><small>Fases</small></div>
     <div class="kpi-box"><strong>${moduleDist.length}</strong><small>Módulos</small></div>
     <div class="kpi-box"><strong>${smartRate}%</strong><small>Cobertura SMART funcional</small></div>
+    <div class="kpi-box" id="hierarchyCoverageKpi"><strong>—</strong><small>Cobertura V (STK)</small></div>
+    <div class="kpi-box" id="hierarchyOrphansKpi"><strong>—</strong><small>Órfãos V-cycle</small></div>
     <div class="kpi-box"><strong>${openQuestions}</strong><small>Perguntas em aberto</small></div>
   `;
 
@@ -1016,6 +1019,25 @@ function renderProjectClarity(project) {
       ${risks.length ? `<ul>${risks.map((risk) => `<li>${escapeHtml(risk)}</li>`).join('')}</ul>` : '<p>N/A</p>'}
     </article>
   `;
+
+  refreshHierarchyKpis(project);
+}
+
+async function refreshHierarchyKpis(project) {
+  const covEl = document.getElementById('hierarchyCoverageKpi');
+  const orphEl = document.getElementById('hierarchyOrphansKpi');
+  if (!project?.id || !covEl) return;
+  try {
+    const hierarchy = await apiRequest(`/projects/${encodeURIComponent(project.id)}/requirements/hierarchy`);
+    const stats = hierarchy?.stats || {};
+    covEl.innerHTML = `<strong>${stats.coveragePct ?? 0}%</strong><small>Cobertura V (STK)</small>`;
+    if (orphEl) {
+      orphEl.innerHTML = `<strong>${stats.orphans ?? 0}</strong><small>Órfãos V-cycle</small>`;
+    }
+  } catch {
+    covEl.innerHTML = '<strong>—</strong><small>Cobertura V (STK)</small>';
+    if (orphEl) orphEl.innerHTML = '<strong>—</strong><small>Órfãos V-cycle</small>';
+  }
 }
 
 function renderMembers(project) {
@@ -1119,261 +1141,10 @@ function renderDocuments(project) {
   });
 }
 
-function meetingImpactedStages(minute) {
-  const fn = window.PhaseContent?.meetingImpactedStageIds;
-  if (fn) return fn(minute) || [];
-  const single = minute?.targetStageId || minute?.impactScope || 'requirements';
-  return Array.isArray(minute?.impactedStageIds) && minute.impactedStageIds.length
-    ? minute.impactedStageIds
-    : [single];
-}
-
 function renderMeetingMinutes(project) {
-  const minutes = Array.isArray(project.meetingMinutes) ? project.meetingMinutes : [];
-  const promptHistory = Array.isArray(project.minutesPromptHistory) ? project.minutesPromptHistory : [];
-
-  if (els.meetingMinuteDate && !els.meetingMinuteDate.value) {
-    els.meetingMinuteDate.value = new Date().toISOString().slice(0, 10);
-  }
-
-  if (!minutes.length) {
-    els.minutesHistoryList.innerHTML = '<div class="simple-item"><small>Sem atas registadas.</small></div>';
-    els.minutesPromptHistoryList.innerHTML = promptHistory.length
-      ? promptHistory.slice(0, 10).map((entry) => `
-        <div class="simple-item">
-          <strong>${escapeHtml(entry.objective || 'prompt')}</strong>
-          <small>${new Date(entry.createdAt).toLocaleString('pt-PT')} • atas: ${(entry.minuteIds || []).join(', ') || 'n/a'}</small>
-        </div>
-      `).join('')
-      : '<div class="simple-item"><small>Sem histórico de prompts.</small></div>';
-    state.selectedMinuteIds = [];
+  if (window.MinutesUI?.renderMinutesPage) {
+    window.MinutesUI.renderMinutesPage(project);
     return;
-  }
-
-  const validIds = new Set(minutes.map((entry) => entry.id));
-  const selectedSet = new Set((state.selectedMinuteIds || []).filter((id) => validIds.has(id)));
-  if (!selectedSet.size && minutes[0]) {
-    selectedSet.add(minutes[0].id);
-  }
-  state.selectedMinuteIds = Array.from(selectedSet);
-
-  els.minutesHistoryList.innerHTML = minutes.slice(0, 80).map((entry) => {
-    const checked = selectedSet.has(entry.id) ? 'checked' : '';
-    const meetingDateLabel = entry.meetingDate || new Date(entry.createdAt).toISOString().slice(0, 10);
-    const impactedStages = meetingImpactedStages(entry);
-    const classified = entry.classificationStatus === 'classified';
-    const phaseBadges = impactedStages
-      .map((sid) => `<span class="impact-badge">${escapeHtml(stageLabel(sid))}</span>`)
-      .join(' ');
-    const reqChips = (entry.impactedRequirementIds || [])
-      .slice(0, 10)
-      .map((id) => `<button type="button" class="req-link-chip" data-goto-requirement="${escapeHtml(id)}">${escapeHtml(id)}</button>`)
-      .join(' ');
-    const decisions = (entry.decisions || []).filter((d) => d && d.text);
-    const decisionsHtml = decisions.length
-      ? `<ul class="minute-decisions">${decisions.slice(0, 8).map((d) => `<li><span class="minute-decision-type">${escapeHtml(d.type || 'decisão')}</span> ${escapeHtml(d.text)}</li>`).join('')}</ul>`
-      : '';
-
-    return `
-      <div class="simple-item minute-card" data-minute-card="${escapeHtml(entry.id)}">
-        <label class="checkline">
-          <input type="checkbox" data-minute-id="${escapeHtml(entry.id)}" ${checked} />
-          <strong>${escapeHtml(entry.title || `Ata ${meetingDateLabel}`)}</strong>
-        </label>
-        <div class="minute-meta">
-          <small>${escapeHtml(meetingDateLabel)}</small>
-          ${classified
-            ? `<span class="minute-status is-classified">Impacto classificado por IA</span>`
-            : `<span class="minute-status is-pending">Impacto por classificar</span>`}
-        </div>
-        <div class="minute-phases">
-          <span class="minute-phases-label">Fases impactadas:</span> ${phaseBadges || '<small class="muted-text">—</small>'}
-        </div>
-        ${entry.summaryMarkdown ? `<p class="minute-summary">${escapeHtml(entry.summaryMarkdown)}</p>` : ''}
-        ${reqChips ? `<div class="minute-reqs"><span class="minute-phases-label">Requisitos:</span> ${reqChips}</div>` : ''}
-        ${decisionsHtml}
-        <div class="minute-actions">
-          <button type="button" class="btn tiny primary" data-classify-minute="${escapeHtml(entry.id)}">
-            ${classified ? 'Reclassificar impacto (IA)' : 'Classificar impacto (IA)'}
-          </button>
-        </div>
-        <div class="minute-classify-panel hidden" data-classify-panel="${escapeHtml(entry.id)}"></div>
-        <details class="collapsible">
-          <summary>Ver texto raw</summary>
-          <pre class="minute-raw">${escapeHtml(entry.rawText || '')}</pre>
-        </details>
-      </div>
-    `;
-  }).join('');
-
-  els.minutesHistoryList.querySelectorAll('[data-classify-minute]').forEach((btn) => {
-    btn.addEventListener('click', () => openMinuteClassifyPanel(btn.dataset.classifyMinute));
-  });
-
-  els.minutesPromptHistoryList.innerHTML = promptHistory.length
-    ? promptHistory.slice(0, 15).map((entry) => `
-      <div class="simple-item">
-        <strong>${escapeHtml(entry.objective || 'prompt')}</strong>
-        <small>${new Date(entry.createdAt).toLocaleString('pt-PT')} • atas: ${(entry.minuteIds || []).join(', ') || 'n/a'}</small>
-        <details class="collapsible">
-          <summary>Ver prompt</summary>
-          <pre class="minute-raw">${escapeHtml(entry.prompt || '')}</pre>
-        </details>
-      </div>
-    `).join('')
-    : '<div class="simple-item"><small>Sem histórico de prompts.</small></div>';
-  renderMinutePropagationPanel();
-}
-
-function openMinuteClassifyPanel(minuteId) {
-  const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
-  if (!panel) return;
-  if (!panel.classList.contains('hidden')) {
-    panel.classList.add('hidden');
-    panel.innerHTML = '';
-    return;
-  }
-  panel.classList.remove('hidden');
-  panel.innerHTML = `
-    <div class="minute-classify-body">
-      <p class="muted-text">1. Gere o prompt &nbsp;→&nbsp; 2. Corra-o no seu modelo &nbsp;→&nbsp; 3. Cole o JSON &nbsp;→&nbsp; 4. Aplicar.</p>
-      <div class="actions-row">
-        <button type="button" class="btn tiny primary" data-minute-gen-prompt="${escapeHtml(minuteId)}">Gerar prompt</button>
-        <button type="button" class="btn tiny" data-minute-copy-prompt="${escapeHtml(minuteId)}" disabled>Copiar prompt</button>
-      </div>
-      <textarea class="minute-classify-prompt" data-minute-prompt="${escapeHtml(minuteId)}" rows="6" readonly placeholder="O prompt aparece aqui."></textarea>
-      <textarea class="minute-classify-output" data-minute-output="${escapeHtml(minuteId)}" rows="6" placeholder="Cole aqui o JSON de resposta da IA."></textarea>
-      <div class="actions-row">
-        <button type="button" class="btn tiny primary" data-minute-apply="${escapeHtml(minuteId)}">Aplicar classificação</button>
-      </div>
-    </div>
-  `;
-  panel.querySelector(`[data-minute-gen-prompt]`)?.addEventListener('click', () => generateMinuteClassifyPrompt(minuteId));
-  panel.querySelector(`[data-minute-copy-prompt]`)?.addEventListener('click', () => {
-    const ta = panel.querySelector(`[data-minute-prompt]`);
-    if (ta?.value) navigator.clipboard?.writeText(ta.value).then(() => showToast('Prompt copiado.', 'ok'));
-  });
-  panel.querySelector(`[data-minute-apply]`)?.addEventListener('click', () => applyMinuteClassification(minuteId));
-}
-
-async function generateMinuteClassifyPrompt(minuteId) {
-  if (!state.selectedProject) return;
-  try {
-    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/${encodeURIComponent(minuteId)}/classify-prompt`, { method: 'POST', body: {} });
-    const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
-    const ta = panel?.querySelector(`[data-minute-prompt]`);
-    if (ta) ta.value = payload.prompt || '';
-    const copyBtn = panel?.querySelector(`[data-minute-copy-prompt]`);
-    if (copyBtn) copyBtn.disabled = !payload.prompt;
-    showToast('Prompt de classificação gerado.', 'ok');
-  } catch (error) {
-    showToast(error.message || 'Erro ao gerar prompt.', 'error');
-  }
-}
-
-async function applyMinuteClassification(minuteId) {
-  if (!state.selectedProject) return;
-  const panel = els.minutesHistoryList?.querySelector(`[data-classify-panel="${minuteId}"]`);
-  const rawOutput = panel?.querySelector(`[data-minute-output]`)?.value || '';
-  if (!rawOutput.trim()) {
-    showToast('Cole o JSON de resposta da IA.', 'error');
-    return;
-  }
-  try {
-    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/${encodeURIComponent(minuteId)}/classify`, {
-      method: 'POST',
-      body: { rawOutput },
-    });
-    if (payload.project) {
-      state.selectedProject = payload.project;
-      renderProjectDetails();
-    }
-    showToast('Impacto da ata classificado e aplicado.', 'ok');
-  } catch (error) {
-    showToast(error.message || 'Erro ao aplicar classificação.', 'error');
-  }
-}
-
-function renderMinutePropagationPanel(plan) {
-  const panel = els.minutePropagationPanel;
-  if (!panel) return;
-  const minuteIds = syncSelectedMinutesFromList();
-  if (!minuteIds.length) {
-    panel.innerHTML = '<p class="muted-text">Seleccione uma ou mais atas no histórico (checkbox) para ver o plano de propagação.</p>';
-    return;
-  }
-  if (!plan) {
-    panel.innerHTML = '<p class="muted-text">Clique em «Analisar impacto nas fases» para calcular quais etapas da linha dourada são afectadas.</p>';
-    return;
-  }
-  const renderStageList = (title, ids) => {
-    if (!ids?.length) return `<div class="propagation-block"><h5>${escapeHtml(title)}</h5><p class="muted-text">Nenhuma</p></div>`;
-    return `
-      <div class="propagation-block">
-        <h5>${escapeHtml(title)}</h5>
-        <ul class="propagation-stages">${ids.map((id) => `
-          <li>
-            <strong>${escapeHtml(stageLabel(id))}</strong>
-            <button type="button" class="btn tiny ghost" data-set-stage="${escapeHtml(id)}" data-goto-tab="deliveryos">Ver fase</button>
-          </li>
-        `).join('')}</ul>
-      </div>
-    `;
-  };
-  panel.innerHTML = `
-    <h4>Plano de propagação (${minuteIds.length} ata(s))</h4>
-    ${plan.hints?.length ? `<p class="muted-text">${escapeHtml(plan.hints.join(' '))}</p>` : ''}
-    <div class="propagation-grid">
-      ${renderStageList('Fase principal', plan.primaryStageIds)}
-      ${renderStageList('Rever para trás', plan.upstreamStageIds)}
-      ${renderStageList('Actualizar para a frente', plan.downstreamStageIds)}
-    </div>
-  `;
-}
-
-async function handleAnalyzeMinutePropagation() {
-  if (!state.selectedProject) return;
-  const minuteIds = syncSelectedMinutesFromList();
-  if (!minuteIds.length) {
-    showToast('Seleccione pelo menos uma ata.', 'error');
-    return;
-  }
-  try {
-    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/propagation-plan`, {
-      method: 'POST',
-      body: { minuteIds },
-    });
-    renderMinutePropagationPanel(payload.plan);
-    showToast('Plano de propagação calculado.', 'ok');
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
-}
-
-async function handleGenerateMinutePropagationPrompt() {
-  if (!state.selectedProject) return;
-  const minuteIds = syncSelectedMinutesFromList();
-  if (!minuteIds.length) {
-    showToast('Seleccione pelo menos uma ata.', 'error');
-    return;
-  }
-  try {
-    const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes/propagation-prompt`, {
-      method: 'POST',
-      body: { minuteIds },
-    });
-    if (payload.plan) renderMinutePropagationPanel(payload.plan);
-    if (payload.project) {
-      state.selectedProject = payload.project;
-      renderProjectDetails();
-    }
-    if (els.minutesPromptOutput && payload.prompt) {
-      els.minutesPromptOutput.value = payload.prompt;
-    }
-    showToast('Prompt de propagação gerado — revisão humana criada.', 'ok');
-    switchToTab('deliveryos');
-  } catch (error) {
-    showToast(error.message, 'error');
   }
 }
 
@@ -2312,9 +2083,6 @@ function switchToTab(tabId) {
   if (state.selectedProject && activeId === 'perguntas') {
     renderClarificationQuestions(state.selectedProject);
   }
-  if (state.selectedProject && activeId === 'atas') {
-    renderMinutePropagationPanel();
-  }
 }
 
 window.switchToTab = switchToTab;
@@ -2537,7 +2305,7 @@ async function handleSaveSourceText() {
   try {
     await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/source-text`, {
       method: 'POST',
-      body: { sourceText: els.sourceText.value },
+      body: { sourceText: document.getElementById('sourceText')?.value || '' },
     });
     showToast('Texto base guardado.', 'ok');
     await loadProjectById(state.selectedProject.id);
@@ -2555,7 +2323,8 @@ async function handleBuildPrompt() {
       body: { extraInstructions: '' },
     });
 
-    els.aiPrompt.value = payload.prompt || '';
+    const promptEl = document.getElementById('aiPrompt');
+    if (promptEl) promptEl.value = payload.prompt || '';
     showToast('Pre-prompt gerado.', 'ok');
   } catch (error) {
     showToast(error.message, 'error');
@@ -2567,7 +2336,7 @@ async function handleImportAi() {
   try {
     await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/import-ai`, {
       method: 'POST',
-      body: { aiJson: els.aiJson.value },
+      body: { aiJson: document.getElementById('aiJson')?.value || '' },
     });
 
     showToast('Estrutura AI importada com sucesso.', 'ok');
@@ -2580,14 +2349,15 @@ async function handleImportAi() {
 async function handleUploadDocument(event) {
   event.preventDefault();
   if (!state.selectedProject) return;
-  if (!els.docFile.files?.length) {
+  const fileInput = document.getElementById('docFile');
+  if (!fileInput?.files?.length) {
     showToast('Selecione um ficheiro.', 'error');
     return;
   }
 
   try {
     const formData = new FormData();
-    formData.append('document', els.docFile.files[0]);
+    formData.append('document', fileInput.files[0]);
 
     await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/documents/upload`, {
       method: 'POST',
@@ -2605,22 +2375,19 @@ async function handleUploadDocument(event) {
 
 async function handleAddMeetingMinute(event) {
   event.preventDefault();
+  if (window.MinutesUI) return;
   if (!state.selectedProject) return;
-
   try {
     await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/meeting-minutes`, {
       method: 'POST',
       body: {
-        meetingDate: els.meetingMinuteDate.value,
-        title: els.meetingMinuteTitle.value,
-        rawText: els.meetingMinuteRaw.value,
-        impactScope: els.meetingMinuteImpactScope?.value || 'requirements',
+        meetingDate: document.getElementById('meetingMinuteDate')?.value,
+        title: document.getElementById('meetingMinuteTitle')?.value,
+        rawText: document.getElementById('meetingMinuteRaw')?.value,
+        impactScope: document.getElementById('meetingMinuteImpactScope')?.value || 'requirements',
       },
     });
-
-    showToast('Ata guardada em histórico raw.', 'ok');
-    els.meetingMinuteTitle.value = '';
-    els.meetingMinuteRaw.value = '';
+    showToast('Ata guardada.', 'ok');
     await loadProjectById(state.selectedProject.id);
   } catch (error) {
     showToast(error.message, 'error');
@@ -2628,36 +2395,31 @@ async function handleAddMeetingMinute(event) {
 }
 
 function syncSelectedMinutesFromList() {
-  const checkboxes = Array.from(els.minutesHistoryList.querySelectorAll('input[type="checkbox"][data-minute-id]'));
-  const selected = checkboxes
-    .filter((node) => node.checked)
-    .map((node) => node.getAttribute('data-minute-id'))
-    .filter(Boolean);
-  state.selectedMinuteIds = selected;
-  return selected;
+  if (window.MinutesUI?.syncSelectedMinutesFromList) {
+    return window.MinutesUI.syncSelectedMinutesFromList();
+  }
+  return state.selectedMinuteIds || [];
 }
 
 async function handleBuildMinutesPrompt() {
+  if (window.MinutesUI) return;
   if (!state.selectedProject) return;
-
   try {
     const minuteIds = syncSelectedMinutesFromList();
     const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/build-minutes-prompt`, {
       method: 'POST',
       body: {
         minuteIds,
-        objective: els.minutesPromptObjective.value,
-        extraInstructions: els.minutesPromptExtraInstructions.value,
+        objective: document.getElementById('minutesPromptObjective')?.value,
+        extraInstructions: document.getElementById('minutesPromptExtraInstructions')?.value,
       },
     });
-
-    els.minutesPromptOutput.value = payload.prompt || '';
-    showToast('Pre-prompt de alterações gerado com atas e respostas.', 'ok');
+    const out = document.getElementById('minutesPromptOutput');
+    if (out) out.value = payload.prompt || '';
+    showToast('Pre-prompt gerado.', 'ok');
     if (payload.project) {
       state.selectedProject = payload.project;
       renderProjectDetails();
-    } else {
-      await loadProjectById(state.selectedProject.id);
     }
   } catch (error) {
     showToast(error.message, 'error');
@@ -2665,22 +2427,27 @@ async function handleBuildMinutesPrompt() {
 }
 
 async function handleImportRequirementChanges() {
+  if (window.MinutesUI) return;
   if (!state.selectedProject) return;
-
   try {
     const payload = await apiRequest(`/projects/${encodeURIComponent(state.selectedProject.id)}/import-requirement-changes`, {
       method: 'POST',
-      body: { changeJson: els.requirementsChangeJson.value },
+      body: { changeJson: document.getElementById('requirementsChangeJson')?.value || '' },
     });
-
     const result = payload.result || {};
-    showToast(`Alterações aplicadas: +${result.added || 0}, atualizados ${result.updated || 0}, excluídos ${result.excluded || 0}.`, 'ok');
-    els.requirementsChangeJson.value = '';
+    showToast(`Alterações aplicadas: +${result.added || 0}, atualizados ${result.updated || 0}.`, 'ok');
+    const jsonEl = document.getElementById('requirementsChangeJson');
+    if (jsonEl) jsonEl.value = '';
     await loadProjectById(state.selectedProject.id);
   } catch (error) {
     showToast(error.message, 'error');
   }
 }
+
+window.handleUploadDocument = handleUploadDocument;
+window.handleSaveSourceText = handleSaveSourceText;
+window.handleBuildPrompt = handleBuildPrompt;
+window.handleImportAi = handleImportAi;
 
 async function handleAddQuestion(event) {
   event.preventDefault();
@@ -3072,8 +2839,6 @@ function wireEvents() {
       setUserMenuOpen(false);
     }
   });
-  els.analyzeMinutePropagationBtn?.addEventListener('click', handleAnalyzeMinutePropagation);
-  els.generateMinutePropagationPromptBtn?.addEventListener('click', handleGenerateMinutePropagationPrompt);
   document.addEventListener('click', (event) => {
     const filterBtn = event.target.closest('[data-goto-filter-tab]');
     if (filterBtn && !filterBtn.disabled) {
@@ -3106,14 +2871,7 @@ function wireEvents() {
   els.newUserRole?.addEventListener('change', syncBudgetAccessControl);
   els.saveProjectBtn.addEventListener('click', handleSaveProject);
   els.saveAdvancedBtn.addEventListener('click', handleSaveAdvanced);
-  els.uploadDocForm.addEventListener('submit', handleUploadDocument);
-  els.addMeetingMinuteForm.addEventListener('submit', handleAddMeetingMinute);
   els.addQuestionForm.addEventListener('submit', handleAddQuestion);
-  els.saveSourceTextBtn.addEventListener('click', handleSaveSourceText);
-  els.buildPromptBtn.addEventListener('click', handleBuildPrompt);
-  els.buildMinutesPromptBtn.addEventListener('click', handleBuildMinutesPrompt);
-  els.importRequirementChangesBtn.addEventListener('click', handleImportRequirementChanges);
-  els.importAiBtn.addEventListener('click', handleImportAi);
   els.addRequirementForm.addEventListener('submit', handleAddRequirement);
   els.clearAllRequirementsBtn?.addEventListener('click', handleClearAllRequirements);
   els.assignMemberForm.addEventListener('submit', handleAssignMember);
@@ -3143,13 +2901,6 @@ function wireEvents() {
   els.questionsTable.addEventListener('keydown', handleQuestionsTableKeydown);
   els.generationModules.addEventListener('change', () => {
     state.generationModulesSelected = getSelectedModulesForGeneration();
-  });
-  els.minutesHistoryList.addEventListener('change', (event) => {
-    const target = event.target;
-    if (target && target.matches('input[type="checkbox"][data-minute-id]')) {
-      syncSelectedMinutesFromList();
-      renderMinutePropagationPanel();
-    }
   });
   els.reqModule.addEventListener('change', () => {
     if (!state.selectedProject) return;
