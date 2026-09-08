@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=89" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=91" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -119,6 +119,8 @@
 
             <!-- TAB: PROJETOS (lista + criar) -->
             <div class="tab-panel" data-panel="projetos">
+              <!-- O que aconteceu enquanto esteve fora. Preenchido por resume-ui.js. -->
+              <section class="panel section-panel resume-panel" id="resumePanel" hidden></section>
               <section class="panel section-panel">
                 <div class="panel-title-row">
                   <h3 class="panel-heading"><span class="section-badge badge-blue">PROJ</span> Os seus projectos</h3>
@@ -1383,7 +1385,7 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/app.js?v=51" defer></script>
+  <script src="/projects/static/app.js?v=52" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=13" defer></script>
   <script src="/projects/static/requirements-ui.js?v=16" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
@@ -1398,6 +1400,7 @@
   <script src="/projects/static/project-repository-ui.js?v=2" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=7" defer></script>
+  <script src="/projects/static/resume-ui.js?v=1" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

@@ -9,6 +9,7 @@ const projectAccess = require('./lib/project-access');
 const projectAudit = require('./lib/project-audit');
 const { createSplitStoreLayer, projectFileName } = require('./lib/split-store');
 const projectPayload = require('./lib/project-payload');
+const projectResume = require('./lib/project-resume');
 const blobStore = require('./lib/blob-store');
 const { createSqliteStore } = require('./lib/sqlite-store');
 const { migrateToHybridStorage } = require('./lib/hybrid-migrate');
@@ -1295,6 +1296,29 @@ function registerRequirementsPlatform(app, options) {
     const idx = await storeLayer.loadIndex();
     const visible = ensureArray(idx.projects).filter((entry) => canAccessProject(req.auth.user, entry));
     return res.json({ projects: visible.map((entry) => projectPayload.buildProjectListItem(entry)) });
+  });
+
+  /**
+   * The entry screen: what the agents did while the engineer was away, across every
+   * project they can see. Partner/admin only — a client has no business seeing which
+   * projects are failing.
+   */
+  app.get('/api/projects/resume', authMiddleware, requireRole('super_admin', 'partner'), async (req, res) => {
+    try {
+      await ensureStoreInitialized();
+      const idx = await storeLayer.loadIndex();
+      const visible = ensureArray(idx.projects).filter((entry) => canAccessProject(req.auth.user, entry));
+      const loaded = [];
+      for (const entry of visible) {
+        // Sequential on purpose: the store is a file layer, and a burst of parallel
+        // loads on a large account buys nothing.
+        const project = await ensureProjectLoaded(entry.id);
+        if (project) loaded.push(project);
+      }
+      return res.json(projectResume.buildResume(loaded));
+    } catch (error) {
+      return res.status(500).json({ message: error.message });
+    }
   });
 
   app.post('/api/projects/projects', authMiddleware, requireRole('super_admin'), async (req, res) => {

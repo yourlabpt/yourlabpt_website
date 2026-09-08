@@ -1600,6 +1600,74 @@ th {
   gap: 7px;
 }
 
+/* Resume screen — the counts read first, so they are the largest thing on the page. */
+.resume-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.resume-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.resume-tile-count {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.resume-tile-label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--text) 65%, transparent);
+}
+
+.resume-tile.tone-review .resume-tile-count { color: var(--accent); }
+.resume-tile.tone-running .resume-tile-count { color: var(--ok); }
+.resume-tile.tone-failed .resume-tile-count { color: var(--danger, #d05353); }
+
+/* A zero is information too, but it should not shout. */
+.resume-tile.is-zero .resume-tile-count {
+  color: color-mix(in srgb, var(--text) 40%, transparent);
+}
+
+.resume-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.resume-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--line);
+}
+
+.resume-row-main {
+  min-width: 0;
+}
+
+.resume-row-detail {
+  margin: 4px 0 0;
+}
+
+.resume-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 /* Repository picker: one repository per row, scannable, no list bullets. */
 .repo-picker-list {
   list-style: none;
@@ -2031,6 +2099,10 @@ th {
 .badge-orange { background: rgba(255, 160, 60, 0.18); color: #ffbb72; }
 .badge-green  { background: rgba(72, 200, 120, 0.18); color: #7de8a8; }
 .badge-gray   { background: rgba(180, 180, 180, 0.12); color: var(--muted); }
+/* Amber = needs a person, red = stopped or broken. Both were used across the app
+   without ever being defined, so they rendered as plain uppercase text. */
+.badge-amber  { background: rgba(212, 175, 55, 0.18); color: var(--accent); }
+.badge-red    { background: rgba(255, 111, 111, 0.16); color: var(--danger); }
 
 [data-theme="light"] .badge-blue   { background: #dbeafe; color: #1d4ed8; }
 [data-theme="light"] .badge-purple { background: #ede9fe; color: #6d28d9; }
@@ -2038,6 +2110,8 @@ th {
 [data-theme="light"] .badge-orange { background: #ffedd5; color: #c2410c; }
 [data-theme="light"] .badge-green  { background: #dcfce7; color: #15803d; }
 [data-theme="light"] .badge-gray   { background: #f1f5f9; color: #64748b; }
+[data-theme="light"] .badge-amber  { background: #fef3c7; color: #92400e; }
+[data-theme="light"] .badge-red    { background: #fee2e2; color: #b91c1c; }
 
 /* ── Subsections ── */
 .subsection {

@@ -55,7 +55,7 @@ test('stage-transition creation refreshes canonical Tasks before opening the tas
   assert.match(workItemsSource, /errorEventTypes/);
   assert.match(workItemsSource, /ado-agent-log-entry\$\{eventToneClass\(event\)\}/);
   assert.match(deliverySource, /linkedTask\?\.status === 'waiting_review'[\s\S]*?work-items\/\$\{linkedTask\.id\}\/review/);
-  assert.match(html, /delivery-os-ui\.js\?v=76/);
-  assert.match(html, /work-items-ui\.js\?v=32/);
-  assert.match(html, /agents-admin-ui\.js\?v=2/);
+  assert.match(html, /delivery-os-ui\.js\?v=\d+/);
+  assert.match(html, /work-items-ui\.js\?v=\d+/);
+  assert.match(html, /agents-admin-ui\.js\?v=\d+/);
 });

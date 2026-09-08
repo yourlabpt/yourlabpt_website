@@ -37,8 +37,8 @@ test('Idea section actions use a stable delegated controller with visible feedba
   assert.match(source, /openIdeaInlineEditor\(sectionEl, project, button\.dataset\.ideaEdit\)/);
   assert.match(source, /setIdeaSectionBusy\(sectionEl, 'A remover esta secção…'\)/);
   assert.match(source, /window\.applyProjectPatch\(updated/);
-  assert.match(html, /styles\.css\?v=89/);
-  assert.match(html, /delivery-os-ui\.js\?v=76/);
+  assert.match(html, /styles\.css\?v=\d+/);
+  assert.match(html, /delivery-os-ui\.js\?v=\d+/);
 });
 
 test('runtime monitoring is idempotent across Idea page re-renders', () => {

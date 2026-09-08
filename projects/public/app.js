@@ -1205,6 +1205,9 @@ function renderProjects() {
 function renderProjectsPage() {
   const grid = els.projectsPageGrid;
   if (!grid) return;
+  // The resume leads this page, so it renders from the same entry point rather than
+  // depending on which route happened to bring the user here.
+  window.ResumeUI?.render?.();
   const selected = state.selectedProjectId;
 
   if (!state.projects.length) {
@@ -2994,6 +2997,8 @@ function switchToTab(tabId) {
 }
 
 window.switchToTab = switchToTab;
+// The resume screen opens a project straight into the tab where the work is.
+window.loadProjectById = loadProjectById;
 window.isSuperAdmin = isSuperAdmin;
 window.renderActiveTab = renderActiveTab;
 window.navigateToRequirement = navigateToRequirement;
