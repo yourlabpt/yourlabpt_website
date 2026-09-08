@@ -53,10 +53,6 @@
       || [];
   }
 
-  function renderStageConceptBanner() {
-    const el = $('pdosConceptBanner');
-    if (el) el.innerHTML = '';
-  }
 
   function renderPlatformGlossary() {
     /* Conteúdo movido para HelpUI (drawer global) */
@@ -799,122 +795,8 @@
     return String(status || 'not_started').replace(/[^a-z_]/g, '');
   }
 
-  function renderGoldenTimeline(project) {
-    const el = $('pdosGoldenTimeline');
-    if (!el || !project) return;
 
-    const stages = getStages(project);
-    const processStageId = resolveProcessStageId(project, stages);
-    if (!window.state.deliverySelectedStageId) {
-      window.state.deliverySelectedStageId = processStageId;
-    }
 
-    const nodes = collectDeliveryFeedNodes(project);
-    const parts = [];
-
-    stages.forEach((stage, index) => {
-      const count = nodes.filter((n) => n.stageId === stage.id).length;
-      const isSelected = stage.id === window.state.deliverySelectedStageId;
-      const isProcess = stage.id === processStageId;
-      const status = stageStatusClass(stage.status);
-
-      parts.push(`
-        <button type="button"
-          class="golden-stage-node ${isSelected ? 'is-selected' : ''} ${isProcess ? 'is-process' : ''} status-${status}"
-          data-delivery-stage="${escapeHtml(stage.id)}"
-          title="${escapeHtml(STAGE_STATUS_LABEL[stage.status] || stage.status)}">
-          <span class="golden-stage-label">${escapeHtml(stage.label)}</span>
-          <span class="golden-stage-status">${escapeHtml(STAGE_STATUS_LABEL[stage.status] || stage.status)}</span>
-          <span class="golden-stage-count">${count}</span>
-          ${stage.requiresHumanApproval && stage.status !== 'approved' ? '<span class="golden-stage-gate" title="Gate de aprovação">⏸</span>' : ''}
-        </button>
-      `);
-
-      if (index < stages.length - 1) {
-        const next = stages[index + 1];
-        const connectorTitle = (stage.id === 'idea' && next.id === 'discovery')
-          ? 'Transição Ideia ↔ Discovery — Avançar = plano Discovery (6 tarefas); Retroceder = regenerar ideia (1 tarefa)'
-          : `Transição ${stage.label} ↔ ${next.label} — agente de apoio à mudança de fase`;
-        parts.push(`
-          <button type="button" class="golden-connector"
-            data-from-stage="${escapeHtml(stage.id)}"
-            data-to-stage="${escapeHtml(next.id)}"
-            title="${escapeHtml(connectorTitle)}">
-            <span class="golden-connector-line"></span>
-            <span class="golden-connector-icon">⟷</span>
-          </button>
-        `);
-      }
-    });
-
-    el.innerHTML = `<div class="golden-timeline-track">${parts.join('')}</div>`;
-
-    const badge = $('pdosCurrentStageBadge');
-    if (badge) {
-      const selectedId = window.state.deliverySelectedStageId || processStageId;
-      const current = stages.find((s) => s.id === selectedId) || stages[0];
-      badge.innerHTML = `
-        <span class="pdos-badge-label">Fase aberta</span>
-        <strong>${escapeHtml(current?.label || selectedId)}</strong>
-        <small>${escapeHtml(STAGE_STATUS_LABEL[current?.status] || '')}</small>
-      `;
-    }
-
-    el.querySelectorAll('[data-delivery-stage]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        window.state.deliverySelectedStageId = btn.dataset.deliveryStage;
-        renderGoldenTimeline(project);
-        renderStageGuidance(project);
-        renderCurrentFocus(project);
-        renderStageConceptBanner();
-        renderModuleNav();
-        renderHumanReviewsSection(project);
-        renderCardFeed(project);
-        renderTracePanel(project);
-        window.DiagramsUI?.renderShell?.(project);
-        window.renderPhaseContextBar?.();
-        window.DeliveryOsPlatform?.syncUrlDeepLink?.(btn.dataset.deliveryStage, 'deliveryos');
-        window.DeliveryOsPlatform?.refreshPlatformUi?.(project);
-      });
-    });
-
-    el.querySelectorAll('.golden-connector').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const selectedStageId = window.state.deliverySelectedStageId;
-        const defaultDirection = selectedStageId === btn.dataset.toStage ? 'backward' : 'forward';
-        const source = defaultDirection === 'backward' ? 'golden-connector-backward' : 'golden-connector-forward';
-        openTransitionPicker(btn.dataset.fromStage, btn.dataset.toStage, project, { defaultDirection, source });
-      });
-    });
-
-    el.querySelectorAll('.golden-stage-gate').forEach((gate) => {
-      gate.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const node = gate.closest('[data-delivery-stage]');
-        if (!node || !project?.id) return;
-        try {
-          await apiRequest(`/projects/${project.id}/stages/${node.dataset.deliveryStage}/approve`, { method: 'POST', body: {} });
-          showToast('Stage aprovado');
-          await reloadProject(project.id);
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    });
-  }
-
-  function renderStageGuidance(project) {
-    // Navigation is handled by the golden timeline only — no bottom guidance bar.
-    const el = $('pdosStageGuidance');
-    if (el) el.innerHTML = '';
-  }
-
-  function renderCurrentFocus(project) {
-    // Pending reviews are shown in the dedicated human-review panel.
-    const el = $('pdosCurrentFocus');
-    if (el) el.innerHTML = '';
-  }
 
   function agentFriendlyLabel(agentType, plan = null) {
     const map = {
@@ -940,51 +822,6 @@
     return map[agentType] || agentType || 'Agente IA';
   }
 
-  function renderHumanReviewsSection(project) {
-    const el = $('pdosHumanReviews');
-    if (!el) return;
-    const pending = actionableReviews(project);
-    if (!pending.length) {
-      el.innerHTML = '';
-      el.classList.add('hidden');
-      return;
-    }
-    el.classList.remove('hidden');
-    el.innerHTML = `
-      <section class="pdos-reviews-panel" aria-label="Revisões humanas">
-        <header class="pdos-reviews-head">
-          <div>
-            <span class="pdos-section-label">Revisão humana</span>
-            <p class="pdos-reviews-sub">Alterações reais propostas pela IA — aprove, rejeite, reprompt ou reverta antes de aplicar.</p>
-          </div>
-          <span class="pdos-reviews-count">${pending.length} pendente(s)</span>
-        </header>
-        <div class="pdos-reviews-grid">
-          ${pending.map((r) => {
-            const promptRun = (project.promptRuns || []).find((pr) => pr.id === r.promptRunId || pr.id === r.sourceId);
-            const agent = promptRun ? agentFriendlyLabel(promptRun.agentType) : '';
-            const changes = r.decisionsCount || r.suggestedChanges?.sections?.length || 0;
-            return `
-              <article class="hr-card">
-                <div class="hr-card-top">
-                  <span class="hr-card-status">Aguarda decisão</span>
-                  <span class="hr-card-meta-line">${r.readingTimeMinutes || 5} min · ${changes} alteração(ões)</span>
-                </div>
-                <h4 class="hr-card-title">${escapeHtml(r.title || 'Revisão pendente')}</h4>
-                <p class="hr-card-summary">${escapeHtml(shortText(r.summaryMarkdown || '', 160))}</p>
-                ${agent ? `<span class="hr-card-agent">${escapeHtml(agent)}</span>` : ''}
-                <div class="hr-card-actions">
-                  <button type="button" class="btn tiny primary" data-view-review="${escapeHtml(r.id)}">Abrir revisão</button>
-                </div>
-              </article>`;
-          }).join('')}
-        </div>
-      </section>`;
-
-    el.querySelectorAll('[data-view-review]').forEach((btn) => {
-      btn.addEventListener('click', () => openReviewDrawer(project, btn.dataset.viewReview));
-    });
-  }
 
   function transitionPickerDescription(source, project, fromStageId, toStageId, defaultDirection) {
     const isIdeaDiscovery = fromStageId === 'idea' && toStageId === 'discovery';
@@ -3720,7 +3557,6 @@
 
     pdosState.lastRuntimePoll = payload;
     renderAgentSubtasks(payload);
-    renderAgentRuntimeBar(window.state?.selectedProject, payload);
     renderAgentOverviewCockpit(window.state?.selectedProject, payload);
   }
 
@@ -3883,7 +3719,6 @@
       showToast('YourLab Agent iniciado');
       const updated = await reloadProject(project.id);
       renderAgentRuntimeHistory(updated || project);
-      renderAgentRuntimeBar(updated || project);
       return true;
     } catch (err) {
       showToast(err.message, 'error');
@@ -3935,7 +3770,6 @@
       const status = await apiRequest(`/agent-runs/${encodeURIComponent(runId)}/status`);
       updateAgentRuntimePanel(status);
       renderAgentRuntimeHistory(project);
-      renderAgentRuntimeBar(project);
       if (pending) startAgentRuntimeMonitor(runId, projectId);
       else stopAgentRuntimeMonitor();
     } catch (err) {
@@ -4002,7 +3836,6 @@
       showToast('Execução removida do histórico');
       const project = await reloadProject(projectId);
       renderAgentRuntimeHistory(project);
-      renderAgentRuntimeBar(project);
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -4212,56 +4045,6 @@
     });
   }
 
-  function renderAgentRuntimeBar(project, pollPayload) {
-    const bar = $('pdosAgentRuntimeBar');
-    if (!bar) return;
-    if (!isAgentRuntimeEnabled()) {
-      bar.classList.add('hidden');
-      return;
-    }
-
-    const poll = pollPayload || pdosState.lastRuntimePoll;
-    const activeRunId = pdosState.activeRuntimeRun?.runId;
-    let active = null;
-
-    if (poll?.agentJob && (poll.agentJob.promptRunId === activeRunId || poll.agentJob.id === activeRunId)) {
-      const st = poll.yarJob?.status || poll.agentJob.status;
-      if (RUNTIME_ACTIVE_STATUSES.has(st) || RUNTIME_PAUSED_STATUSES.has(st)) {
-        active = { ...poll.agentJob, status: st };
-      }
-    }
-
-    if (!active) active = getActiveRuntimeJob(project);
-    if (!active) {
-      bar.classList.add('hidden');
-      return;
-    }
-    bar.classList.remove('hidden');
-    const runId = active.promptRunId || active.id;
-    const status = active.status || 'running';
-    const task = poll?.workItem || ensureArray(project.workItems).find((item) => item.id === active.workItemId);
-    const requestTasks = task?.agentRequestId ? ensureArray(project.workItems).filter((item) => item.agentRequestId === task.agentRequestId) : [];
-    const position = requestTasks.length ? requestTasks.findIndex((item) => item.id === task?.id) + 1 : Number(poll?.agentRequest?.completedTaskCount || 0) + 1;
-    const totalTasks = requestTasks.length || Number(poll?.agentRequest?.taskCount || 0);
-    const waitingReview = Number(poll?.agentRequest?.attentionCount || 0) || ensureArray(project.workItems).filter((item) => item.status === 'waiting_review').length;
-    bar.innerHTML = `
-      <span>
-        <strong>${escapeHtml(task?.title || 'YourLab Agent')}</strong>
-        <span class="pdos-agent-runtime-badge ${runtimeBadgeClass(status)}">${escapeHtml(runtimeStatusLabel(status))}</span>
-        <span class="muted-text">${totalTasks ? ` · ${position || 1} de ${totalTasks}` : ''}${waitingReview ? ` · ${waitingReview} precisa(m) de atenção` : ''}</span>
-      </span>
-      <span class="muted-text">Abrir tarefa</span>
-    `;
-    bar.onclick = () => {
-      window.switchToTab?.('tarefas');
-      if (task?.id) window.WorkItemsUI?.openTask?.(project, task.id);
-      else if (active.agentRequestId) window.WorkItemsUI?.openRequestPlan?.(project, active.agentRequestId);
-      else {
-        openYourlabAgentPanel();
-        selectRuntimeHistoryRun(runId, project);
-      }
-    };
-  }
 
   function renderAgentRuntimeHistory(project, selectedRunId) {
     const el = $('pdosAgentRuntimeHistory');
@@ -4316,7 +4099,6 @@
 
   function watchActiveAgentRuns(project) {
     if (!project || !isAgentRuntimeEnabled()) return;
-    renderAgentRuntimeBar(project);
     const active = getActiveRuntimeJob(project);
     if (!active) return;
     const runId = active.promptRunId || active.id;
@@ -5224,13 +5006,7 @@
     if (!project) return;
     const stageId = window.state?.deliverySelectedStageId || 'requirements';
     renderProjectHeader(project);
-    renderGoldenTimeline(project);
-    renderStageGuidance(project);
-    renderCurrentFocus(project);
-    renderStageConceptBanner();
     renderModuleNav();
-    renderHumanReviewsSection(project);
-    renderAgentRuntimeBar(project);
     $('projectAgentCockpit')?.classList.add('hidden');
     renderCardFeed(project);
     window.DiagramsUI?.renderShell?.(project);
@@ -5238,6 +5014,10 @@
     if (flowEl && !window.DeliveryOsPlatform?.isClientRole?.()) {
       flowEl.classList.remove('hidden');
     }
+    // The production-line dashboard is part of this page, so it renders from the same
+    // entry point as the rest of it. Leaving this to the caller meant that whichever
+    // route happened to trigger the render decided whether the dashboard appeared.
+    window.ClientPortalUI?.refresh?.(project);
   }
 
   function renderSnapshotsList(project) {

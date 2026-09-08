@@ -118,7 +118,8 @@
     `;
 
     el.querySelector('[data-scroll-reviews]')?.addEventListener('click', () => {
-      $('pdosHumanReviews')?.scrollIntoView({ behavior: 'smooth' });
+      // Reviews live on Tarefas now — that is where a change set is accepted.
+      window.switchToTab?.('tarefas');
     });
 
     $('pdosRunGateCheckBtn')?.addEventListener('click', () => runGateCheck(project, stageId));
@@ -308,22 +309,12 @@
     return `<span class="provenance-badge provenance-${escapeHtml(prov.source)}" title="Origem: ${labels[prov.source] || prov.source}">${labels[prov.source] || prov.source}</span>`;
   }
 
-  function hideAgentUiForClient() {
-    if (!isClientRole()) return;
-    ['pdosAgentRuntimeBar', 'pdosAdvancedTrace', 'pdosModuleNav'].forEach((id) => {
-      const el = $(id);
-      if (el) el.classList.add('hidden');
-    });
-    document.querySelector('.pdos-health-details')?.classList.add('hidden');
-    $('pdosClientPortal')?.classList.remove('hidden');
-  }
 
   let platformRefreshInflight = null;
   let lastPlatformRefreshKey = '';
 
   async function refreshPlatformUi(project, options = {}) {
     if (!project?.id) return;
-    hideAgentUiForClient();
     const key = `${project.id}:${project.updatedAt || ''}`;
     if (!options.force && lastPlatformRefreshKey === key && platformRefreshInflight) {
       return platformRefreshInflight;
@@ -342,8 +333,7 @@
   }
 
   function wireStageUrlSync() {
-    const originalRender = window.PdosUI?.renderGoldenTimeline;
-    if (!originalRender || window._platformStageSyncWired) return;
+    if (window._platformStageSyncWired) return;
     window._platformStageSyncWired = true;
 
     document.addEventListener('click', (e) => {

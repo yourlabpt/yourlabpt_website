@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=86" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=87" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -503,36 +503,19 @@
 
                 <div id="pdosClientPortal" class="pdos-client-portal" aria-label="Linha de produção"></div>
 
-                <div class="pdos-timeline-block">
-                  <div class="pdos-timeline-head">
-                    <div class="pdos-timeline-head-main">
-                      <div class="pdos-timeline-head-row">
-                        <span class="pdos-section-label">Escolher fase</span>
-                        <button type="button" class="help-btn help-btn-phase" id="pdosPhaseHelpBtn" title="Ajuda desta fase" aria-label="Ajuda desta fase">?</button>
-                      </div>
-                    </div>
-                    <div id="pdosCurrentStageBadge" class="pdos-current-stage-badge"></div>
+                <details class="pdos-secondary-panel" id="pdosTechnicalDetail">
+                  <summary>Módulos e diagramas</summary>
+                  <div class="pdos-module-block">
+                    <span class="pdos-section-label">Módulo técnico</span>
+                    <nav id="pdosModuleNav" class="pdos-module-nav" aria-label="Módulos técnicos do projecto"></nav>
                   </div>
-                  <div id="pdosGoldenTimeline" class="golden-timeline" aria-label="Fases de entrega do projecto"></div>
-                  <div id="pdosStageGuidance" class="pdos-stage-guidance hidden" aria-hidden="true"></div>
-                </div>
+                  <div id="pdosDiagramsShell" class="pdos-diagrams-shell hidden" aria-label="Diagramas de arquitectura"></div>
+                </details>
 
-                <div id="pdosHumanReviews" class="pdos-human-reviews hidden" aria-label="Revisões humanas pendentes"></div>
-
-                <div id="pdosConceptBanner" class="pdos-concept-banner-wrap hidden" aria-hidden="true"></div>
-
-                <div id="pdosCurrentFocus" class="pdos-current-focus"></div>
-
-                <div class="pdos-module-block">
-                  <span class="pdos-section-label">Módulo técnico</span>
-                  <nav id="pdosModuleNav" class="pdos-module-nav" aria-label="Módulos técnicos do projecto"></nav>
-                </div>
-
-                <div id="pdosDiagramsShell" class="pdos-diagrams-shell hidden" aria-label="Diagramas de arquitectura"></div>
-
-                <div id="pdosAgentRuntimeBar" class="pdos-agent-runtime-bar hidden" role="status" aria-live="polite"></div>
-
-                <div id="pdosCardFeed" class="pdos-card-feed"></div>
+                <details class="pdos-secondary-panel" id="pdosDeliveryFeed">
+                  <summary>Trabalho desta fase</summary>
+                  <div id="pdosCardFeed" class="pdos-card-feed"></div>
+                </details>
 
                 <details class="pdos-secondary-panel engineering-state-panel hidden" id="engineeringStatePanel">
                   <summary>Engenharia estruturada <span id="engineeringStateBadge" class="badge badge-gray">shadow</span></summary>
@@ -1393,14 +1376,14 @@
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
   <script src="/projects/static/minutes-ui.js?v=3" defer></script>
   <script src="/projects/static/diagrams-ui.js?v=8" defer></script>
-  <script src="/projects/static/delivery-os-ui.js?v=74" defer></script>
+  <script src="/projects/static/delivery-os-ui.js?v=76" defer></script>
   <script src="/projects/static/engineering-state-ui.js?v=3" defer></script>
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
   <script src="/projects/static/work-items-ui.js?v=32" defer></script>
   <script src="/projects/static/agents-admin-ui.js?v=1" defer></script>
   <script src="/projects/static/project-repository-ui.js?v=1" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
-  <script src="/projects/static/client-portal-ui.js?v=4" defer></script>
+  <script src="/projects/static/client-portal-ui.js?v=5" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

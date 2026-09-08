@@ -26,7 +26,6 @@ test('stage-transition creation refreshes canonical Tasks before opening the tas
   assert.match(deliverySource, /if \(agentType === 'discovery_research'\) \{[\s\S]*?openTransitionPicker\('idea', 'discovery', project, \{ source: 'discovery-research' \}\)/);
   assert.match(deliverySource, /function openTransitionPicker\(fromStageId, toStageId, project, options = \{\}\)/);
   assert.match(deliverySource, /defaultDirection = options\.defaultDirection === 'backward' \? 'backward' : 'forward'/);
-  assert.match(deliverySource, /selectedStageId === btn\.dataset\.toStage \? 'backward' : 'forward'/);
   assert.match(deliverySource, /transitionStageLabels\(\)/);
   assert.match(deliverySource, /Entregáveis aprovados da descoberta/);
   assert.match(deliverySource, /Stakeholders &amp; personas/);
@@ -56,7 +55,7 @@ test('stage-transition creation refreshes canonical Tasks before opening the tas
   assert.match(workItemsSource, /errorEventTypes/);
   assert.match(workItemsSource, /ado-agent-log-entry\$\{eventToneClass\(event\)\}/);
   assert.match(deliverySource, /linkedTask\?\.status === 'waiting_review'[\s\S]*?work-items\/\$\{linkedTask\.id\}\/review/);
-  assert.match(html, /delivery-os-ui\.js\?v=74/);
+  assert.match(html, /delivery-os-ui\.js\?v=76/);
   assert.match(html, /work-items-ui\.js\?v=32/);
   assert.match(html, /agents-admin-ui\.js\?v=1/);
 });

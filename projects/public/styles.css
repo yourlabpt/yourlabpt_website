@@ -3233,80 +3233,81 @@ label {
   padding: 20px 22px 28px;
 }
 
-/* The dashboard is the only view shown by default, for everyone — client and
-   partner/admin alike, and BEFORE any JavaScript decides otherwise: the selector
-   below matches whenever .detail-expanded is ABSENT, which is the state at first
-   paint, with no class, no JS run required. The module explorer, stage transitions
-   and diagrams underneath only appear once JS explicitly adds .detail-expanded (the
-   "Ver detalhe técnico" toggle) — never stacked under the dashboard at the same time.
-   Fail-safe hidden, not fail-open exposed: if a role check races or refresh() never
-   runs, the worst case is an empty dashboard, never the raw doubled view.
-   Using :not() rather than an explicit "collapsed" class means the hidden children
-   simply fall through to their own normal CSS (flex/grid/etc.) once expanded,
-   instead of us having to know and restate every child's display value here. */
-.pdos-shell:not(.detail-expanded) > * {
+/* Every technical section on this page is a collapsible below the dashboard —
+   there is no second delivery screen and no show/hide mode to get wrong. Only the
+   client is restricted: it never sees the technical collapsibles at all. */
+.pdos-shell.client-simple > .pdos-secondary-panel,
+.pdos-shell.client-simple > .pdos-secondary-area,
+.pdos-shell.client-simple > .pdos-advanced-trace {
   display: none;
-}
-.pdos-shell:not(.detail-expanded) > #pdosProjectHeader,
-.pdos-shell:not(.detail-expanded) > #pdosClientPortal,
-.pdos-shell > #pdosModeToggle {
-  display: block;
-}
-.pdos-shell.detail-expanded > #pdosClientPortal {
-  display: none;
-}
-#pdosModeToggle {
-  display: flex;
-  justify-content: flex-end;
-  margin: -8px 0 12px;
-}
-#pdosModeToggle:empty {
-  display: none;
-  margin: 0;
 }
 
-/* Linha de produção — the nine-stage strip on the project front page */
+/* Linha de produção — the nine-stage strip on the project front page.
+   Every dot is the same 14px box so the connecting track always lines up; state is
+   carried by fill and ring, never by size. The old version used a #202020 fill with
+   a #333 border on a #1e1e1e panel, which was effectively invisible. */
 .stage-strip {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 4px;
-  padding: 4px 2px 0;
-  margin-bottom: 10px;
+  padding: 6px 2px 0;
+  margin-bottom: 12px;
+}
+.stage-strip::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 13px;
+  height: 2px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
 }
 .stage-dot-wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex: 1;
   min-width: 0;
 }
 .stage-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--surface, #202020);
-  border: 1px solid var(--line, #333);
-}
-.stage-dot-current {
   width: 14px;
   height: 14px;
-  background: var(--accent, #d4af37);
-  border: none;
+  border-radius: 50%;
+  background: var(--panel, #1e1e1e);
+  /* Punches the dot out of the track line behind it. */
+  box-shadow: 0 0 0 3px var(--panel, #1e1e1e);
+}
+.stage-dot-pending {
+  border: 2px solid color-mix(in srgb, var(--text) 45%, transparent);
 }
 .stage-dot-done {
   background: var(--ok, #58d68d);
-  border: none;
+  border: 2px solid var(--ok, #58d68d);
+}
+.stage-dot-current {
+  background: var(--accent, #d4af37);
+  border: 2px solid var(--accent, #d4af37);
+  box-shadow: 0 0 0 3px var(--panel, #1e1e1e), 0 0 0 6px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .stage-dot-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted, #a0a0a0);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+.stage-dot-wrap:has(.stage-dot-current) .stage-dot-label {
+  color: var(--heading, #fff);
+  font-weight: 600;
+}
+.stage-dot-wrap:has(.stage-dot-done) .stage-dot-label {
+  color: var(--text, #e6e6e6);
 }
 .stage-strip-summaries {
   margin: 0 0 4px;

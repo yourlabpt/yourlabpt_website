@@ -255,12 +255,6 @@
         closeHelpDrawer();
       }
     });
-    document.addEventListener('click', (event) => {
-      const phaseBtn = event.target.closest('#pdosPhaseHelpBtn');
-      if (phaseBtn && window.state?.selectedProject) {
-        openPhaseHelp(window.state.selectedProject);
-      }
-    });
   }
 
   window.HelpUI = {
