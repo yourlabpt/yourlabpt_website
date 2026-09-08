@@ -166,6 +166,21 @@ function createGitProviderClient({ provider, token, apiBaseUrl } = {}) {
       }));
     },
 
+    /**
+     * Repositories the authenticated account can push to, newest first — what the
+     * project binding picker offers. Includes private repos when the token allows.
+     */
+    async listRepositories({ search = '', limit = 100 } = {}) {
+      const perPage = Math.min(100, Math.max(1, Number(limit) || 100));
+      const raw = providerId === 'github'
+        ? await request(`/user/repos?per_page=${perPage}&sort=updated&affiliation=owner,collaborator,organization_member`)
+        : await request(`/projects?membership=true&min_access_level=30&order_by=last_activity_at&per_page=${perPage}`);
+      const needle = text(search).toLowerCase();
+      return (Array.isArray(raw) ? raw : [])
+        .map(normalizeRepository)
+        .filter((repo) => !needle || repo.fullName.toLowerCase().includes(needle));
+    },
+
     async getRepository(owner, name) {
       const raw = providerId === 'github'
         ? await request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`)

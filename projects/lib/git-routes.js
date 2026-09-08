@@ -5,6 +5,7 @@
  * repositories. Reading a project's repository follows normal project access.
  */
 const gitSettings = require('./git-provider-settings');
+const githubOauth = require('./github-oauth');
 const gitRepositories = require('./git-repositories');
 const { createGitProviderClient, parseRepositoryRef } = require('./git-provider-client');
 
@@ -70,6 +71,100 @@ function registerGitRoutes(app, deps) {
         owners,
         settings: gitSettings.publicGitProviderSettings(settings, dataDir),
       });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // --- GitHub OAuth: the platform's own GitHub identity -----------------------
+
+  // Sends the operator to GitHub. The state token is single-use and short-lived.
+  app.get('/api/projects/git-provider/oauth/start', authMiddleware, requireRole('super_admin'), (req, res) => {
+    if (!githubOauth.isConfigured()) {
+      return res.status(503).json({
+        message: 'OAuth do GitHub nao configurado. Defina GITHUB_OAUTH_CLIENT_ID e GITHUB_OAUTH_CLIENT_SECRET.',
+      });
+    }
+    const redirectUri = githubOauth.callbackUrlFor(req);
+    const state = githubOauth.createState({ userId: req.auth.user.id, redirectUri });
+    return res.json({
+      url: githubOauth.authorizeUrl({
+        clientId: githubOauth.oauthConfig().clientId,
+        redirectUri,
+        state,
+      }),
+    });
+  });
+
+  // GitHub redirects the browser here. Renders a tiny page rather than JSON, because
+  // a human is looking at it — then sends them back to platform settings.
+  app.get('/api/projects/git-provider/oauth/callback', async (req, res) => {
+    const done = (ok, message) => res
+      .status(ok ? 200 : 400)
+      .type('html')
+      .send(`<!doctype html><meta charset="utf-8"><title>GitHub</title>`
+        + `<body style="font-family:system-ui;background:#171717;color:#e6e6e6;padding:40px">`
+        + `<p>${ok ? 'Conta GitHub ligada.' : `Nao foi possivel ligar: ${String(message).replace(/[<>]/g, '')}`}</p>`
+        + `<p><a style="color:#d4af37" href="/projects?tab=definicoesPlataforma">Voltar as definicoes da plataforma</a></p>`
+        + `<script>setTimeout(function(){location.href='/projects?tab=definicoesPlataforma';},1500)</script>`);
+
+    try {
+      if (req.query?.error) return done(false, req.query.error_description || req.query.error);
+      const pending = githubOauth.consumeState(req.query?.state);
+      if (!pending) return done(false, 'pedido expirado ou invalido');
+
+      const { accessToken, scopes } = await githubOauth.exchangeCodeForToken({
+        code: String(req.query?.code || ''),
+        redirectUri: pending.redirectUri,
+      });
+
+      const missing = githubOauth.missingScopes(scopes);
+      if (missing.length) return done(false, `faltam permissoes: ${missing.join(', ')}`);
+
+      const settings = await gitSettings.readGitProviderSettings(dataDir);
+      const client = createGitProviderClient({
+        provider: 'github', apiBaseUrl: settings.apiBaseUrl, token: accessToken,
+      });
+      const identity = await client.verify();
+
+      await gitSettings.writeGitProviderSettings(dataDir, {
+        provider: 'github',
+        token: accessToken,
+        authMethod: 'oauth',
+        scopes,
+        connectedAt: new Date().toISOString(),
+        account: identity.account,
+        accountName: identity.name,
+        accountUrl: identity.accountUrl,
+      }, pending.userId);
+      await gitSettings.markVerified(dataDir, identity.account, pending.userId);
+      return done(true);
+    } catch (error) {
+      return done(false, error.message);
+    }
+  });
+
+  app.post('/api/projects/git-provider/disconnect', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      // Clearing the token is what disconnects; the account fields go with it so the
+      // UI cannot show a connected account with no credential behind it.
+      const settings = await gitSettings.writeGitProviderSettings(dataDir, {
+        token: '', authMethod: '', scopes: [], connectedAt: '',
+        account: '', accountName: '', accountUrl: '',
+      }, req.auth?.user?.id || '');
+      return res.json({ settings: gitSettings.publicGitProviderSettings(settings, dataDir) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Repositories the connected account can use — feeds the project binding picker.
+  // Platform-scoped, so no project middleware: it lists the account, not a project.
+  app.get('/api/projects/git-provider/repositories', authMiddleware, requireRole('super_admin', 'partner'), async (req, res) => {
+    try {
+      const client = await clientFromSettings();
+      const repositories = await client.listRepositories({ search: req.query?.q || '' });
+      return res.json({ repositories });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }

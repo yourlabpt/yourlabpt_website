@@ -31,5 +31,5 @@ test('work items orchestration UI uses server-driven control and scroll preserva
   assert.match(agentsSource, /agent-platform\/settings/);
   assert.match(agentsSource, /agent-runs\/recent/);
   assert.match(html, /data-panel="agentes"/);
-  assert.match(html, /agents-admin-ui\.js\?v=1/);
+  assert.match(html, /agents-admin-ui\.js\?v=2/);
 });

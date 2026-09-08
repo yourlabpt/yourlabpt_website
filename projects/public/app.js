@@ -8,7 +8,7 @@ const LAST_PROJECT_KEY = 'requirements_platform_last_project';
 const LAST_TAB_KEY = 'requirements_platform_last_tab';
 const LAST_STAGE_KEY = 'requirements_platform_last_stage';
 
-const PROJECTLESS_TABS = new Set(['projetos', 'definicoes', 'agentes']);
+const PROJECTLESS_TABS = new Set(['projetos', 'definicoes', 'agentes', 'definicoesPlataforma']);
 
 const NAV_ICON_PATHS = {
   folder: 'M8 4h8l1 2h3v14H4V6h3z',
@@ -60,6 +60,7 @@ const NAV_GROUPS = [
     id: 'system',
     items: [
       { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
+      { id: 'definicoesPlataforma', label: 'Definições da plataforma', icon: 'settings', superAdminOnly: true },
       { id: 'definicoes', label: 'Definições do projecto', icon: 'settings' },
     ],
   },
@@ -1513,6 +1514,9 @@ function renderActiveTab(project, tabId) {
       window.ProjectRepositoryUI?.render?.(project);
       setReadonlyByRole();
       break;
+    case 'definicoesPlataforma':
+      window.PlatformSettingsUI?.render?.();
+      break;
     case 'agentes':
       window.AgentsAdminUI?.render?.();
       break;
@@ -1544,6 +1548,9 @@ function renderProjectDetails(options = {}) {
     renderProjectsPage();
     if (state.activeTab === 'agentes') {
       window.AgentsAdminUI?.render?.();
+    }
+    if (state.activeTab === 'definicoesPlataforma') {
+      window.PlatformSettingsUI?.render?.();
     }
     return;
   }
