@@ -195,6 +195,50 @@
       </li>`).join('')}</ul>`;
   }
 
+  // Dashboard-only by default for everyone. A partner/admin can explicitly expand
+  // to the technical detail view, but never sees both at once — that stacking is
+  // exactly the doubled, jarring mess this replaces.
+  let expandedProjectId = '';
+
+  // The CSS default (no class at all) is already dashboard-only — this only ever
+  // needs to ADD .detail-expanded to reveal the heavy view; there is no "hide" class
+  // to apply, so there's nothing for a race or a skipped render to get wrong.
+  function applyShellMode(shell, expanded) {
+    if (!shell) return;
+    shell.classList.toggle('detail-expanded', expanded);
+  }
+
+  /**
+   * One small bar, always in the same spot, that flips between the two views.
+   * Lives outside #pdosClientPortal so it survives being shown in either mode.
+   */
+  function renderModeToggle(shell, project, expanded) {
+    if (!shell) return;
+    let bar = document.getElementById('pdosModeToggle');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'pdosModeToggle';
+      const header = document.getElementById('pdosProjectHeader');
+      if (header) header.insertAdjacentElement('afterend', bar);
+      else shell.prepend(bar);
+    }
+    if (!isPartnerOrAdmin()) {
+      bar.innerHTML = '';
+      return;
+    }
+    bar.innerHTML = expanded
+      ? '<button type="button" class="btn tiny ghost" id="pdosBackToSummary">← Voltar ao resumo</button>'
+      : '<button type="button" class="btn tiny ghost" id="pdosExpandDetail">Ver detalhe técnico →</button>';
+    document.getElementById('pdosBackToSummary')?.addEventListener('click', () => {
+      expandedProjectId = '';
+      window.ClientPortalUI?.refresh?.(project, { force: true });
+    });
+    document.getElementById('pdosExpandDetail')?.addEventListener('click', () => {
+      expandedProjectId = project.id;
+      window.ClientPortalUI?.refresh?.(project, { force: true });
+    });
+  }
+
   function renderClientPortal(project, data) {
     const el = $('pdosClientPortal');
     const shell = $('pdosShell');
@@ -203,11 +247,20 @@
     const partner = isPartnerOrAdmin();
     const client = window.isClientUser?.() === true;
     if (!client && !partner) {
+      // Role not resolved yet (or genuinely neither) — the CSS default (no class)
+      // is already dashboard-only/hidden, so simply not adding .detail-expanded
+      // here is enough to stay safe. This used to actively tear down the hiding
+      // class in this exact branch, which was the bug: a brief role-detection race
+      // at page load landed here and exposed the raw doubled-up view.
       el.innerHTML = '';
-      shell?.classList.remove('client-simple');
+      shell?.classList.remove('detail-expanded');
+      document.getElementById('pdosModeToggle')?.remove();
       return;
     }
-    shell?.classList.toggle('client-simple', client);
+    const expanded = partner && expandedProjectId === project.id;
+    applyShellMode(shell, expanded);
+    renderModeToggle(shell, project, expanded);
+    if (expanded) return;
 
     const portal = data.portal || {};
     const milestones = portal.milestones || [];
@@ -280,6 +333,12 @@
 
   async function refresh(project, options = {}) {
     if (!project?.id) return;
+    // The CSS default (no class) is already dashboard-only, so the only residual
+    // risk is a STALE .detail-expanded left over from a previous render while this
+    // one's fetches are still in flight. Clearing it synchronously, before any
+    // await, closes that window — nothing is ever exposed while we work out what
+    // to show next.
+    $('pdosShell')?.classList.remove('detail-expanded');
     const key = `${project.id}:${project.updatedAt || ''}`;
     if (!options.force && lastClientPortalKey === key && clientPortalInflight) {
       return clientPortalInflight;

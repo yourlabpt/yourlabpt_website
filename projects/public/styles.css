@@ -3233,14 +3233,36 @@ label {
   padding: 20px 22px 28px;
 }
 
-/* Client role sees only the production-line dashboard — everything else in this
-   shell (module explorer, transitions, diagrams) is a partner/admin drill-down. */
-.pdos-shell.client-simple > * {
+/* The dashboard is the only view shown by default, for everyone — client and
+   partner/admin alike, and BEFORE any JavaScript decides otherwise: the selector
+   below matches whenever .detail-expanded is ABSENT, which is the state at first
+   paint, with no class, no JS run required. The module explorer, stage transitions
+   and diagrams underneath only appear once JS explicitly adds .detail-expanded (the
+   "Ver detalhe técnico" toggle) — never stacked under the dashboard at the same time.
+   Fail-safe hidden, not fail-open exposed: if a role check races or refresh() never
+   runs, the worst case is an empty dashboard, never the raw doubled view.
+   Using :not() rather than an explicit "collapsed" class means the hidden children
+   simply fall through to their own normal CSS (flex/grid/etc.) once expanded,
+   instead of us having to know and restate every child's display value here. */
+.pdos-shell:not(.detail-expanded) > * {
   display: none;
 }
-.pdos-shell.client-simple > #pdosProjectHeader,
-.pdos-shell.client-simple > #pdosClientPortal {
+.pdos-shell:not(.detail-expanded) > #pdosProjectHeader,
+.pdos-shell:not(.detail-expanded) > #pdosClientPortal,
+.pdos-shell > #pdosModeToggle {
   display: block;
+}
+.pdos-shell.detail-expanded > #pdosClientPortal {
+  display: none;
+}
+#pdosModeToggle {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px 0 12px;
+}
+#pdosModeToggle:empty {
+  display: none;
+  margin: 0;
 }
 
 /* Linha de produção — the nine-stage strip on the project front page */

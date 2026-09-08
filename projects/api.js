@@ -5886,6 +5886,11 @@ function normalizeProjectStages(stages, deliveryLevel = 'standard') {
         status: textOr(entry?.status, 'not_started'),
         required: entry?.required !== false,
         requiresHumanApproval: entry?.requiresHumanApproval === true,
+        // The plain-language progress line a client sees under this stage's dot.
+        // Not part of the original shape — must be carried through explicitly or
+        // this normalizer silently erases it on every load.
+        summary: textOr(entry?.summary),
+        approvedAt: textOr(entry?.approvedAt),
       }))
       .filter((entry) => entry.id)
       .map((entry) => [entry.id, entry])
@@ -5903,6 +5908,8 @@ function normalizeProjectStages(stages, deliveryLevel = 'standard') {
       required: current.required !== undefined ? current.required : requiredByLevel,
       requiresHumanApproval: current.requiresHumanApproval === true
         || ['requirements', 'architecture', 'validation', 'delivery'].includes(base.id),
+      summary: current.summary,
+      approvedAt: current.approvedAt,
     };
   });
 }

@@ -1496,6 +1496,10 @@ function renderActiveTab(project, tabId) {
       break;
     case 'deliveryos':
       window.PdosUI?.renderAll?.(project);
+      // Must run every time this tab becomes active, not only when a project is
+      // first loaded (loadProjectById) — otherwise a plain tab switch leaves the
+      // dashboard stale/empty while PdosUI's heavy content underneath is rebuilt.
+      window.ClientPortalUI?.refresh?.(project);
       break;
     case 'tarefas':
       window.WorkItemsUI?.open?.(project);
