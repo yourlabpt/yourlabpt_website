@@ -124,11 +124,10 @@ const state = {
   },
   filters: {
     search: '',
-    type: '',
-    status: '',
+    // module/phase are set by cross-navigation (e.g. "ver requisitos desta fase"
+    // links elsewhere), rendered as a clearable banner — not by a manual dropdown.
     module: '',
     phase: '',
-    priority: '',
     onlySmartIssues: false,
   },
   requirementsHierarchy: null,
@@ -284,9 +283,6 @@ const els = {
   reqPhase: document.getElementById('reqPhase'),
   reqDescription: document.getElementById('reqDescription'),
   reqSearch: document.getElementById('reqSearch'),
-  reqFilterType: document.getElementById('reqFilterType'),
-  reqFilterStatus: document.getElementById('reqFilterStatus'),
-  reqFilterModule: document.getElementById('reqFilterModule'),
   reqOnlySmartIssues: document.getElementById('reqOnlySmartIssues'),
   clearAllRequirementsBtn: document.getElementById('clearAllRequirementsBtn'),
   requirementsMeta: document.getElementById('requirementsMeta'),
@@ -990,14 +986,10 @@ function getSelectedRequirement(project = state.selectedProject) {
 
 function getFilteredRequirements(items) {
   const search = String(state.filters.search || '').trim().toLowerCase();
-  const type = String(state.filters.type || '');
-  const status = String(state.filters.status || '');
   const module = String(state.filters.module || '');
   const onlySmartIssues = Boolean(state.filters.onlySmartIssues);
 
   return items.filter((req) => {
-    if (type && req.type !== type) return false;
-    if (status && req.status !== status) return false;
     if (module) {
       const tags = Array.isArray(req.moduleTags) && req.moduleTags.length
         ? req.moduleTags
@@ -2061,15 +2053,6 @@ function renderClarificationQuestions(project) {
 function renderRequirementModuleControls(project) {
   const modules = collectModules(project);
   const requirements = Array.isArray(project?.requirements) ? project.requirements : [];
-  const previousFilter = state.filters.module;
-  const filterValue = modules.includes(previousFilter) ? previousFilter : '';
-  state.filters.module = filterValue;
-
-  els.reqFilterModule.innerHTML = `<option value="">Todos os módulos</option>${modules
-    .map((moduleName) => `<option value="${escapeHtml(moduleName)}">${escapeHtml(moduleName)}</option>`)
-    .join('')}`;
-  els.reqFilterModule.value = filterValue;
-
   els.reqModule.innerHTML = modules
     .map((moduleName) => `<option value="${escapeHtml(moduleName)}">${escapeHtml(moduleName)}</option>`)
     .join('');
@@ -2703,7 +2686,6 @@ async function loadConfig() {
   state.config = await apiRequest('/config');
   els.reqStatus.innerHTML = statusOptions();
   els.detailReqStatus.innerHTML = statusOptions();
-  els.reqFilterStatus.innerHTML = `<option value="">Todos os status</option>${statusOptions()}`;
   els.questionStatus.innerHTML = questionStatusOptions();
   els.questionFilterStatus.innerHTML = `<option value="">Todos os status</option>${questionStatusOptions()}`;
   els.questionTargetRole.innerHTML = questionTargetOptions();
@@ -4002,9 +3984,6 @@ function wireEvents() {
 
   const refreshRequirementsWithFilters = () => {
     state.filters.search = els.reqSearch.value || '';
-    state.filters.type = els.reqFilterType.value || '';
-    state.filters.status = els.reqFilterStatus.value || '';
-    state.filters.module = els.reqFilterModule.value || '';
     state.filters.onlySmartIssues = Boolean(els.reqOnlySmartIssues.checked);
     if (state.selectedProject) {
       renderRequirements(state.selectedProject);
@@ -4012,9 +3991,6 @@ function wireEvents() {
   };
 
   els.reqSearch.addEventListener('input', refreshRequirementsWithFilters);
-  els.reqFilterType.addEventListener('change', refreshRequirementsWithFilters);
-  els.reqFilterStatus.addEventListener('change', refreshRequirementsWithFilters);
-  els.reqFilterModule.addEventListener('change', refreshRequirementsWithFilters);
   els.reqOnlySmartIssues.addEventListener('change', refreshRequirementsWithFilters);
   els.questionFilterStatus.addEventListener('change', () => {
     state.questionFilters.status = els.questionFilterStatus.value || '';

@@ -293,11 +293,6 @@
       filtered = filtered.filter((r) => effectiveReqPhase(r, project) === phaseFilter);
     }
 
-    const priorityFilter = String(state.filters.priority || '').trim();
-    if (priorityFilter) {
-      filtered = filtered.filter((r) => (r.priority || 'medium') === priorityFilter);
-    }
-
     const stageFilter = String(state.tabFilters?.deliveryStageId || '').trim();
     if (stageFilter && state.activeTab === 'requisitos') {
       const resolve = window.PhaseContent?.resolveRequirementStageId || ((r) => r.deliveryStageId || 'requirements');
@@ -459,7 +454,6 @@
     wireGroupedEvents(project);
     wireBatchToolbarEvents(project, filtered);
     updateMeta(project, filtered);
-    populatePhaseFilter(project);
     populateAddRequirementPhase(project);
   }
 
@@ -488,6 +482,17 @@
       : (req.type !== 'stakeholder' && req.type !== 'out_of_scope'
         ? '<span class="req-card-stk is-missing" title="Sem stakeholder ligado">Sem STK</span>'
         : '');
+    // Where this requirement came from — blank means a person typed it by hand.
+    const sourceBadge = req.source
+      ? `<span class="req-card-source" title="Origem">${escapeHtml(req.source)}</span>`
+      : '';
+    // Related requirements as chips, not a filter — click one to jump straight to it.
+    const relatedIds = Array.isArray(req.relatedRequirementIds) ? req.relatedRequirementIds.filter(Boolean) : [];
+    const relatedChips = relatedIds.length
+      ? `<div class="req-card-related">${relatedIds.map((id) => `
+          <button type="button" class="req-related-chip" data-open-req="${escapeHtml(id)}" title="Ir para ${escapeHtml(id)}">${escapeHtml(id)}</button>
+        `).join('')}</div>`
+      : '';
     const showSelect = canEdit() && reqUiState.groupMode === 'module';
     const checked = reqUiState.selectedReqIds.has(req.id);
     const chrome = (showSelect || draggable)
@@ -506,8 +511,10 @@
           ${modBadges}
           ${stkBadge}
           ${capBadge}
+          ${sourceBadge}
           <small class="req-card-meta">${status} · ${priority}${diagramCount ? ` · <span class="req-diagram-badge" title="${diagramCount} diagrama(s) ligado(s)">${diagramCount} diag</span>` : ''}</small>
         </button>
+        ${relatedChips}
       </article>
     `;
   }
@@ -575,16 +582,6 @@
       const cb = card.querySelector('.req-select-cb');
       if (cb) cb.checked = reqUiState.selectedReqIds.has(id);
     });
-  }
-
-  function populatePhaseFilter(project) {
-    const sel = $('reqFilterPhase');
-    if (!sel) return;
-    const current = state.filters.phase || '';
-    const phases = collectPhases(project);
-    sel.innerHTML = `<option value="">Todas as fases</option>${phases.map((p) =>
-      `<option value="${escapeHtml(p)}" ${p === current ? 'selected' : ''}>${escapeHtml(p)}</option>`
-    ).join('')}`;
   }
 
   function populateAddRequirementPhase(project) {
@@ -1064,20 +1061,6 @@
     $('reqModalSave')?.addEventListener('click', saveRequirementModal);
     $('reqModalDelete')?.addEventListener('click', deleteRequirementModal);
     $('documentViewerClose')?.addEventListener('click', () => $('documentViewerModal')?.classList.add('hidden'));
-    $('reqFilterPhase')?.addEventListener('change', (e) => {
-      state.filters.phase = e.target.value;
-      if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
-    });
-    $('reqFilterPriority')?.addEventListener('change', (e) => {
-      state.filters.priority = e.target.value;
-      if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
-    });
-    $('reqGroupBy')?.addEventListener('change', (e) => {
-      reqUiState.groupMode = e.target.value || 'module';
-      reqUiState.selectedReqIds.clear();
-      syncReqViewTabs();
-      if (state.selectedProject) renderGroupedRequirements(state.selectedProject);
-    });
     $('reqViewSwitcher')?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-req-view]');
       if (!btn) return;

@@ -295,32 +295,11 @@
                 <div id="reqTabFilterBanner" class="tab-filter-banner hidden"></div>
                 <div class="req-toolbar">
                   <input id="reqSearch" placeholder="Pesquisar por ID, título, need, shall..." />
-                  <select id="reqFilterType">
-                    <option value="">Todos os tipos</option>
-                    <option value="stakeholder">Stakeholder</option>
-                    <option value="functional">Funcional</option>
-                    <option value="non_functional">Não funcional</option>
-                    <option value="test_case">Teste / Aceite</option>
-                    <option value="undefined">Não definido</option>
-                    <option value="out_of_scope">Fora de escopo</option>
-                  </select>
-                  <select id="reqFilterStatus"><option value="">Todos os status</option></select>
-                  <select id="reqFilterModule"><option value="">Todos os módulos</option></select>
-                  <select id="reqFilterPhase"><option value="">Todas as fases</option></select>
-                  <select id="reqFilterPriority">
-                    <option value="">Todas prioridades</option>
-                    <option value="high">Alta</option>
-                    <option value="medium">Média</option>
-                    <option value="low">Baixa</option>
-                  </select>
-                  <select id="reqGroupBy" class="sr-only" aria-hidden="true" tabindex="-1">
-                    <option value="module">Agrupar: Módulo</option>
-                    <option value="capability">Agrupar: Funcionalidade</option>
-                    <option value="vmap">Mapa V (hierarquia)</option>
-                    <option value="implmap">Mapa Implementação</option>
-                  </select>
                   <label class="checkline"><input id="reqOnlySmartIssues" type="checkbox" /> Só SMART lacunas</label>
                 </div>
+                <!-- Navegação é o grupo por módulo abaixo, não uma pilha de filtros — tipo,
+                     estado, fase e prioridade já aparecem no cartão de cada requisito. -->
+                <p class="sr-only" id="reqNavHint">Requisitos organizados por módulo e fase abaixo. Use a pesquisa para encontrar um requisito específico.</p>
                 <div class="req-view-switcher" id="reqViewSwitcher" role="tablist" aria-label="Modo de visualização dos requisitos">
                   <button type="button" class="req-view-btn" data-req-view="module" role="tab" aria-selected="false">
                     <span class="req-view-btn-icon" aria-hidden="true">▦</span>

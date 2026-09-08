@@ -5897,6 +5897,41 @@ body.help-drawer-open {
   white-space: nowrap;
 }
 
+/* Where a requirement came from — a persona, an import, or blank for hand-typed. */
+.req-card-source {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* Related requirements — navigation, not filtering: click to jump straight there. */
+.req-card-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 10px 8px;
+}
+.req-related-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.req-related-chip:hover {
+  border-color: var(--accent);
+  color: var(--heading);
+}
+
 .req-card-meta {
   display: block;
   margin-top: 4px;
