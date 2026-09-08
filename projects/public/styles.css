@@ -1668,8 +1668,10 @@ th {
   justify-content: flex-end;
 }
 
-/* Repository picker: one repository per row, scannable, no list bullets. */
-.repo-picker-list {
+/* One item per row, scannable, no bullets — the repository picker and the survey
+   both list many short technical items and read badly stacked. */
+.repo-picker-list,
+.survey-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1677,15 +1679,17 @@ th {
   overflow-y: auto;
 }
 
-.repo-picker-list li {
+.repo-picker-list li,
+.survey-list li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 0;
+  padding: 4px 0;
   border-top: 0.5px solid var(--line);
 }
 
-.repo-picker-list code {
+.repo-picker-list code,
+.survey-list code {
   flex: 1;
   min-width: 0;
   overflow: hidden;

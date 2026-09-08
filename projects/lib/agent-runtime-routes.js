@@ -1477,12 +1477,15 @@ function registerAgentRuntimeRoutes(app, deps) {
         const engineeringInstructions = engineeringPilot
           ? `\n\n## Proposta de engenharia (piloto)\nAlém do output legado obrigatório, inclui opcionalmente um campo engineeringChangeSet conforme engineering-change-set/v1. Usa exatamente projectId=${projectId}, taskId=${delegatedTask.id}, runId=${run.id} e baseEngineeringRevision=${engineeringContext.baseEngineeringRevision}. Coloca-o no topo da resposta ou dentro do output da subtask correspondente. Todas as secções são apenas propostas para revisão humana. Não apliques alterações e não cries Tasks.`
           : '';
-        // A code-writing persona needs to know which repository and which module it is
-        // allowed to touch. The token is deliberately absent: the runtime returns file
-        // contents and the platform commits them after review.
-        const codePersona = agentPersonas.listPersonas()
-          .find((persona) => persona.taskTypes.includes(platformAgentType) && persona.canWriteCode) || null;
-        const linkedRepository = codePersona
+        // Which persona is running decides how much of the repository it may see.
+        const runningPersona = agentPersonas.listPersonas()
+          .find((persona) => persona.taskTypes.includes(platformAgentType)) || null;
+        const codePersona = runningPersona?.canWriteCode ? runningPersona : null;
+        // A reader is any persona whose tools include repo.read — the Product Owner
+        // deriving requirements from an existing app needs the code as much as the
+        // developer that will later change it, but must never be handed write rules.
+        const readsRepository = ensureArray(runningPersona?.defaultTools).includes('repo.read');
+        const linkedRepository = (codePersona || readsRepository)
           ? gitRepositories.normalizeProjectRepository(project.repository)
           : null;
         const repositoryContext = linkedRepository ? {
@@ -1493,12 +1496,21 @@ function registerAgentRuntimeRoutes(app, deps) {
           specRoot: 'openspec/',
           moduleName: textOr(delegatedTask.moduleName),
           allowedPaths: ensureArray(delegatedTask.repositoryPaths),
-          writeScope: codePersona.writeScope,
-          rules: [
-            'Devolve o conteudo completo de cada ficheiro alterado em changedFiles[].path e .content.',
-            'Nao alteres ficheiros fora do teu modulo — serao recusados na escrita.',
-            'Nao facas commit nem push: a plataforma escreve apos revisao humana.',
-          ],
+          writeScope: codePersona ? codePersona.writeScope : (runningPersona?.writeScope || ''),
+          // The survey is what makes deriving requirements from an existing app
+          // possible: structure, routes and docs the platform already read.
+          survey: project.repositorySurvey || null,
+          rules: codePersona
+            ? [
+              'Devolve o conteudo completo de cada ficheiro alterado em changedFiles[].path e .content.',
+              'Nao alteres ficheiros fora do teu modulo — serao recusados na escrita.',
+              'Nao facas commit nem push: a plataforma escreve apos revisao humana.',
+            ]
+            : [
+              'Le o repositorio para perceber o que ja existe. Nao escreves codigo.',
+              'Baseia cada requisito em algo que esta mesmo no codigo — nao inventes funcionalidades.',
+              'Onde o codigo nao chegar para decidir, levanta uma pergunta em vez de assumir.',
+            ],
         } : null;
 
         const frozenPackage = buildFrozenTaskPackage({

@@ -87,6 +87,15 @@
     }
   }
 
+  async function loadSurvey(projectId) {
+    try {
+      const payload = await apiRequest(`/${projectId}/survey`);
+      return payload?.survey || null;
+    } catch {
+      return null;
+    }
+  }
+
   async function loadRecentTasks(projectId) {
     try {
       const payload = await apiRequest(`/projects/${projectId}/work-items?limit=5`);
@@ -169,7 +178,13 @@
       return `
         <div class="read-card">
           <p class="muted-text" style="margin:0 0 8px">Execução</p>
-          <textarea id="execGoalInput" placeholder="O que quer que a fábrica construa? Ex.: Criar o mockup e os requisitos das reservas" style="width:100%;min-height:64px;margin-bottom:8px"></textarea>
+          <label class="exec-kind-field">O que vai acontecer
+            <select id="execKind">
+              <option value="construcao">Construir — partir da ideia até ao código</option>
+              <option value="levantamento">Levantar o que já existe — a app já funciona, falta descrevê-la</option>
+            </select>
+          </label>
+          <textarea id="execGoalInput" placeholder="O que quer que a fábrica construa? Ex.: Criar o mockup e os requisitos das reservas" style="width:100%;min-height:64px;margin:8px 0"></textarea>
           <div class="form-grid compact" style="margin-bottom:8px">
             <label>Limite de custo (€)<input type="number" id="execMaxCost" min="0" value="20" /></label>
             <label>Limite de horas<input type="number" id="execMaxHours" min="0" value="4" /></label>
@@ -203,7 +218,7 @@
       <div class="read-card">
         <div class="panel-title-row">
           <div>
-            <p class="muted-text" style="margin:0 0 2px">Execução</p>
+            <p class="muted-text" style="margin:0 0 2px">Execução${exec.kind === 'levantamento' ? ' · levantamento' : ''}</p>
             <p style="margin:0">${escapeHtml(exec.goal)}</p>
           </div>
           <span class="section-badge ${badgeClass}">${escapeHtml(label)}</span>
@@ -215,6 +230,39 @@
         ${rollupLine}
       </div>
       ${question}`;
+  }
+
+  /**
+   * What the platform read in the repository. Shown because it is the evidence the
+   * personas worked from — a requirement nobody can trace back to something in the
+   * code is a requirement worth doubting.
+   */
+  function renderSurvey(survey) {
+    if (!survey) return '';
+    const list = (items, render) => items.slice(0, 40).map(render).join('');
+    return `
+      <details class="pdos-secondary-panel mt-12" id="pdosRepoSurvey">
+        <summary>O que já existe no repositório
+          <span class="muted-text">${survey.fileCount} ficheiros · ${survey.routes.length} rotas · ${survey.modules.length} módulos</span>
+        </summary>
+        <div class="mt-8">
+          <p class="muted-text">
+            <code>${escapeHtml(survey.repository)}</code> · ramo <code>${escapeHtml(survey.branch)}</code>
+            · lido ${escapeHtml(new Date(survey.surveyedAt).toLocaleString('pt-PT'))}
+          </p>
+          ${survey.languages.length ? `<p class="muted-text">${survey.languages.slice(0, 8).map((l) => `${escapeHtml(l.language)} (${l.files})`).join(' · ')}</p>` : ''}
+          ${survey.modules.length ? `
+            <p class="muted-text mt-8">Estrutura</p>
+            <ul class="survey-list">${list(survey.modules, (m) => `<li><code>${escapeHtml(m.name)}</code> <span class="muted-text">${m.files} ficheiro(s)</span></li>`)}</ul>` : ''}
+          ${survey.routes.length ? `
+            <p class="muted-text mt-8">Rotas encontradas</p>
+            <ul class="survey-list">${list(survey.routes, (r) => `<li><code>${escapeHtml(r)}</code></li>`)}</ul>` : ''}
+          ${survey.truncatedFiles?.length ? `
+            <p class="muted-text mt-8"><span class="section-badge badge-amber">Lido em parte</span>
+            ${list(survey.truncatedFiles, (f) => `<code>${escapeHtml(f)}</code> `)}</p>` : ''}
+          <button type="button" class="btn tiny ghost mt-8" id="surveyRefreshBtn">Voltar a ler o repositório</button>
+        </div>
+      </details>`;
   }
 
   function renderRecentTasks(tasks) {
@@ -266,20 +314,52 @@
               <p class="muted-text" style="margin:0 0 4px">Tarefas recentes</p>
               ${renderRecentTasks(data.tasks || [])}
             </div>
-          </div>` : ''}
+          </div>
+          ${renderSurvey(data.survey)}` : ''}
       </section>
     `;
 
     if (!partner) return;
 
+    $('surveyRefreshBtn')?.addEventListener('click', async () => {
+      try {
+        showToast('A ler o repositório…', 'info');
+        await apiRequest(`/${project.id}/survey`, { method: 'POST', body: {} });
+        await refresh(project, { force: true });
+        showToast('Levantamento actualizado.', 'ok');
+      } catch (error) { showToast(error.message, 'error'); }
+    });
+
+    // Choosing a levantamento fills in the goal, because there is only one sensible
+    // one and making the engineer phrase it adds nothing.
+    $('execKind')?.addEventListener('change', (event) => {
+      const goalEl = $('execGoalInput');
+      if (!goalEl) return;
+      const survey = 'Levantar o que a aplicação já faz: requisitos e mapa de módulos a partir do código.';
+      if (event.target.value === 'levantamento') {
+        if (!goalEl.value.trim()) goalEl.value = survey;
+      } else if (goalEl.value.trim() === survey) {
+        goalEl.value = '';
+      }
+    });
+
     $('execStartBtn')?.addEventListener('click', async () => {
       const goal = $('execGoalInput')?.value?.trim();
       if (!goal) return showToast('Descreva o objectivo desta execução.', 'error');
+      const kind = $('execKind')?.value || 'construcao';
       try {
+        // A levantamento reads the repository first. The scan is what the personas
+        // then reason over, so it has to exist before the chain starts — not as a
+        // separate button the engineer has to remember to press.
+        if (kind === 'levantamento') {
+          showToast('A ler o repositório…', 'info');
+          await apiRequest(`/${project.id}/survey`, { method: 'POST', body: {} });
+        }
         await apiRequest(`/${project.id}/orchestration/start`, {
           method: 'POST',
           body: {
             goal,
+            kind,
             maxCostUsd: Number($('execMaxCost')?.value) || 0,
             maxHours: Number($('execMaxHours')?.value) || 0,
           },
@@ -331,12 +411,13 @@
       const partner = isPartnerOrAdmin();
       const client = window.isClientUser?.() === true;
       if (!client && !partner) return;
-      const [portal, orchestration, tasks] = await Promise.all([
+      const [portal, orchestration, tasks, survey] = await Promise.all([
         loadClientPortal(project.id),
         partner ? loadOrchestration(project.id) : Promise.resolve(null),
         partner ? loadRecentTasks(project.id) : Promise.resolve([]),
+        partner ? loadSurvey(project.id) : Promise.resolve(null),
       ]);
-      renderClientPortal(project, { portal, orchestration, tasks });
+      renderClientPortal(project, { portal, orchestration, tasks, survey });
       lastClientPortalKey = key;
     })();
     try {

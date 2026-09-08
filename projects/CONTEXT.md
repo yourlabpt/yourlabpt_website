@@ -8,6 +8,31 @@ Targets exactly one OpenSpec change proposal, so "what did this cost" and "what 
 this touch" are the same question. Not the same as **Project** — a Project can have
 many Execuções over its life (initial build, later a feature, later a fix).
 
+## Kind of Execução — construção vs levantamento
+Which direction the work runs in.
+
+**Construção** is the full chain: an intention becomes a mockup, then requirements,
+then modules, then code. The default.
+
+**Levantamento** is the opposite direction. The app already exists and works; what is
+missing is the writing-down. It runs only the personas that read and describe (Product
+Owner, then Module Architect) and stops. Asking for a mockup to be approved before
+describing an app that is already live would make no sense, which is why the kind
+travels with the Execução rather than being a flag on the project.
+
+A levantamento always ends in a question, whatever the personas' own approval flags
+say: what it produces becomes the project's requirements and module map, the ground
+everything after is built on, so it is never accepted merely because the chain
+finished without erroring.
+
+## Survey (levantamento do repositório)
+What the platform itself read in a linked repository: structure, routes, manifests,
+docs, schema. Computed without a model and without an agent, so it works even with the
+runtime off. It is **evidence, not conclusions** — it never derives a requirement. Its
+job is to give the personas (and the person reviewing them) something concrete to point
+at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
+project and replaced whole on each run: two surveys side by side would only be ambiguous.
+
 ## Linha de produção (production line)
 The nine-stage Delivery OS pipeline (Ideia → Descoberta → Requisitos → Arquitectura →
 Roteiro → Implementação → Validação → Entrega → Operação) IS the **Entrega tab** —

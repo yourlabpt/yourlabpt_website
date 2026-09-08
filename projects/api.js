@@ -32,6 +32,7 @@ const { registerEngineeringStateRoutes } = require('./lib/engineering-state-rout
 const gitRepositories = require('./lib/git-repositories');
 const { registerGitRoutes } = require('./lib/git-routes');
 const { registerOpenspecRoutes } = require('./lib/openspec-routes');
+const { registerSurveyRoutes } = require('./lib/survey-routes');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
 
@@ -3967,6 +3968,15 @@ function registerRequirementsPlatform(app, options) {
   });
 
   registerGitRoutes(app, {
+    authMiddleware,
+    requireRole,
+    loadProjectForUser,
+    updateStore,
+    appendActivity,
+    dataDir,
+  });
+
+  registerSurveyRoutes(app, {
     authMiddleware,
     requireRole,
     loadProjectForUser,

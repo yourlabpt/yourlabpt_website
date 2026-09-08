@@ -41,6 +41,7 @@ function publicState(project, decision, now = Date.now()) {
       id: execucao.id,
       goal: execucao.goal,
       changeId: execucao.changeId,
+      kind: execucao.kind,
       status: execucao.status,
       currentPersonaId: execucao.currentPersonaId,
       question: execucao.question,
@@ -98,6 +99,7 @@ function registerOrchestrationRoutes(app, deps) {
       const input = {
         goal: req.body?.goal,
         changeId: req.body?.changeId,
+        kind: req.body?.kind,
         maxCostUsd: req.body?.maxCostUsd,
         maxHours: req.body?.maxHours,
       };

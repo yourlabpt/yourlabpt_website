@@ -31,6 +31,32 @@ const FINISHED_STATUSES = new Set(['completed', 'abandoned']);
 const ALL_STATUSES = new Set(['running', 'waiting_human', 'paused_budget', 'halted', ...FINISHED_STATUSES]);
 const REPEAT_LIMIT = 3;
 
+/**
+ * Two ways work enters the factory.
+ *
+ * 'construcao' is the full chain: an intention becomes a mockup, requirements, modules
+ * and finally code.
+ *
+ * 'levantamento' is the opposite direction — the app already exists and works, and what
+ * is missing is the writing-down. Asking a UX Agent to have a mockup approved before
+ * describing an app that is already live makes no sense, so the survey runs only the
+ * personas that read and describe, and stops there. What it produces is reviewed like
+ * any other result, and the building starts from real requirements afterwards.
+ */
+const EXECUCAO_KINDS = new Set(['construcao', 'levantamento']);
+
+const PERSONA_SEQUENCE_BY_KIND = {
+  levantamento: ['product_owner', 'module_architect'],
+};
+
+/**
+ * Kinds whose last step must be reviewed before it counts, whatever the persona's own
+ * approval flag says. A levantamento's output becomes the project's requirements and
+ * module map — the ground everything later is built on — so it is never accepted just
+ * because the chain finished without erroring.
+ */
+const KINDS_REVIEWED_AT_END = new Set(['levantamento']);
+
 function text(value, fallback = '') {
   const result = value === null || value === undefined ? '' : String(value).trim();
   return result || fallback;
@@ -45,6 +71,10 @@ function normalizeExecucao(raw = {}) {
   return {
     id: text(src.id) || `exec_${crypto.randomUUID()}`,
     goal: text(src.goal),
+    // What kind of work this is. 'construcao' builds something new; 'levantamento'
+    // reads an app that already exists and writes down what it does. They need
+    // different personas in a different order, so the kind travels with the Execução.
+    kind: EXECUCAO_KINDS.has(text(src.kind)) ? text(src.kind) : 'construcao',
     // The change proposal this Execução targets — what it costs and what it touches
     // are the same question once both point at the same id.
     changeId: text(src.changeId),
@@ -158,9 +188,16 @@ function decideNext(project, options = {}) {
   const now = options.now ?? Date.now();
   const execucao = activeExecucao(project);
   const overrides = options.personaOverrides || {};
-  const personas = agentPersonas.listPersonas(overrides).filter((persona) => persona.enabled);
+  const enabled = agentPersonas.listPersonas(overrides).filter((persona) => persona.enabled);
 
   if (!execucao) return { action: 'idle', execucao: null };
+
+  // A levantamento runs a shorter chain, in the order its kind declares. Anything
+  // outside that list simply never comes up for this Execução.
+  const sequence = PERSONA_SEQUENCE_BY_KIND[execucao.kind];
+  const personas = sequence
+    ? sequence.map((id) => enabled.find((persona) => persona.id === id)).filter(Boolean)
+    : enabled;
   if (execucao.status === 'halted') return { action: 'halt', execucao, reason: execucao.haltReason };
   if (execucao.status === 'paused_budget') {
     return { action: 'paused_budget', execucao, budget: projectBudget.budgetState(execucao.budget, now) };
@@ -245,7 +282,16 @@ function failureSignature(personaId, message) {
 }
 
 /** The question raised when a persona's result needs a human before the chain moves on. */
-function questionFor(persona, workItem) {
+function questionFor(persona, workItem, execucaoKind = '') {
+  if (execucaoKind === 'levantamento') {
+    return {
+      personaId: persona.id,
+      kind: 'survey_acceptance',
+      text: 'O levantamento terminou. Aceita estes requisitos e este mapa de modulos como a descricao do que a aplicacao ja faz?',
+      workItemId: text(workItem?.id),
+      raisedAt: new Date().toISOString(),
+    };
+  }
   const kind = persona.id === 'ux' ? 'mockup_acceptance' : 'result_review';
   const message = persona.id === 'ux'
     ? 'O mockup esta pronto. Aceita esta versao do frontend para dela derivarem os requisitos?'
@@ -295,6 +341,7 @@ function startExecucao(project, input = {}, now = Date.now()) {
   const created = normalizeExecucao({
     goal: input.goal,
     changeId: input.changeId,
+    kind: input.kind,
     status: 'running',
     startedAt: startedAtIso,
     updatedAt: startedAtIso,
@@ -385,8 +432,12 @@ function recordResult(project, result = {}, now = Date.now()) {
   }, now));
 
   const persona = agentPersonas.resolvePersona(personaId, result.personaOverrides || {});
-  if (outcome === 'completed' && persona?.requiresHumanApproval) {
-    raiseQuestion(project, questionFor(persona, { id: entry.workItemId }), now);
+  const sequence = PERSONA_SEQUENCE_BY_KIND[execucao.kind] || [];
+  const finishesReviewedKind = KINDS_REVIEWED_AT_END.has(execucao.kind)
+    && sequence[sequence.length - 1] === personaId;
+
+  if (outcome === 'completed' && (persona?.requiresHumanApproval || finishesReviewedKind)) {
+    raiseQuestion(project, questionFor(persona, { id: entry.workItemId }, execucao.kind), now);
   }
   return activeExecucao(project);
 }
@@ -417,6 +468,8 @@ function stopChain(project, status = 'abandoned', now = Date.now()) {
 }
 
 module.exports = {
+  EXECUCAO_KINDS,
+  PERSONA_SEQUENCE_BY_KIND,
   REPEAT_LIMIT,
   activeExecucao,
   answerQuestion,
