@@ -96,7 +96,7 @@ describe('git provider settings', () => {
     await gitSettings.writeGitProviderSettings(dir, { token: '' }, 'u1');
     const settings = await gitSettings.readGitProviderSettings(dir);
     assert.equal(settings.token, null);
-    await assert.rejects(() => gitSettings.resolveGitToken(dir), /Nenhum token Git configurado/);
+    await assert.rejects(() => gitSettings.resolveGitToken(dir), /Nenhuma conta GitHub ligada/);
   });
 
   it('drops a previous verification when the token changes', async () => {
@@ -151,6 +151,25 @@ describe('project repository binding', () => {
     assert.equal(binding.createdByPlatform, true);
     assert.equal(binding.providerProjectId, '42');
     assert.ok(binding.linkedAt);
+  });
+
+  it('proposes a working-clone path under the configured root', () => {
+    const repo = { owner: 'yourlab', name: 'agico' };
+    assert.equal(gitRepositories.suggestLocalPath(repo, '/srv/work'), '/srv/work/yourlab/agico');
+    assert.equal(gitRepositories.suggestLocalPath(repo, '/srv/work/'), '/srv/work/yourlab/agico');
+    assert.equal(gitRepositories.suggestLocalPath(repo), './workspaces/yourlab/agico');
+    assert.equal(gitRepositories.suggestLocalPath({ owner: 'yourlab' }, '/srv'), '');
+  });
+
+  it('carries the local path on the binding and keeps an explicit one', () => {
+    const remote = { provider: 'github', owner: 'yourlab', name: 'agico' };
+    const proposed = gitRepositories.buildProjectRepository(remote, { workspaceRoot: '/srv/work' });
+    assert.equal(proposed.localPath, '/srv/work/yourlab/agico');
+    const explicit = gitRepositories.buildProjectRepository(
+      { ...remote, localPath: '/elsewhere/agico' },
+      { workspaceRoot: '/srv/work' },
+    );
+    assert.equal(explicit.localPath, '/elsewhere/agico');
   });
 
   it('treats an incomplete repository as unlinked', () => {

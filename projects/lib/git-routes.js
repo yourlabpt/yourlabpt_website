@@ -47,7 +47,7 @@ function registerGitRoutes(app, deps) {
     try {
       const body = req.body || {};
       const patch = {};
-      for (const field of ['provider', 'apiBaseUrl', 'account', 'defaultOwner', 'defaultVisibility', 'repositoryPrefix']) {
+      for (const field of ['provider', 'apiBaseUrl', 'account', 'defaultOwner', 'defaultVisibility', 'repositoryPrefix', 'workspaceRoot']) {
         if (body[field] !== undefined) patch[field] = body[field];
       }
       // Only touch the credential when the caller actually sent the field, so saving
@@ -184,12 +184,15 @@ function registerGitRoutes(app, deps) {
           providerReady: Boolean(settings.token?.data),
         });
       }
+      // Bindings made before local paths existed have none; offer one rather than
+      // leaving the field blank with no hint of what belongs there.
+      const suggestedLocalPath = gitRepositories.suggestLocalPath(repository, settings.workspaceRoot);
       if (String(req.query.activity || '') !== 'true') {
-        return res.json({ repository, providerReady: Boolean(settings.token?.data) });
+        return res.json({ repository, suggestedLocalPath, providerReady: Boolean(settings.token?.data) });
       }
       const client = await clientFromSettings();
       const activity = await gitRepositories.readRepositoryActivity(client, repository);
-      return res.json({ repository, activity, providerReady: true });
+      return res.json({ repository, suggestedLocalPath, activity, providerReady: true });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -203,12 +206,14 @@ function registerGitRoutes(app, deps) {
       if (!ref) {
         return res.status(400).json({ message: 'Indique o repositorio como "dono/nome" ou o URL completo.' });
       }
+      const settings = await gitSettings.readGitProviderSettings(dataDir);
       const client = await clientFromSettings();
       // Reading it back proves the token can actually reach it before we store the link.
       const remote = await client.getRepository(ref.owner, ref.name);
       const repository = gitRepositories.buildProjectRepository(remote, {
         createdByPlatform: false,
         actorUserId: req.auth?.user?.id || '',
+        workspaceRoot: settings.workspaceRoot,
       });
       await updateStore(async (store) => {
         const target = store.projects.find((entry) => entry.id === req.params.projectId);
@@ -262,6 +267,33 @@ function registerGitRoutes(app, deps) {
         });
       });
       return res.status(201).json({ repository });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // The working clone's location on the server. Part of the binding, not a separate
+  // concept, so it is edited through the same repository resource.
+  app.patch('/api/projects/:projectId/repository', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+    try {
+      const current = gitRepositories.normalizeProjectRepository(req.loadedProject.repository);
+      if (!current) return res.status(404).json({ message: 'Nenhum repositorio ligado.' });
+      const localPath = text(req.body?.localPath);
+      let repository = null;
+      await updateStore(async (store) => {
+        const target = store.projects.find((entry) => entry.id === req.params.projectId);
+        if (!target) throw new Error('Projeto nao encontrado.');
+        repository = gitRepositories.normalizeProjectRepository({ ...current, localPath });
+        target.repository = repository;
+        target.updatedAt = new Date().toISOString();
+        appendActivity(store, {
+          projectId: target.id,
+          actorUserId: req.auth.user.id,
+          action: 'repository_local_path_set',
+          details: { fullName: repository.fullName, localPath: repository.localPath },
+        });
+      });
+      return res.json({ repository });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }

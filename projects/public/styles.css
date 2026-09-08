@@ -91,6 +91,17 @@ body {
   background: var(--bg);
 }
 
+/* No base link colour existed, so plain <a> fell back to browser blue — unreadable
+   on the dark panels. Anything with its own class still wins on specificity. */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
 .page-bg {
   position: fixed;
   inset: 0;
@@ -1587,6 +1598,31 @@ th {
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+/* Repository picker: one repository per row, scannable, no list bullets. */
+.repo-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.repo-picker-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 0.5px solid var(--line);
+}
+
+.repo-picker-list code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .simple-item {

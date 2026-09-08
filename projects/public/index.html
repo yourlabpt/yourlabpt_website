@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=87" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=89" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -747,6 +747,10 @@
                     <label>Dono por omissão<input id="gitDefaultOwner" placeholder="vazio = a sua conta" /></label>
                     <label>Visibilidade<select id="gitDefaultVisibility"><option value="private">Privado</option><option value="public">Público</option></select></label>
                     <label>Prefixo dos repositórios<input id="gitRepoPrefix" placeholder="ex.: yourlab" /></label>
+                    <label class="full">Pasta base das cópias de trabalho
+                      <input id="gitWorkspaceRoot" placeholder="./workspaces" />
+                      <small class="field-help">A pasta local de cada projecto é proposta a partir daqui. Pode ser alterada projecto a projecto.</small>
+                    </label>
                   </div>
                   <div class="settings-save-row mt-8">
                     <button type="button" class="btn primary" id="gitSaveBtn">Guardar predefinições</button>
@@ -1390,10 +1394,10 @@
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
   <script src="/projects/static/work-items-ui.js?v=32" defer></script>
   <script src="/projects/static/agents-admin-ui.js?v=2" defer></script>
-  <script src="/projects/static/platform-settings-ui.js?v=1" defer></script>
-  <script src="/projects/static/project-repository-ui.js?v=1" defer></script>
+  <script src="/projects/static/platform-settings-ui.js?v=2" defer></script>
+  <script src="/projects/static/project-repository-ui.js?v=2" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
-  <script src="/projects/static/client-portal-ui.js?v=5" defer></script>
+  <script src="/projects/static/client-portal-ui.js?v=7" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

@@ -35,6 +35,8 @@ function normalizeSettings(raw = {}) {
     defaultOwner: text(src.defaultOwner),
     defaultVisibility: VISIBILITIES.has(visibility) ? visibility : 'private',
     repositoryPrefix: text(src.repositoryPrefix),
+    // Root the server clones into. Each project's local path is proposed under it.
+    workspaceRoot: text(src.workspaceRoot),
     token: src.token && typeof src.token === 'object' ? src.token : null,
     // How the token got here: 'oauth' (GitHub login) or 'pat' (typed by hand).
     authMethod: text(src.authMethod, src.token ? 'pat' : ''),
@@ -75,6 +77,7 @@ function publicGitProviderSettings(settings, dataDir) {
     defaultOwner: value.defaultOwner,
     defaultVisibility: value.defaultVisibility,
     repositoryPrefix: value.repositoryPrefix,
+    workspaceRoot: value.workspaceRoot,
     hasToken: Boolean(value.token?.data),
     tokenFingerprint: text(value.token?.fingerprint),
     authMethod: value.authMethod,
@@ -146,7 +149,7 @@ async function markVerified(dataDir, account, actorUserId = '') {
 async function resolveGitToken(dataDir) {
   const settings = await readGitProviderSettings(dataDir);
   if (!settings.token?.data) {
-    throw new Error('Nenhum token Git configurado. Configure em Definicoes -> Repositorios Git.');
+    throw new Error('Nenhuma conta GitHub ligada. Ligue-a em Definicoes da plataforma.');
   }
   return secretBox.decryptSecret(dataDir, settings.token);
 }

@@ -31,19 +31,35 @@ function normalizeProjectRepository(raw) {
     providerProjectId: text(raw.providerProjectId || raw.projectId),
     // True when the platform provisioned it, false when an existing repo was attached.
     createdByPlatform: raw.createdByPlatform === true,
+    // Where the server keeps its working clone. Empty means "not cloned yet".
+    localPath: text(raw.localPath),
     linkedAt: text(raw.linkedAt),
     linkedBy: text(raw.linkedBy),
   };
 }
 
 /**
+ * Default working-clone path for a repository. Kept under one root so a project can be
+ * wiped by deleting a single directory.
+ */
+function suggestLocalPath(repository, root = '') {
+  const base = text(root) || './workspaces';
+  const owner = text(repository?.owner);
+  const name = text(repository?.name);
+  if (!owner || !name) return '';
+  return `${base.replace(/\/+$/, '')}/${owner}/${name}`;
+}
+
+/**
  * Turns a provider repository record into the project-side binding.
  */
-function buildProjectRepository(repository, { createdByPlatform = false, actorUserId = '' } = {}) {
+function buildProjectRepository(repository, { createdByPlatform = false, actorUserId = '', workspaceRoot = '' } = {}) {
   return normalizeProjectRepository({
     ...repository,
     providerProjectId: repository.projectId,
     createdByPlatform,
+    // Proposed up front so the binding is complete on day one; the engineer can change it.
+    localPath: text(repository.localPath) || suggestLocalPath(repository, workspaceRoot),
     linkedAt: new Date().toISOString(),
     linkedBy: actorUserId,
   });
@@ -100,5 +116,6 @@ module.exports = {
   normalizeProjectRepository,
   parseRepositoryRef,
   readRepositoryActivity,
+  suggestLocalPath,
   suggestRepositoryName,
 };

@@ -49,6 +49,24 @@
     return window.isSuperAdmin?.() === true || window.isPartnerEditor?.() === true;
   }
 
+  /**
+   * The role helpers read `state.user`, which is only filled once `auth/me` answers.
+   * A render triggered before that cannot tell a client from a partner — and must not
+   * be mistaken for "this person is neither".
+   */
+  function roleKnown() {
+    return Boolean(window.state?.user?.role);
+  }
+
+  /** Resolves once the signed-in user is known, or gives up rather than spinning. */
+  async function waitForRole(timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    while (!roleKnown() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return roleKnown();
+  }
+
   function money(value) {
     return `${(Number(value) || 0).toFixed(2)}€`;
   }
@@ -135,6 +153,18 @@
       ? `<p class="muted-text">Total do projecto: ${money(rollup.totalSpentUsd)} · ${(rollup.totalHours || 0).toFixed(1)}h em ${rollup.count} execução(ões).</p>`
       : '';
 
+    // A project with no repository has nowhere for the agents to write, so the form
+    // is replaced by what is missing instead of failing on submit.
+    if (!exec && orch.blockedReason) {
+      return `
+        <div class="read-card">
+          <p class="muted-text" style="margin:0 0 8px">Execução</p>
+          <p><span class="section-badge badge-amber">Projecto incompleto</span>
+          Este projecto ainda não tem repositório. Ligue um em <strong>Definições do projecto</strong> antes de executar.</p>
+          ${rollupLine}
+        </div>`;
+    }
+
     if (!exec) {
       return `
         <div class="read-card">
@@ -207,6 +237,9 @@
     // A client sees the production line and nothing else — the technical
     // collapsibles below it are partner/admin only.
     shell?.classList.toggle('client-simple', client);
+    // Role not answered yet: leave whatever is on screen alone. Blanking here is what
+    // used to leave the dashboard permanently empty after a fresh page load.
+    if (!roleKnown()) return;
     if (!client && !partner) {
       // Role not resolved yet (or genuinely neither) — the CSS default (no class)
       // is already dashboard-only/hidden, so simply not adding .detail-expanded
@@ -292,6 +325,9 @@
       return clientPortalInflight;
     }
     clientPortalInflight = (async () => {
+      // Loading the data before the role is known would fetch the partner-only
+      // endpoints as nobody, and render as nobody. Wait for the answer instead.
+      if (!(await waitForRole())) return;
       const partner = isPartnerOrAdmin();
       const client = window.isClientUser?.() === true;
       if (!client && !partner) return;

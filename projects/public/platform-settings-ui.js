@@ -88,6 +88,7 @@
     if ($('gitDefaultOwner')) $('gitDefaultOwner').value = s.defaultOwner || '';
     if ($('gitDefaultVisibility')) $('gitDefaultVisibility').value = s.defaultVisibility || 'private';
     if ($('gitRepoPrefix')) $('gitRepoPrefix').value = s.repositoryPrefix || '';
+    if ($('gitWorkspaceRoot')) $('gitWorkspaceRoot').value = s.workspaceRoot || '';
   }
 
   async function load() {
@@ -153,6 +154,7 @@
             defaultOwner: $('gitDefaultOwner')?.value?.trim() || '',
             defaultVisibility: $('gitDefaultVisibility')?.value || 'private',
             repositoryPrefix: $('gitRepoPrefix')?.value?.trim() || '',
+            workspaceRoot: $('gitWorkspaceRoot')?.value?.trim() || '',
           },
         });
         window.showToast?.('Predefinições guardadas.', 'ok');

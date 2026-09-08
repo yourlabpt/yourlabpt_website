@@ -7,6 +7,7 @@
  * identity, history) is ever client-visible.
  */
 const loop = require('./orchestration-loop');
+const gitRepositories = require('./git-repositories');
 const projectBudget = require('./project-budget');
 const agentPlatformSettings = require('./agent-platform-settings');
 const { canEditProject, isClientViewer } = require('./project-access');
@@ -19,6 +20,16 @@ function requirePartnerOrAdmin(req, res, next) {
     return res.status(403).json({ message: 'Sem permissao para alterar este projecto.' });
   }
   return next();
+}
+
+/**
+ * Agents write code, and code has to land somewhere. Without a repository there is
+ * nowhere to write, so the project is incomplete and cannot execute.
+ */
+function repositoryGap(project) {
+  return gitRepositories.normalizeProjectRepository(project?.repository)
+    ? ''
+    : 'Este projecto ainda nao tem repositorio. Ligue um em Definicoes do projecto antes de executar.';
 }
 
 /** What the partner/admin UI needs to show the chain's state in one call. */
@@ -42,6 +53,8 @@ function publicState(project, decision, now = Date.now()) {
       .filter((entry) => entry.id !== execucao?.id)
       .map((entry) => ({ id: entry.id, goal: entry.goal, status: entry.status, startedAt: entry.startedAt })),
     rollup,
+    // Empty when the project is ready to execute; a sentence to show when it is not.
+    blockedReason: repositoryGap(project),
     next: decision ? {
       action: decision.action,
       personaId: decision.persona?.id || decision.personaId || '',
@@ -91,6 +104,8 @@ function registerOrchestrationRoutes(app, deps) {
       if (!input.goal || !String(input.goal).trim()) {
         return res.status(400).json({ message: 'Descreva o objectivo desta execucao.' });
       }
+      const gap = repositoryGap(req.loadedProject);
+      if (gap) return res.status(409).json({ message: gap });
       let state = null;
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);

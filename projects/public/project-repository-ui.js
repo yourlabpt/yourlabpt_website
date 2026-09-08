@@ -4,7 +4,17 @@
  */
 (function initProjectRepositoryUi() {
   const API = '/api/projects';
-  const state = { projectId: '', data: null, activity: null, loading: false };
+  const state = {
+    projectId: '',
+    data: null,
+    activity: null,
+    loading: false,
+    // Repository picker: what the connected account offers, filtered by `search`.
+    repositories: null,
+    search: '',
+    searching: false,
+  };
+  let searchTimer = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -36,19 +46,45 @@
     return typeof window.isSuperAdmin === 'function' ? window.isSuperAdmin() : false;
   }
 
+  /** The list under the search box, or why there is nothing in it. */
+  function repositoryResults() {
+    if (state.searching) return '<p class="muted-text mt-8">A procurar…</p>';
+    if (state.repositories === null) return '';
+    if (!state.repositories.length) {
+      return '<p class="muted-text mt-8">Nenhum repositório encontrado nesta conta.</p>';
+    }
+    return `<ul class="simple-list mt-8 repo-picker-list">${state.repositories.map((repo) => `
+      <li>
+        <button type="button" class="btn tiny ghost repo-pick" data-repo="${escapeHtml(repo.fullName)}">Ligar</button>
+        <code>${escapeHtml(repo.fullName)}</code>
+        <span class="muted-text">${repo.visibility === 'public' ? 'público' : 'privado'} · ramo ${escapeHtml(repo.defaultBranch)}</span>
+      </li>`).join('')}</ul>`;
+  }
+
   function renderUnlinked(data) {
     if (!data.providerReady) {
       return `
         <p class="muted-text">
-          <span class="section-badge badge-gray">Sem conta Git</span>
-          Configure a conta e o token em <strong>Agentes → Repositórios Git</strong> antes de ligar um repositório.
+          <span class="section-badge badge-gray">Sem conta GitHub</span>
+          Ligue a conta em <strong>Definições da plataforma</strong> antes de ligar um repositório a este projecto.
         </p>`;
     }
     if (!isSuperAdmin()) {
       return '<p class="muted-text">Ainda não há repositório ligado a este projecto.</p>';
     }
     return `
-      <p class="muted-text">Ainda não há repositório ligado. Crie um novo ou ligue um que já exista.</p>
+      <p class="muted-text">
+        <span class="section-badge badge-amber">Projecto incompleto</span>
+        Sem repositório não é possível executar: os agentes não teriam onde escrever.
+      </p>
+      <div class="form-grid compact mt-12">
+        <label class="full">Ligar um repositório da conta
+          <input id="repoSearch" placeholder="procurar por nome…" value="${escapeHtml(state.search)}" autocomplete="off" />
+        </label>
+      </div>
+      ${repositoryResults()}
+      <hr class="mt-12" />
+      <p class="muted-text">Ou criar um repositório novo para este projecto.</p>
       <div class="form-grid compact mt-8">
         <label>Nome do novo repositório<input id="repoCreateName" value="${escapeHtml(data.suggestedName || '')}" /></label>
         <label>Dono<input id="repoCreateOwner" value="${escapeHtml(data.defaultOwner || '')}" placeholder="vazio = a sua conta" /></label>
@@ -59,14 +95,6 @@
           </select>
         </label>
         <div class="settings-save-row"><button type="button" class="btn primary" id="repoCreateBtn">Criar repositório</button></div>
-      </div>
-      <hr class="mt-12" />
-      <div class="form-grid compact mt-8">
-        <label class="full">Ou ligar um repositório existente
-          <input id="repoLinkRef" placeholder="dono/nome ou https://github.com/dono/nome" />
-          <small class="field-help">A plataforma confirma o acesso com o token antes de guardar a ligação.</small>
-        </label>
-        <div class="settings-save-row"><button type="button" class="btn" id="repoLinkBtn">Ligar repositório</button></div>
       </div>`;
   }
 
@@ -108,6 +136,14 @@
         </div>
       </div>
       <p class="muted-text mt-8">Clonar: <code>${escapeHtml(repository.cloneUrl)}</code></p>
+      ${isSuperAdmin() ? `
+      <div class="form-grid compact mt-12">
+        <label class="full">Pasta local no servidor
+          <input id="repoLocalPath" value="${escapeHtml(repository.localPath || state.data?.suggestedLocalPath || '')}" placeholder="./workspaces/dono/nome" />
+          <small class="field-help">Onde o servidor mantém a cópia de trabalho deste repositório. Os agentes escrevem aqui; nada é enviado para o GitHub sem a sua aceitação.</small>
+        </label>
+        <div class="settings-save-row"><button type="button" class="btn" id="repoLocalPathBtn">Guardar pasta</button></div>
+      </div>` : ''}
       ${renderActivity(activity)}`;
   }
 
@@ -145,6 +181,11 @@
       state.loading = false;
     }
     paint();
+    // Show the account's repositories straight away: picking is the common case,
+    // and an empty box gives no clue that anything is there to pick.
+    if (!state.data.repository && state.data.providerReady && isSuperAdmin() && state.repositories === null) {
+      await searchRepositories();
+    }
   }
 
   async function createRepository() {
@@ -160,15 +201,50 @@
     await load(state.projectId, { withActivity: true });
   }
 
-  async function linkRepository() {
-    const ref = $('repoLinkRef')?.value?.trim();
+  async function linkRepository(ref) {
     if (!ref) throw new Error('Indique o repositório.');
     const payload = await apiRequest(`/${encodeURIComponent(state.projectId)}/repository/link`, {
       method: 'POST',
       body: { repository: ref },
     });
     window.showToast?.(`Repositório ligado: ${payload.repository.fullName}`, 'ok');
+    state.repositories = null;
+    state.search = '';
     await load(state.projectId, { withActivity: true });
+  }
+
+  /**
+   * Repositories come from the account the platform is authenticated as, so the
+   * engineer picks from what actually exists instead of typing a name that may not.
+   */
+  async function searchRepositories() {
+    // Repainting replaces the input element, so only give focus back if the engineer
+    // was typing in it — never steal it when the list loads on its own.
+    const wasTyping = document.activeElement?.id === 'repoSearch';
+    state.searching = true;
+    paint();
+    try {
+      const payload = await apiRequest(`/git-provider/repositories?q=${encodeURIComponent(state.search)}`);
+      state.repositories = payload.repositories || [];
+    } catch (error) {
+      state.repositories = [];
+      window.showToast?.(error.message, 'error');
+    } finally {
+      state.searching = false;
+      paint();
+      const input = wasTyping ? $('repoSearch') : null;
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    }
+  }
+
+  async function saveLocalPath() {
+    const payload = await apiRequest(`/${encodeURIComponent(state.projectId)}/repository`, {
+      method: 'PATCH',
+      body: { localPath: $('repoLocalPath')?.value?.trim() || '' },
+    });
+    if (state.data) state.data.repository = payload.repository;
+    window.showToast?.('Pasta local guardada.', 'ok');
+    paint();
   }
 
   async function unlinkRepository() {
@@ -187,17 +263,31 @@
   }
 
   document.addEventListener('click', (event) => {
+    const pick = event.target?.closest?.('.repo-pick');
+    if (pick) { guard(() => linkRepository(pick.dataset.repo))(); return; }
     const id = event.target?.id;
     if (id === 'repoCreateBtn') guard(createRepository)();
-    else if (id === 'repoLinkBtn') guard(linkRepository)();
     else if (id === 'repoUnlinkBtn') guard(unlinkRepository)();
+    else if (id === 'repoLocalPathBtn') guard(saveLocalPath)();
     else if (id === 'repoActivityBtn') guard(() => load(state.projectId, { withActivity: true }))();
+  });
+
+  document.addEventListener('input', (event) => {
+    if (event.target?.id !== 'repoSearch') return;
+    state.search = event.target.value;
+    // Debounced: the list comes from the GitHub API, one call per keystroke is rude.
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => searchRepositories(), 300);
   });
 
   window.ProjectRepositoryUI = {
     render(project) {
       if (!project?.id) return;
-      if (project.id !== state.projectId) state.activity = null;
+      if (project.id !== state.projectId) {
+        state.activity = null;
+        state.repositories = null;
+        state.search = '';
+      }
       load(project.id);
     },
   };
