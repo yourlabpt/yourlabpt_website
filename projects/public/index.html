@@ -519,10 +519,10 @@
 
             <!-- TAB: DELIVERY OS -->
             <div class="tab-panel hidden" data-panel="deliveryos">
-              <section class="panel section-panel pdos-shell">
+              <section class="panel section-panel pdos-shell" id="pdosShell">
                 <div id="pdosProjectHeader" class="pdos-project-header"></div>
 
-                <div id="pdosClientPortal" class="pdos-client-portal hidden" aria-label="Portal do cliente"></div>
+                <div id="pdosClientPortal" class="pdos-client-portal" aria-label="Linha de produção"></div>
 
                 <div class="pdos-timeline-block">
                   <div class="pdos-timeline-head">
@@ -890,13 +890,10 @@
                   <div>
                     <span class="settings-step-number">4</span>
                     <h3 class="panel-heading">Repositório do projecto</h3>
-                    <p>O trabalho acontece aqui. Os agentes escrevem no repositório e a plataforma acompanha o progresso.</p>
+                    <p>Configuração apenas — ligue ou crie o repositório aqui. O trabalho em si acontece na Linha de produção.</p>
                   </div>
-                  <button type="button" class="btn tiny" id="repoRefreshBtn" title="Actualizar">↺</button>
                 </div>
                 <div id="projectRepositoryPanel"></div>
-                <div id="projectOpenspecPanel" class="mt-12"></div>
-                <div id="projectOrchestrationPanel" class="mt-12"></div>
               </section>
 
               <section class="panel section-panel settings-section">
@@ -1423,10 +1420,8 @@
   <script src="/projects/static/work-items-ui.js?v=32" defer></script>
   <script src="/projects/static/agents-admin-ui.js?v=1" defer></script>
   <script src="/projects/static/project-repository-ui.js?v=1" defer></script>
-  <script src="/projects/static/openspec-ui.js?v=1" defer></script>
-  <script src="/projects/static/orchestration-ui.js?v=1" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
-  <script src="/projects/static/client-portal-ui.js?v=3" defer></script>
+  <script src="/projects/static/client-portal-ui.js?v=4" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

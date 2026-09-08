@@ -1282,8 +1282,12 @@ function navIconSvg(iconKey) {
   return `<svg class="nav-rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+// Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client's whole nav is Entrega.
+const CLIENT_VISIBLE_TABS = new Set(['projetos', 'deliveryos']);
+
 function isNavItemVisible(item) {
   if (item.superAdminOnly && !isSuperAdmin()) return false;
+  if (isClientUser() && !CLIENT_VISIBLE_TABS.has(item.id)) return false;
   if (item.id === 'tarefas') {
     if (!state.selectedProject) return false;
     const meta = window.workItemsTabMeta;
@@ -1511,8 +1515,6 @@ function renderActiveTab(project, tabId) {
       renderUsersPanel();
       renderMembers(project);
       window.ProjectRepositoryUI?.render?.(project);
-      window.OpenspecUI?.render?.(project);
-      window.OrchestrationUI?.render?.(project);
       setReadonlyByRole();
       break;
     case 'agentes':
@@ -2946,7 +2948,8 @@ function navigateToFilteredTab(tabId, filters = {}) {
 }
 
 function switchToTab(tabId) {
-  const target = tabId || 'projetos';
+  let target = tabId || 'projetos';
+  if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'deliveryos';
   if (target === 'tarefas') {
     const meta = window.workItemsTabMeta;
     const metaIsCurrent = meta?.projectId === state.selectedProject?.id;

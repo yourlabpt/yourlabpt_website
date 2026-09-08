@@ -3233,6 +3233,76 @@ label {
   padding: 20px 22px 28px;
 }
 
+/* Client role sees only the production-line dashboard — everything else in this
+   shell (module explorer, transitions, diagrams) is a partner/admin drill-down. */
+.pdos-shell.client-simple > * {
+  display: none;
+}
+.pdos-shell.client-simple > #pdosProjectHeader,
+.pdos-shell.client-simple > #pdosClientPortal {
+  display: block;
+}
+
+/* Linha de produção — the nine-stage strip on the project front page */
+.stage-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 2px 0;
+  margin-bottom: 10px;
+}
+.stage-dot-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.stage-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface, #202020);
+  border: 1px solid var(--line, #333);
+}
+.stage-dot-current {
+  width: 14px;
+  height: 14px;
+  background: var(--accent, #d4af37);
+  border: none;
+}
+.stage-dot-done {
+  background: var(--ok, #58d68d);
+  border: none;
+}
+.stage-dot-label {
+  font-size: 10px;
+  color: var(--muted, #a0a0a0);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.stage-strip-summaries {
+  margin: 0 0 4px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--muted, #a0a0a0);
+}
+.production-line-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .production-line-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .pdos-section-label {
   display: block;
   font-size: 0.72rem;

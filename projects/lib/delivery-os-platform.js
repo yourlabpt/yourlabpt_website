@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { canEditProject } = require('./project-access');
 
 const GATE_OUTCOMES = ['approved', 'changes_requested', 'rejected', 'needs_clarification', 'deferred'];
 const DECISION_STATUSES = ['proposed', 'decided', 'deferred', 'superseded'];
@@ -405,6 +406,9 @@ function buildClientPortalSummary(project, viewer) {
     id: s.id,
     label: s.label,
     status: s.status,
+    // Plain-language progress for this stage — the only thing a client sees about
+    // what is actually happening. No cost, no persona names, no execution mechanics.
+    summary: textOr(s.summary),
     requiresHumanApproval: s.requiresHumanApproval === true,
     approvedAt: s.approvedAt || null,
   }));
@@ -639,6 +643,32 @@ function registerDeliveryOsPlatformRoutes(app, deps) {
   app.get('/api/projects/projects/:projectId/client-portal', authMiddleware, loadProjectForUser, async (req, res) => {
     const summary = buildClientPortalSummary(req.loadedProject, req.auth.user);
     return res.json(summary);
+  });
+
+  // The plain-language progress line under a stage's dot — the only per-stage content
+  // a client ever sees. A manual field for now; personas will keep it updated later.
+  app.patch('/api/projects/projects/:projectId/stages/:stageId/summary', authMiddleware, loadProjectForUser, async (req, res) => {
+    try {
+      if (!canEditProject(req.auth.user, req.loadedProject)) {
+        return res.status(403).json({ message: 'Sem permissao para alterar este projecto.' });
+      }
+      const { projectId, stageId } = req.params;
+      const summary = textOr(req.body?.summary).slice(0, 400);
+      let updated = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        project.stages = ensureArray(project.stages).map((s) => (s.id === stageId ? { ...s, summary } : s));
+        project.updatedAt = nowIso();
+        updated = project.stages.find((s) => s.id === stageId) || null;
+        appendActivity(store, {
+          projectId, type: 'stage_summary_updated', stageId, userId: req.auth.user.id,
+        });
+      });
+      return res.json({ stage: updated });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
   });
 
   app.post('/api/projects/projects/:projectId/client-approvals', authMiddleware, loadProjectForUser, async (req, res) => {

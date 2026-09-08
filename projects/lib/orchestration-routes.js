@@ -1,34 +1,47 @@
 /**
- * Driving the persona chain: start it, see where it is, answer its question, raise the
- * cap, stop it.
+ * Driving the persona chain: start an Execução, see where it is, answer its question,
+ * raise the cap, stop it.
  *
- * `advance` decides and applies one step. When the step is a dispatch it prepares the
- * work item and returns what to run — the caller starts the run through the existing
- * agent-run path rather than this module opening a second way to execute agents.
+ * Partner/admin only — a client's view of progress is the existing client-portal
+ * (stage dots + plain-language summaries), not this. Nothing here (cost, persona
+ * identity, history) is ever client-visible.
  */
-const crypto = require('crypto');
 const loop = require('./orchestration-loop');
 const projectBudget = require('./project-budget');
-const agentPersonas = require('./agent-personas');
 const agentPlatformSettings = require('./agent-platform-settings');
-const workItems = require('./work-items');
+const { canEditProject, isClientViewer } = require('./project-access');
 
-function text(value, fallback = '') {
-  const result = value === null || value === undefined ? '' : String(value).trim();
-  return result || fallback;
+function requirePartnerOrAdmin(req, res, next) {
+  if (isClientViewer(req.auth?.user, req.loadedProject)) {
+    return res.status(403).json({ message: 'Sem permissao.' });
+  }
+  if (!canEditProject(req.auth?.user, req.loadedProject)) {
+    return res.status(403).json({ message: 'Sem permissao para alterar este projecto.' });
+  }
+  return next();
 }
 
-/** What the UI needs to show the chain's state in one call. */
+/** What the partner/admin UI needs to show the chain's state in one call. */
 function publicState(project, decision, now = Date.now()) {
-  const orchestration = loop.normalizeOrchestration(project.orchestration);
+  const execucao = loop.activeExecucao(project);
+  const rollup = loop.projectSpendRollup(project, now);
   return {
-    status: orchestration.status,
-    currentPersonaId: orchestration.currentPersonaId,
-    question: orchestration.question,
-    haltReason: orchestration.haltReason,
-    startedAt: orchestration.startedAt,
-    history: orchestration.history,
-    budget: projectBudget.budgetState(project.budget, now),
+    execucao: execucao ? {
+      id: execucao.id,
+      goal: execucao.goal,
+      changeId: execucao.changeId,
+      status: execucao.status,
+      currentPersonaId: execucao.currentPersonaId,
+      question: execucao.question,
+      haltReason: execucao.haltReason,
+      startedAt: execucao.startedAt,
+      history: execucao.history,
+      budget: projectBudget.budgetState(execucao.budget, now),
+    } : null,
+    past: loop.normalizeExecucoes(project)
+      .filter((entry) => entry.id !== execucao?.id)
+      .map((entry) => ({ id: entry.id, goal: entry.goal, status: entry.status, startedAt: entry.startedAt })),
+    rollup,
     next: decision ? {
       action: decision.action,
       personaId: decision.persona?.id || decision.personaId || '',
@@ -42,7 +55,6 @@ function publicState(project, decision, now = Date.now()) {
 function registerOrchestrationRoutes(app, deps) {
   const {
     authMiddleware,
-    requireRole,
     loadProjectForUser,
     updateStore,
     appendActivity,
@@ -56,7 +68,7 @@ function registerOrchestrationRoutes(app, deps) {
     return settings.personas || {};
   }
 
-  app.get('/api/projects/:projectId/orchestration', authMiddleware, loadProjectForUser, async (req, res) => {
+  app.get('/api/projects/:projectId/orchestration', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
       const project = req.loadedProject;
       const decision = loop.decideNext(project, { personaOverrides: await personaOverrides() });
@@ -66,28 +78,33 @@ function registerOrchestrationRoutes(app, deps) {
     }
   });
 
-  // Starting also raises the cap on a chain paused for budget — same entry point.
-  app.post('/api/projects/:projectId/orchestration/start', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+  // Starts a new Execução, or raises the cap on one paused for budget / halted.
+  // Dispatches immediately so starting actually starts work.
+  app.post('/api/projects/:projectId/orchestration/start', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
-      const caps = {
+      const input = {
+        goal: req.body?.goal,
+        changeId: req.body?.changeId,
         maxCostUsd: req.body?.maxCostUsd,
         maxHours: req.body?.maxHours,
       };
+      if (!input.goal || !String(input.goal).trim()) {
+        return res.status(400).json({ message: 'Descreva o objectivo desta execucao.' });
+      }
       let state = null;
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);
         if (!project) throw new Error('Projeto nao encontrado.');
-        loop.startChain(project, caps);
+        const execucao = loop.startExecucao(project, input);
         project.updatedAt = nowIso();
         state = publicState(project, null);
         appendActivity(store, {
           actorUserId: req.auth.user.id,
           projectId: project.id,
           action: 'orchestration_started',
-          details: { maxCostUsd: project.budget.maxCostUsd, maxHours: project.budget.maxHours },
+          details: { execucaoId: execucao.id, goal: execucao.goal, maxCostUsd: execucao.budget.maxCostUsd, maxHours: execucao.budget.maxHours },
         });
       });
-      // Dispatch straight away so starting the chain actually starts work.
       if (driver) await driver.advanceOnce(req.params.projectId, req.auth.user.id);
       return res.json(state);
     } catch (error) {
@@ -95,114 +112,7 @@ function registerOrchestrationRoutes(app, deps) {
     }
   });
 
-  /**
-   * One step of the chain. Returns the decision; when it is a dispatch the work item
-   * exists and is ready to be run.
-   */
-  app.post('/api/projects/:projectId/orchestration/advance', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
-    try {
-      const overrides = await personaOverrides();
-      let payload = null;
-      await updateStore(async (store) => {
-        const project = store.projects.find((entry) => entry.id === req.params.projectId);
-        if (!project) throw new Error('Projeto nao encontrado.');
-
-        const decision = loop.decideNext(project, { personaOverrides: overrides });
-
-        if (decision.action === 'halt' && loop.normalizeOrchestration(project.orchestration).status !== 'halted') {
-          loop.haltChain(project, decision.reason);
-        }
-        if (decision.action === 'paused_budget') {
-          // Stop the clock so a paused chain does not keep burning hours.
-          loop.stopChain(project, 'paused_budget');
-        }
-        if (decision.action === 'complete') {
-          loop.stopChain(project, 'completed');
-        }
-
-        let dispatch = null;
-        if (decision.action === 'dispatch') {
-          const item = decision.workItem || createPersonaWorkItem(project, decision.persona, req.auth.user.id);
-          loop.markDispatched(project, decision.persona, item);
-          dispatch = {
-            workItemId: item.id,
-            agentType: decision.persona.taskTypes[0],
-            agentId: decision.persona.agentId || '',
-            personaId: decision.persona.id,
-            deliveryStageId: item.deliveryStageId,
-          };
-          appendActivity(store, {
-            actorUserId: req.auth.user.id,
-            projectId: project.id,
-            action: 'orchestration_dispatch',
-            details: { personaId: decision.persona.id, workItemId: item.id },
-          });
-        }
-
-        project.updatedAt = nowIso();
-        payload = { ...publicState(project, decision), dispatch };
-      });
-      return res.json(payload);
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
-  });
-
-  function createPersonaWorkItem(project, persona, actorUserId) {
-    const item = workItems.normalizeWorkItem({
-      id: `task_${crypto.randomUUID()}`,
-      title: `${persona.label} — ${text(project.name, 'projecto')}`,
-      status: 'ready',
-      origin: 'orchestration',
-      executorMode: 'agent',
-      agentType: persona.taskTypes[0],
-      agentId: persona.agentId || '',
-      deliveryStageId: persona.deliveryStages[0],
-      descriptionMarkdown: persona.summary,
-      createdBy: actorUserId,
-    }, { project });
-    workItems.setWorkItems(project, [...workItems.getWorkItems(project), item]);
-    return item;
-  }
-
-  // Records what a persona produced. This is what moves the chain forward.
-  app.post('/api/projects/:projectId/orchestration/result', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
-    try {
-      const overrides = await personaOverrides();
-      let payload = null;
-      await updateStore(async (store) => {
-        const project = store.projects.find((entry) => entry.id === req.params.projectId);
-        if (!project) throw new Error('Projeto nao encontrado.');
-        loop.recordResult(project, {
-          personaId: req.body?.personaId,
-          workItemId: req.body?.workItemId,
-          outcome: req.body?.outcome,
-          summary: req.body?.summary,
-          failureMessage: req.body?.failureMessage,
-          costUsd: req.body?.costUsd,
-          seconds: req.body?.seconds,
-          personaOverrides: overrides,
-        });
-        project.updatedAt = nowIso();
-        payload = publicState(project, loop.decideNext(project, { personaOverrides: overrides }));
-        appendActivity(store, {
-          actorUserId: req.auth.user.id,
-          projectId: project.id,
-          action: 'orchestration_result',
-          details: {
-            personaId: text(req.body?.personaId),
-            outcome: text(req.body?.outcome, 'completed'),
-            costUsd: Number(req.body?.costUsd) || 0,
-          },
-        });
-      });
-      return res.json(payload);
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
-  });
-
-  app.post('/api/projects/:projectId/orchestration/answer', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+  app.post('/api/projects/:projectId/orchestration/answer', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
       const overrides = await personaOverrides();
       let payload = null;
@@ -210,7 +120,7 @@ function registerOrchestrationRoutes(app, deps) {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);
         if (!project) throw new Error('Projeto nao encontrado.');
         const accepted = req.body?.accepted !== false;
-        const question = loop.normalizeOrchestration(project.orchestration).question;
+        const question = loop.activeExecucao(project)?.question;
         loop.answerQuestion(project, { accepted });
         project.updatedAt = nowIso();
         payload = publicState(project, loop.decideNext(project, { personaOverrides: overrides }));
@@ -229,20 +139,20 @@ function registerOrchestrationRoutes(app, deps) {
     }
   });
 
-  app.post('/api/projects/:projectId/orchestration/stop', authMiddleware, requireRole('super_admin'), loadProjectForUser, async (req, res) => {
+  app.post('/api/projects/:projectId/orchestration/stop', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
       let payload = null;
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);
         if (!project) throw new Error('Projeto nao encontrado.');
-        loop.stopChain(project, 'idle');
+        loop.stopChain(project, 'abandoned');
         project.updatedAt = nowIso();
         payload = publicState(project, null);
         appendActivity(store, {
           actorUserId: req.auth.user.id,
           projectId: project.id,
           action: 'orchestration_stopped',
-          details: { spentUsd: projectBudget.normalizeProjectBudget(project.budget).spentUsd },
+          details: { spentUsd: loop.projectSpendRollup(project).totalSpentUsd },
         });
       });
       return res.json(payload);
@@ -250,8 +160,6 @@ function registerOrchestrationRoutes(app, deps) {
       return res.status(400).json({ message: error.message });
     }
   });
-
-  void agentPersonas;
 }
 
 module.exports = { registerOrchestrationRoutes, publicState };

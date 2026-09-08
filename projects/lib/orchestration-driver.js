@@ -1,10 +1,11 @@
 /**
- * What makes the chain run unattended.
+ * What makes an Execução run unattended.
  *
  * There is no scheduler and no polling: the chain propagates itself. A run finishing
  * records its result and immediately asks what is next, dispatching it in the same
  * breath. The chain therefore advances exactly as fast as the runtime works, and stops
- * dead the moment a persona raises a question, the budget runs out, or a failure repeats.
+ * dead the moment a persona raises a question, the Execução's budget runs out, or a
+ * failure repeats.
  *
  * Dispatch goes through the extracted `startAgentRun`, so there is still only one way
  * to execute an agent.
@@ -41,7 +42,8 @@ function createDriver(deps) {
 
   /**
    * Advances one step and starts the run if the step is a dispatch.
-   * Safe to call at any time: on a chain that is idle, waiting or halted it does nothing.
+   * Safe to call at any time: on a project with no active Execução, or one waiting
+   * or halted, it does nothing.
    */
   async function advanceOnce(projectId, actorUserId = 'orchestration') {
     const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
@@ -57,7 +59,7 @@ function createDriver(deps) {
       decisionAction = decision.action;
 
       if (decision.action === 'halt') {
-        if (loop.normalizeOrchestration(project.orchestration).status !== 'halted') {
+        if (loop.activeExecucao(project)?.status !== 'halted') {
           loop.haltChain(project, decision.reason);
           appendActivity(store, {
             actorUserId, projectId, action: 'orchestration_halted',
@@ -67,11 +69,13 @@ function createDriver(deps) {
         return;
       }
       if (decision.action === 'paused_budget') {
-        loop.stopChain(project, 'paused_budget');
-        appendActivity(store, {
-          actorUserId, projectId, action: 'orchestration_budget_exhausted',
-          details: { reason: decision.budget.reason, spentUsd: decision.budget.spentUsd },
-        });
+        if (loop.activeExecucao(project)?.status !== 'paused_budget') {
+          loop.stopChain(project, 'paused_budget');
+          appendActivity(store, {
+            actorUserId, projectId, action: 'orchestration_budget_exhausted',
+            details: { reason: decision.budget.reason, spentUsd: decision.budget.spentUsd },
+          });
+        }
         return;
       }
       if (decision.action === 'complete') {
@@ -134,9 +138,9 @@ function createDriver(deps) {
     await updateStore(async (store) => {
       const project = store.projects.find((entry) => entry.id === projectId);
       if (!project) return;
-      const orchestration = loop.normalizeOrchestration(project.orchestration);
-      // Only chain-driven runs advance the chain; a hand-started run must not.
-      if (!['running', 'waiting_human'].includes(orchestration.status)) return;
+      const execucao = loop.activeExecucao(project);
+      // Only a chain-driven Execução advances itself; a hand-started run must not.
+      if (!execucao || !['running', 'waiting_human'].includes(execucao.status)) return;
 
       loop.recordResult(project, { ...result, personaOverrides: settings.personas || {} });
       project.updatedAt = nowIso();
@@ -150,7 +154,7 @@ function createDriver(deps) {
       });
       // recordResult raises the standing question when one is due; only keep going
       // when it did not.
-      shouldAdvance = loop.normalizeOrchestration(project.orchestration).status === 'running';
+      shouldAdvance = loop.activeExecucao(project)?.status === 'running';
     });
 
     if (!shouldAdvance || options.advance === false) return { advanced: false };
@@ -161,8 +165,8 @@ function createDriver(deps) {
    * The persona a work item belongs to, or null when the item is not part of a chain.
    */
   function personaIdForWorkItem(project, workItemId) {
-    const orchestration = loop.normalizeOrchestration(project?.orchestration);
-    if (orchestration.currentWorkItemId === text(workItemId)) return orchestration.currentPersonaId;
+    const execucao = loop.activeExecucao(project);
+    if (execucao?.currentWorkItemId === text(workItemId)) return execucao.currentPersonaId;
     return '';
   }
 

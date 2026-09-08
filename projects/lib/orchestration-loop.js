@@ -1,21 +1,34 @@
 /**
  * The chain: personas run one after another without waiting for a phase to end.
  *
+ * A project can have several Execuções over its life (build v1, add a feature three
+ * months later, fix something later still). Each Execução is its own unit: its own
+ * goal, its own OpenSpec change proposal, its own budget, clock and persona history.
+ * Strictly sequential — a project has at most one non-terminal Execução; finished
+ * ones stay in the list as a record.
+ *
  * This module decides *what happens next* and nothing else. It performs no dispatch,
  * writes no store, and calls no provider — so the rule that actually governs spend and
  * safety is a pure function that can be tested exhaustively. The caller applies the
  * decision.
  *
- * The chain stops for exactly three things:
+ * An Execução stops for exactly three things:
  *   - a question to a human (mockup acceptance, code review before commit)
- *   - the project budget running out
+ *   - its own budget running out
  *   - the same failure repeating, which means more retries will not help
  */
+const crypto = require('crypto');
 const agentPersonas = require('./agent-personas');
 const projectBudget = require('./project-budget');
 const workItems = require('./work-items');
 
-const TERMINAL_STATUSES = new Set(['halted', 'completed']);
+// Finished forever — never resumed, excluded from "the active Execução."
+const FINISHED_STATUSES = new Set(['completed', 'abandoned']);
+// Stopped but still the project's live goal: paused_budget and halted are both
+// resumed by raising the cap / making the call that unblocks them, same as
+// waiting_human is resumed by answering. Only completed/abandoned truly end an
+// Execução's life.
+const ALL_STATUSES = new Set(['running', 'waiting_human', 'paused_budget', 'halted', ...FINISHED_STATUSES]);
 const REPEAT_LIMIT = 3;
 
 function text(value, fallback = '') {
@@ -27,19 +40,24 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeOrchestration(raw = {}) {
+function normalizeExecucao(raw = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
   return {
-    status: text(src.status, 'idle'),
+    id: text(src.id) || `exec_${crypto.randomUUID()}`,
+    goal: text(src.goal),
+    // The change proposal this Execução targets — what it costs and what it touches
+    // are the same question once both point at the same id.
+    changeId: text(src.changeId),
+    status: ALL_STATUSES.has(text(src.status)) ? text(src.status) : 'running',
     startedAt: text(src.startedAt),
     updatedAt: text(src.updatedAt),
-    // The persona currently dispatched, if any.
     currentPersonaId: text(src.currentPersonaId),
     currentWorkItemId: text(src.currentWorkItemId),
     question: src.question && typeof src.question === 'object' ? {
       personaId: text(src.question.personaId),
       kind: text(src.question.kind, 'review'),
       text: text(src.question.text),
+      workItemId: text(src.question.workItemId),
       raisedAt: text(src.question.raisedAt),
     } : null,
     haltReason: text(src.haltReason),
@@ -54,7 +72,41 @@ function normalizeOrchestration(raw = {}) {
       seconds: Number(entry?.seconds) || 0,
       at: text(entry?.at),
     })),
+    budget: projectBudget.normalizeProjectBudget(src.budget),
   };
+}
+
+function normalizeExecucoes(project) {
+  return ensureArray(project?.execucoes).map(normalizeExecucao);
+}
+
+/** The one Execução still in play, or null when the project is between goals. */
+function activeExecucao(project) {
+  return normalizeExecucoes(project).find((entry) => !FINISHED_STATUSES.has(entry.status)) || null;
+}
+
+/** Sum of spend across every Execução this project has ever run — the project-level metric. */
+function projectSpendRollup(project, now = Date.now()) {
+  const execucoes = normalizeExecucoes(project);
+  return {
+    totalSpentUsd: execucoes.reduce((sum, entry) => sum + entry.budget.spentUsd, 0),
+    totalHours: execucoes.reduce((sum, entry) => sum + projectBudget.elapsedSeconds(entry.budget, now) / 3600, 0),
+    count: execucoes.length,
+    completed: execucoes.filter((entry) => entry.status === 'completed').length,
+  };
+}
+
+function writeExecucao(project, execucao) {
+  const execucoes = normalizeExecucoes(project);
+  const index = execucoes.findIndex((entry) => entry.id === execucao.id);
+  if (index === -1) execucoes.push(execucao);
+  else execucoes[index] = execucao;
+  project.execucoes = execucoes;
+  return execucao;
+}
+
+function stamp(execucao, now) {
+  return { ...execucao, updatedAt: new Date(now).toISOString() };
 }
 
 /**
@@ -92,10 +144,10 @@ function pendingUnitsFor(project, persona) {
 }
 
 /**
- * Decides the next move for a project's chain.
+ * Decides the next move for a project's active Execução.
  *
  * Returns one of:
- *   { action: 'idle' }                    the chain was never started
+ *   { action: 'idle' }                    no Execução is in play
  *   { action: 'wait_human', question }     a standing question is open
  *   { action: 'paused_budget', budget }    money or hours exhausted
  *   { action: 'halt', reason }             the same failure keeps repeating
@@ -104,54 +156,52 @@ function pendingUnitsFor(project, persona) {
  */
 function decideNext(project, options = {}) {
   const now = options.now ?? Date.now();
-  const orchestration = normalizeOrchestration(project?.orchestration);
+  const execucao = activeExecucao(project);
   const overrides = options.personaOverrides || {};
   const personas = agentPersonas.listPersonas(overrides).filter((persona) => persona.enabled);
 
-  if (orchestration.status === 'idle') return { action: 'idle', orchestration };
-  if (TERMINAL_STATUSES.has(orchestration.status)) {
-    return { action: orchestration.status === 'halted' ? 'halt' : 'complete', orchestration, reason: orchestration.haltReason };
+  if (!execucao) return { action: 'idle', execucao: null };
+  if (execucao.status === 'halted') return { action: 'halt', execucao, reason: execucao.haltReason };
+  if (execucao.status === 'paused_budget') {
+    return { action: 'paused_budget', execucao, budget: projectBudget.budgetState(execucao.budget, now) };
   }
 
-  // A question outranks everything: while one is open the chain must not spend.
-  if (orchestration.question) {
-    return { action: 'wait_human', question: orchestration.question, orchestration };
+  // A question outranks everything: while one is open the Execução must not spend.
+  if (execucao.question) {
+    return { action: 'wait_human', question: execucao.question, execucao };
   }
 
-  const budget = projectBudget.budgetState(project?.budget, now);
+  const budget = projectBudget.budgetState(execucao.budget, now);
   if (budget.exhausted) {
-    return { action: 'paused_budget', budget, orchestration };
+    return { action: 'paused_budget', budget, execucao };
   }
 
-  const repeated = repeatedFailure(orchestration.history);
+  const repeated = repeatedFailure(execucao.history);
   if (repeated) {
     return {
       action: 'halt',
-      orchestration,
+      execucao,
       reason: `A mesma falha repetiu-se ${repeated.count}x em ${repeated.personaId}. E preciso uma decisao humana antes de continuar.`,
       repeated,
     };
   }
 
   // Something is already in flight; nothing to decide until it reports back.
-  if (orchestration.currentPersonaId) {
-    return { action: 'running', orchestration, personaId: orchestration.currentPersonaId };
+  if (execucao.currentPersonaId) {
+    return { action: 'running', execucao, personaId: execucao.currentPersonaId };
   }
 
-  const completed = completedPersonaIds(orchestration.history);
+  const completed = completedPersonaIds(execucao.history);
   for (const persona of personas) {
-    // A persona whose result stops the chain has already been answered if it is in
-    // `completed` — the answer is what cleared the question.
     if (persona.scopedToSingleModule) {
       const units = pendingUnitsFor(project, persona);
       if (units.length) {
         return {
-          action: 'dispatch', persona, orchestration, budget,
+          action: 'dispatch', persona, execucao, budget,
           workItem: units[0],
           remainingUnits: units.length,
         };
       }
-      // No units left for this persona — it is done for now.
       continue;
     }
     if (completed.has(persona.id)) continue;
@@ -159,31 +209,31 @@ function decideNext(project, options = {}) {
     const missing = persona.requiresUpstream.filter((id) => !completed.has(id));
     if (missing.length) {
       return {
-        action: 'blocked', orchestration, persona,
+        action: 'blocked', execucao, persona,
         reason: `${persona.label} depende de ${missing.join(', ')}, que ainda nao correu.`,
       };
     }
-    return { action: 'dispatch', persona, orchestration, budget, workItem: null };
+    return { action: 'dispatch', persona, execucao, budget, workItem: null };
   }
 
   // Reaching the end with nothing to build is not success. If the Tech Lead ran and
-  // produced no implementation units, the chain would otherwise report "complete"
+  // produced no implementation units, the Execução would otherwise report "complete"
   // having written no code at all.
   const implementer = personas.find((persona) => persona.id === 'developer');
   if (
     implementer
     && completed.has('tech_lead')
-    && !orchestration.history.some((entry) => entry.personaId === 'developer')
+    && !execucao.history.some((entry) => entry.personaId === 'developer')
     && !workItems.getWorkItems(project).some((item) => implementer.taskTypes.includes(text(item.agentType)))
   ) {
     return {
       action: 'halt',
-      orchestration,
+      execucao,
       reason: 'O Tech Lead terminou sem produzir nenhuma unidade de implementacao. Nada foi construido — reveja a decomposicao antes de continuar.',
     };
   }
 
-  return { action: 'complete', orchestration };
+  return { action: 'complete', execucao };
 }
 
 /**
@@ -211,88 +261,111 @@ function questionFor(persona, workItem) {
 
 /* ---------------------------------------------------------------- transitions */
 /*
- * State changes applied to a project. Each one banks or resumes the clock, because
- * the budget must never count time the chain was not actually working.
+ * State changes applied to a project's Execuções. Each one banks or resumes the
+ * clock, because the budget must never count time the chain was not actually working.
  */
 
-function stamp(orchestration, now) {
-  return { ...orchestration, updatedAt: new Date(now).toISOString() };
-}
+/**
+ * Starts a brand new Execução, or — when the current one is paused for budget or
+ * halted — raises its cap and resumes it instead of abandoning its goal and history.
+ * Refuses when an Execução is already actively running: only one goal at a time.
+ */
+function startExecucao(project, input = {}, now = Date.now()) {
+  const existing = activeExecucao(project);
+  if (existing && (existing.status === 'running' || existing.status === 'waiting_human')) {
+    throw new Error('Ja existe uma execucao activa neste projecto.');
+  }
 
-function startChain(project, caps = {}, now = Date.now()) {
-  const orchestration = normalizeOrchestration(project.orchestration);
-  const current = projectBudget.normalizeProjectBudget(project.budget);
-  project.budget = projectBudget.startClock({
-    ...current,
-    maxCostUsd: caps.maxCostUsd !== undefined ? Number(caps.maxCostUsd) || 0 : current.maxCostUsd,
-    maxHours: caps.maxHours !== undefined ? Number(caps.maxHours) || 0 : current.maxHours,
-  }, now);
-  project.orchestration = stamp({
-    ...orchestration,
+  if (existing) {
+    // Same goal, more room to work — not a new Execução.
+    const resumed = stamp({
+      ...existing,
+      status: 'running',
+      haltReason: '',
+      budget: projectBudget.startClock({
+        ...existing.budget,
+        maxCostUsd: input.maxCostUsd !== undefined ? Number(input.maxCostUsd) || 0 : existing.budget.maxCostUsd,
+        maxHours: input.maxHours !== undefined ? Number(input.maxHours) || 0 : existing.budget.maxHours,
+      }, now),
+    }, now);
+    return writeExecucao(project, resumed);
+  }
+
+  const startedAtIso = new Date(now).toISOString();
+  const created = normalizeExecucao({
+    goal: input.goal,
+    changeId: input.changeId,
     status: 'running',
-    startedAt: orchestration.startedAt || new Date(now).toISOString(),
-    question: null,
-    haltReason: '',
-  }, now);
-  return project.orchestration;
+    startedAt: startedAtIso,
+    updatedAt: startedAtIso,
+    budget: projectBudget.startClock({
+      maxCostUsd: Number(input.maxCostUsd) || 0,
+      maxHours: Number(input.maxHours) || 0,
+    }, now),
+  });
+  return writeExecucao(project, created);
 }
 
 /** The chain is about to wait on a person — stop the clock so waiting is free. */
 function raiseQuestion(project, question, now = Date.now()) {
-  project.budget = projectBudget.stopClock(project.budget, now);
-  project.orchestration = stamp({
-    ...normalizeOrchestration(project.orchestration),
+  const execucao = activeExecucao(project);
+  if (!execucao) throw new Error('Nao ha execucao activa.');
+  return writeExecucao(project, stamp({
+    ...execucao,
     status: 'waiting_human',
     currentPersonaId: '',
     currentWorkItemId: '',
+    budget: projectBudget.stopClock(execucao.budget, now),
     question,
-  }, now);
-  return project.orchestration;
+  }, now));
 }
 
 function answerQuestion(project, { accepted = true } = {}, now = Date.now()) {
-  const orchestration = normalizeOrchestration(project.orchestration);
-  if (!orchestration.question) throw new Error('Nao ha nenhuma pergunta em aberto.');
+  const execucao = activeExecucao(project);
+  if (!execucao?.question) throw new Error('Nao ha nenhuma pergunta em aberto.');
   if (!accepted) {
     // Rejecting is not a halt: the persona runs again with the feedback.
-    project.budget = projectBudget.startClock(project.budget, now);
-    project.orchestration = stamp({
-      ...orchestration,
+    return writeExecucao(project, stamp({
+      ...execucao,
       status: 'running',
       question: null,
-      history: orchestration.history.filter((entry) => entry.personaId !== orchestration.question.personaId),
-    }, now);
-    return project.orchestration;
+      budget: projectBudget.startClock(execucao.budget, now),
+      history: execucao.history.filter((entry) => entry.personaId !== execucao.question.personaId),
+    }, now));
   }
-  project.budget = projectBudget.startClock(project.budget, now);
-  project.orchestration = stamp({ ...orchestration, status: 'running', question: null }, now);
-  return project.orchestration;
+  return writeExecucao(project, stamp({
+    ...execucao,
+    status: 'running',
+    question: null,
+    budget: projectBudget.startClock(execucao.budget, now),
+  }, now));
 }
 
 function markDispatched(project, persona, workItem, now = Date.now()) {
-  project.budget = projectBudget.startClock(project.budget, now);
-  project.orchestration = stamp({
-    ...normalizeOrchestration(project.orchestration),
+  const execucao = activeExecucao(project);
+  if (!execucao) throw new Error('Nao ha execucao activa.');
+  return writeExecucao(project, stamp({
+    ...execucao,
     status: 'running',
     currentPersonaId: persona.id,
     currentWorkItemId: text(workItem?.id),
-  }, now);
-  return project.orchestration;
+    budget: projectBudget.startClock(execucao.budget, now),
+  }, now));
 }
 
 /**
  * Records what a persona did, and what it cost. Raises the standing question when the
- * persona's result is one a human must answer before the chain moves on.
+ * persona's result is one a human must answer before the Execução moves on.
  */
 function recordResult(project, result = {}, now = Date.now()) {
-  const orchestration = normalizeOrchestration(project.orchestration);
-  const personaId = text(result.personaId, orchestration.currentPersonaId);
+  const execucao = activeExecucao(project);
+  if (!execucao) throw new Error('Nao ha execucao activa.');
+  const personaId = text(result.personaId, execucao.currentPersonaId);
   const outcome = text(result.outcome, 'completed');
-  project.budget = projectBudget.recordSpend(project.budget, result.costUsd);
 
   const entry = {
     personaId,
-    workItemId: text(result.workItemId, orchestration.currentWorkItemId),
+    workItemId: text(result.workItemId, execucao.currentWorkItemId),
     outcome,
     summary: text(result.summary),
     failureSignature: outcome === 'failed'
@@ -303,55 +376,62 @@ function recordResult(project, result = {}, now = Date.now()) {
     at: new Date(now).toISOString(),
   };
 
-  project.orchestration = stamp({
-    ...orchestration,
+  writeExecucao(project, stamp({
+    ...execucao,
     currentPersonaId: '',
     currentWorkItemId: '',
-    history: [...orchestration.history, entry],
-  }, now);
+    budget: projectBudget.recordSpend(execucao.budget, result.costUsd),
+    history: [...execucao.history, entry],
+  }, now));
 
   const persona = agentPersonas.resolvePersona(personaId, result.personaOverrides || {});
   if (outcome === 'completed' && persona?.requiresHumanApproval) {
     raiseQuestion(project, questionFor(persona, { id: entry.workItemId }), now);
   }
-  return project.orchestration;
+  return activeExecucao(project);
 }
 
 function haltChain(project, reason, now = Date.now()) {
-  project.budget = projectBudget.stopClock(project.budget, now);
-  project.orchestration = stamp({
-    ...normalizeOrchestration(project.orchestration),
+  const execucao = activeExecucao(project);
+  if (!execucao) throw new Error('Nao ha execucao activa.');
+  return writeExecucao(project, stamp({
+    ...execucao,
     status: 'halted',
     currentPersonaId: '',
+    budget: projectBudget.stopClock(execucao.budget, now),
     haltReason: text(reason),
-  }, now);
-  return project.orchestration;
+  }, now));
 }
 
-function stopChain(project, status = 'idle', now = Date.now()) {
-  project.budget = projectBudget.stopClock(project.budget, now);
-  project.orchestration = stamp({
-    ...normalizeOrchestration(project.orchestration),
+/** Ends the active Execução — completed (the goal was met) or abandoned (given up on). */
+function stopChain(project, status = 'abandoned', now = Date.now()) {
+  const execucao = activeExecucao(project);
+  if (!execucao) throw new Error('Nao ha execucao activa.');
+  return writeExecucao(project, stamp({
+    ...execucao,
     status,
     currentPersonaId: '',
     currentWorkItemId: '',
-  }, now);
-  return project.orchestration;
+    budget: projectBudget.stopClock(execucao.budget, now),
+  }, now));
 }
 
 module.exports = {
   REPEAT_LIMIT,
+  activeExecucao,
   answerQuestion,
   decideNext,
+  failureSignature,
   haltChain,
   markDispatched,
+  normalizeExecucao,
+  normalizeExecucoes,
+  pendingUnitsFor,
+  projectSpendRollup,
+  questionFor,
   raiseQuestion,
   recordResult,
-  startChain,
-  stopChain,
-  failureSignature,
-  normalizeOrchestration,
-  pendingUnitsFor,
-  questionFor,
   repeatedFailure,
+  startExecucao,
+  stopChain,
 };

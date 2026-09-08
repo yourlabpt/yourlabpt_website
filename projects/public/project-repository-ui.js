@@ -192,7 +192,6 @@
     else if (id === 'repoLinkBtn') guard(linkRepository)();
     else if (id === 'repoUnlinkBtn') guard(unlinkRepository)();
     else if (id === 'repoActivityBtn') guard(() => load(state.projectId, { withActivity: true }))();
-    else if (id === 'repoRefreshBtn') guard(() => load(state.projectId, { withActivity: Boolean(state.activity) }))();
   });
 
   window.ProjectRepositoryUI = {
