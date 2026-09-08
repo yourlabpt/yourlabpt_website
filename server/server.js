@@ -13,6 +13,7 @@ const { getDb: getDigitalizeptDb, nowIso: digitalizeptNow, logEvento: digitalize
 const { renderContractPdf, renderContractPdfBuffer } = require('./lib/digitalizept-pdf');
 const { scaffoldClosedDeal } = require('./lib/digitalizept-work');
 const { deleteClosedDeal } = require('./lib/digitalizept-deals');
+const { importExternalDeal } = require('./lib/digitalizept-import');
 const { writeDemoFolder } = require('./lib/digitalizept-demos');
 const {
     reusableLeadId,
@@ -390,6 +391,21 @@ app.get('/demos/spyfu/api/spyfu/*', async (req, res) => {
 // raw templates for copy-paste into a competing site.
 app.use('/digitalizept/boilerplates', sellerAssetGuard);
 app.use('/digitalizept/samples', sellerAssetGuard);
+
+// Free-tier digitalize sites are reachable at their own subdomain
+// ({slug}.digitalizemeunegocio.pt), not just at yourlabpt.com/d/:slug — same
+// file as that route serves; public.html reads the slug from the hostname
+// instead of the path when it's on this domain. Only the root path is
+// intercepted so /api/*, /digitalizept/*.css|js etc keep working normally —
+// the browser requests those from the same host once the page has loaded.
+const DIGITALIZE_FREE_DOMAIN_ROOT = 'digitalizemeunegocio.pt';
+app.get('/', (req, res, next) => {
+    if (!req.hostname || !req.hostname.endsWith(`.${DIGITALIZE_FREE_DOMAIN_ROOT}`)) return next();
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.sendFile(path.join(__dirname, '..', 'digitalizept', 'public.html'));
+});
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '..'), {
@@ -2204,7 +2220,15 @@ app.post('/api/digitalize/sessoes/:token/checkout', async (req, res) => {
         // Re-read after the patch above so a domain/plan choice made on this same
         // request (or just before it) is reflected in the authoritative amount.
         const patchedState = digitalizeApp.getSession(db, req.params.token);
-        const amountCents = digitalizeApp.totalFor(patchedState.dados);
+        const plano = digitalizeApp.planoFor(patchedState.dados);
+        const extra = digitalizeApp.extraFor(patchedState.dados);
+        const isMensalidade = extra.id === 'mensalidade';
+        // Mensalidade: site price is a one-off charged alongside the first month,
+        // not folded into the recurring Price \u2014 same idea either way, just where
+        // the domain-year add-on's cost lands when it's not the mensalidade.
+        const oneTimeCents = plano.precoCentimos + (isMensalidade ? 0 : extra.centimos);
+        const recurringCents = isMensalidade ? extra.centimos : 0;
+        const amountCents = oneTimeCents + recurringCents;
 
         const pagamentoId = crypto.randomUUID().replace(/-/g, '').slice(0, 15);
         const now = digitalizeptNow();
@@ -2217,7 +2241,8 @@ app.post('/api/digitalize/sessoes/:token/checkout', async (req, res) => {
         const returnBase = `${origin}/digitalize/c/${encodeURIComponent(state.token)}`;
         const { redirectUrl } = await digitalizeApp.payments.createCheckout({
             orderId: pagamentoId,
-            amountCents,
+            oneTimeCents,
+            recurringCents,
             description: `Site + dom\u00ednio \u2014 ${clienteNome}`.slice(0, 200),
             customerEmail: clienteEmail,
             successUrl: `${returnBase}?pagamento=sucesso`,
@@ -2276,6 +2301,19 @@ app.get('/api/digitalize/sessoes/:token/pagamento', async (req, res) => {
 // guaranteed to reach it even after paying (lost connection, closed tab).
 // Needs the exact raw body to verify the signature \u2014 see server.js's
 // express.json() verify callback, which stashes it on req.rawBody.
+// Recurring "mensalidade" plans have no ongoing state page \u2014 a failed renewal
+// or a cancellation only ever shows up here, so this is the only place that
+// can catch it. There's no client-facing notification system for this yet,
+// so it goes to the operator's own inbox rather than being silently dropped.
+async function notifyOpsSubscriptionIssue(subject, details) {
+    const to = cleanText(process.env.LEAD_NOTIFY_TO, 600) || DEFAULT_LEAD_NOTIFY_TO;
+    await sendProjectNotificationEmail({
+        to,
+        subject: `[Digitalize] ${subject}`,
+        text: details
+    }).catch((err) => console.error('digitalize subscription alert email failed:', err.message));
+}
+
 app.post('/api/digitalize/callback/stripe', async (req, res) => {
     let event;
     try {
@@ -2285,31 +2323,60 @@ app.post('/api/digitalize/callback/stripe', async (req, res) => {
         return res.status(400).send('bad signature');
     }
 
-    const relevant = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'];
-    if (event.type === 'checkout.session.async_payment_failed') {
-        console.warn('digitalize callback: async payment failed for', event.data.object.client_reference_id);
-        return res.status(200).send('ok');
-    }
-    if (!relevant.includes(event.type)) return res.status(200).send('ok'); // not ours to handle
-
-    const session = event.data.object;
-    // Delayed-notification methods fire "completed" while still unpaid \u2014 the
-    // async_payment_succeeded event is what actually confirms those later.
-    if (session.payment_status === 'unpaid') return res.status(200).send('ok');
-
-    const orderId = String(session.client_reference_id || (session.metadata && session.metadata.orderId) || '').trim();
-    if (!orderId) return res.status(200).send('ok');
-
     try {
         const db = getDigitalizeptDb();
+
+        if (event.type === 'checkout.session.async_payment_failed') {
+            console.warn('digitalize callback: async payment failed for', event.data.object.client_reference_id);
+            return res.status(200).send('ok');
+        }
+
+        // Renewal outcomes for an existing mensalidade subscription \u2014 matched by
+        // subscription id, not by the original checkout's orderId.
+        if (event.type === 'invoice.payment_failed' || event.type === 'customer.subscription.deleted') {
+            const subscriptionId = String(
+                event.data.object.subscription || event.data.object.id || ''
+            ).trim();
+            if (!subscriptionId) return res.status(200).send('ok');
+            const pagamento = db.prepare('SELECT * FROM digitalize_pagamento WHERE stripe_subscription_id = ?').get(subscriptionId);
+            if (pagamento) {
+                const novoEstado = event.type === 'customer.subscription.deleted' ? 'cancelada' : 'falhou';
+                db.prepare('UPDATE digitalize_pagamento SET subscription_estado = ? WHERE id = ?').run(novoEstado, pagamento.id);
+                const state = digitalizeApp.getSession(db, pagamento.sessao_id);
+                const negocio = (state && state.dados && state.dados.nome_negocio) || pagamento.lead_id;
+                await notifyOpsSubscriptionIssue(
+                    event.type === 'customer.subscription.deleted' ? 'Mensalidade cancelada' : 'Mensalidade: cobran\u00e7a falhou',
+                    `Neg\u00f3cio: ${negocio}\nSubscription: ${subscriptionId}\nEvento: ${event.type}`
+                );
+            }
+            return res.status(200).send('ok');
+        }
+
+        const relevant = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'];
+        if (!relevant.includes(event.type)) return res.status(200).send('ok'); // not ours to handle
+
+        const session = event.data.object;
+        // Delayed-notification methods fire "completed" while still unpaid \u2014 the
+        // async_payment_succeeded event is what actually confirms those later.
+        if (session.payment_status === 'unpaid') return res.status(200).send('ok');
+
+        const orderId = String(session.client_reference_id || (session.metadata && session.metadata.orderId) || '').trim();
+        if (!orderId) return res.status(200).send('ok');
+
         const pagamento = db.prepare('SELECT * FROM digitalize_pagamento WHERE id = ?').get(orderId);
         if (!pagamento) return res.status(200).send('ok'); // unknown/old id \u2014 ack so Stripe stops retrying
         if (pagamento.estado === 'pago') return res.status(200).send('ok'); // already processed, idempotent
 
         db.prepare(`
-            UPDATE digitalize_pagamento SET estado = 'pago', metodo = 'stripe', referencia_externa = ?, pago_em = ?
+            UPDATE digitalize_pagamento
+            SET estado = 'pago', metodo = 'stripe', referencia_externa = ?, pago_em = ?,
+                stripe_subscription_id = ?, subscription_estado = ?
             WHERE id = ?
-        `).run(String(session.payment_intent || session.id || ''), digitalizeptNow(), pagamento.id);
+        `).run(
+            String(session.payment_intent || session.id || ''), digitalizeptNow(),
+            String(session.subscription || ''), session.subscription ? 'ativa' : '',
+            pagamento.id
+        );
 
         const state = digitalizeApp.getSession(db, pagamento.sessao_id);
         if (state) {
@@ -2334,6 +2401,48 @@ app.post('/api/digitalize/callback/stripe', async (req, res) => {
         // Still 200: retrying a broken finalize won't fix it \u2014 the payment row
         // stays 'pago' pending, visible to fix by hand.
         return res.status(200).send('ok');
+    }
+});
+
+// Receives closed deals pushed from the standalone digitalizemeunegocio repo
+// (see its server/lib/export-deal.js) — server-to-server, so it's gated by a
+// shared secret header rather than the browser admin-token system. The admin
+// view over there also has a "Copy JSON" fallback for pasting the same
+// payload in by hand if this push ever fails.
+app.post('/api/digitalizept/import-negocio', (req, res) => {
+    const key = String(req.headers['x-import-key'] || '').trim();
+    const expected = String(process.env.DIGITALIZE_IMPORT_KEY || '').trim();
+    if (!expected || key !== expected) {
+        return res.status(401).json({ error: 'Chave de importação inválida.' });
+    }
+    try {
+        const db = getDigitalizeptDb();
+        const payload = req.body || {};
+        const businessType = loadBusinessTypes().find((t) => t.id === payload.businessTypeId)
+            || { id: 'generico', nome: 'Negócio' };
+        const result = importExternalDeal(db, payload, businessType);
+        return res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('import-negocio error:', err.message);
+        return res.status(500).json({ ok: false, error: err.message || 'Falha ao importar.' });
+    }
+});
+
+// Manual paste-JSON fallback for the same import, gated by the normal admin
+// session instead of the shared secret — for when the automatic push from
+// digitalizemeunegocio fails and you copy/paste its "Copy JSON" output here
+// by hand (see the Importar button on the Propostas tab).
+app.post('/api/digitalizept/import-negocio/manual', requireDigitalizept, (req, res) => {
+    try {
+        const db = getDigitalizeptDb();
+        const payload = req.body || {};
+        const businessType = loadBusinessTypes().find((t) => t.id === payload.businessTypeId)
+            || { id: 'generico', nome: 'Negócio' };
+        const result = importExternalDeal(db, payload, businessType);
+        return res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('import-negocio manual error:', err.message);
+        return res.status(400).json({ ok: false, error: err.message || 'Falha ao importar.' });
     }
 });
 

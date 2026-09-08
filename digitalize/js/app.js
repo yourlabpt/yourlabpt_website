@@ -1605,6 +1605,11 @@ function bodyPreview(node) {
 }
 
 // ---- kind: dominio ----
+// The domain YourLab actually owns for free-tier subdomains — a wildcard DNS
+// record on this domain, plus matching Host-header routing in server.js,
+// is what makes "{slug}.digitalizemeunegocio.pt" real instead of just text.
+const FREE_DOMAIN_ROOT = 'digitalizemeunegocio.pt';
+
 function slugifyDomain(value) {
     return String(value || 'negocio').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24) || 'negocio';
@@ -1631,7 +1636,7 @@ function bodyDominio(node) {
     function paint(domains) {
         list.innerHTML = '';
         const options = domains.map((dm) => ({ nome: dm, badge: '' }))
-            .concat([{ nome: `${slugifyDomain(nome)}.digitalize.pt`, badge: 'GRÁTIS' }]);
+            .concat([{ nome: `${slugifyDomain(nome)}.${FREE_DOMAIN_ROOT}`, badge: 'GRÁTIS' }]);
         options.forEach((opt) => {
             const row = el('div', `dz-domain-option${opt.nome === selected ? ' is-selected' : ''}`);
             row.appendChild(el('span', 'dz-domain-name', opt.nome));
@@ -1727,7 +1732,7 @@ function bodyPagar() {
     const screen = document.querySelector('.dz-screen');
     const d = state.session.dados || {};
     const dominioEscolhido = d.dominio_escolhido || '';
-    const isPaidDomain = Boolean(dominioEscolhido) && !dominioEscolhido.endsWith('.digitalize.pt');
+    const isPaidDomain = Boolean(dominioEscolhido) && !dominioEscolhido.endsWith(`.${FREE_DOMAIN_ROOT}`);
 
     const priceBlock = el('div', 'dz-price-block');
     priceBlock.style.marginTop = '14px';
@@ -1749,11 +1754,14 @@ function bodyPagar() {
         priceBlock.innerHTML = '';
         priceBlock.appendChild(planoPriceNode(state.session.plano));
         const extra = state.session.extra;
+        const isMensalidade = extra && extra.id === 'mensalidade';
         if (extra && extra.id) {
             priceBlock.appendChild(el('div', 'dz-price-extra', `+ ${extra.nome}: ${(extra.centimos / 100).toFixed(2).replace('.', ',')} €`));
         }
         const total = (state.session.totalCentimos / 100).toFixed(2).replace('.', ',');
-        priceBlock.appendChild(el('div', 'dz-price-note', `Total: ${total} € · pagamento único`));
+        priceBlock.appendChild(el('div', 'dz-price-note', isMensalidade
+            ? `Total hoje: ${total} € · depois, 2,99 €/mês por débito automático`
+            : `Total: ${total} € · pagamento único`));
         payBtn.textContent = `Pagar ${total} € e publicar`;
     };
 

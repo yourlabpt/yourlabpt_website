@@ -37,37 +37,67 @@ function isConfigured() {
 }
 
 /**
- * @param {{ orderId: string, amountCents: number, description: string,
- *   customerEmail?: string, successUrl: string, cancelUrl: string }} input
- * @returns {Promise<{ redirectUrl: string, sessionId: string }>}
+ * oneTimeCents is always charged once, on the first invoice. When
+ * recurringCents is also given, the session becomes a subscription — Stripe
+ * bills oneTimeCents once (as a plain invoice item, not a recurring Price)
+ * alongside the first recurringCents charge, then just recurringCents every
+ * interval after. Without it, it's a single one-time payment, same as before.
+ *
+ * SEPA Direct Debit (the EU "automatic bank charge" the recurring plan is
+ * built around) has to be turned on in the Dashboard's payment method
+ * settings — this code stays generic over payment method the same way the
+ * one-time path already does, per Stripe's own guidance against hardcoding
+ * payment_method_types.
+ *
+ * @param {{ orderId: string, description: string, customerEmail?: string,
+ *   oneTimeCents: number, recurringCents?: number, recurringInterval?: string,
+ *   successUrl: string, cancelUrl: string }} input
+ * @returns {Promise<{ redirectUrl: string, sessionId: string, isSubscription: boolean }>}
  */
-async function createCheckout({ orderId, amountCents, description, customerEmail, successUrl, cancelUrl }) {
+async function createCheckout({
+    orderId, description, customerEmail, oneTimeCents, recurringCents, recurringInterval,
+    successUrl, cancelUrl
+}) {
     if (!isConfigured()) throw new Error('Stripe não está configurado — pagamentos desligados.');
     const id = String(orderId || '').slice(0, 200);
     if (!id) throw new Error('orderId em falta.');
     const stripe = getClient();
+    const isSubscription = Number(recurringCents) > 0;
+
+    const lineItems = [{
+        price_data: {
+            currency: 'eur',
+            unit_amount: Math.round(Number(oneTimeCents)),
+            product_data: { name: String(description || 'Digitalize').slice(0, 200) }
+        },
+        quantity: 1
+    }];
+    if (isSubscription) {
+        lineItems.push({
+            price_data: {
+                currency: 'eur',
+                unit_amount: Math.round(Number(recurringCents)),
+                recurring: { interval: recurringInterval || 'month' },
+                product_data: { name: 'Mensalidade Digitalize — site sempre editável' }
+            },
+            quantity: 1
+        });
+    }
 
     // No payment_method_types here on purpose — Stripe picks the best eligible
     // methods per Dashboard config (dynamic payment methods), which is the
     // recommended default over hardcoding a fixed list.
     const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
+        mode: isSubscription ? 'subscription' : 'payment',
         client_reference_id: id,
         metadata: { orderId: id },
         customer_email: customerEmail || undefined,
-        line_items: [{
-            price_data: {
-                currency: 'eur',
-                unit_amount: Math.round(Number(amountCents)),
-                product_data: { name: String(description || 'Digitalize').slice(0, 200) }
-            },
-            quantity: 1
-        }],
+        line_items: lineItems,
         success_url: successUrl,
         cancel_url: cancelUrl
     });
     if (!session.url) throw new Error('Stripe: sessão de checkout sem URL.');
-    return { redirectUrl: session.url, sessionId: session.id };
+    return { redirectUrl: session.url, sessionId: session.id, isSubscription };
 }
 
 /**

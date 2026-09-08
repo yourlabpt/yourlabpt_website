@@ -23,7 +23,14 @@
         } from '/digitalizept/js/demo/demo-visual.js';
         import { installShellProtect, isSellerBrowser } from '/digitalizept/js/demo/protect-demo.js';
 
-        const slug = window.location.pathname.split('/').filter(Boolean).pop();
+        // Free-tier sites are also reachable at {slug}.digitalizemeunegocio.pt, where
+        // the slug lives in the hostname, not the path — server.js routes that host
+        // to this same file, so this is the other half of making it actually work.
+        const FREE_DOMAIN_ROOT = 'digitalizemeunegocio.pt';
+        const hostname = window.location.hostname;
+        const slug = hostname.endsWith(`.${FREE_DOMAIN_ROOT}`)
+            ? hostname.slice(0, -(FREE_DOMAIN_ROOT.length + 1))
+            : window.location.pathname.split('/').filter(Boolean).pop();
         const root = document.getElementById('root');
         const params = new URLSearchParams(window.location.search);
         const seller = isSellerBrowser();

@@ -101,10 +101,25 @@
             <section id="tab-deals" class="admin-panel hidden">
                 <div class="admin-toolbar">
                     <input id="deals-filter" class="field-input" type="search" placeholder="Filtrar propostas…">
+                    <button id="deals-import-btn" type="button" class="btn-secondary">Importar de digitalizemeunegocio</button>
                 </div>
                 <p class="admin-hint">Editar proposta reabre o wizard nas vendas e, ao reassinarem, atualiza a mesma proposta (v2, v3…), sem criar outra.</p>
                 <div id="deals-list" class="admin-list"></div>
             </section>
+
+            <div id="import-modal" class="overlay hidden">
+                <div class="login-box">
+                    <h1>Importar negócio</h1>
+                    <p>Cole aqui o JSON copiado no botão «Copiar JSON» do admin do digitalizemeunegocio.</p>
+                    <textarea id="import-json-input" rows="10" style="width:100%;font-family:monospace;font-size:0.8rem" placeholder="{ &quot;negocioId&quot;: ... }"></textarea>
+                    <div id="import-error"></div>
+                    <div id="import-success" style="color:#2a7a3f"></div>
+                    <div style="display:flex;gap:8px;margin-top:10px">
+                        <button id="import-submit-btn" type="button" class="btn-primary">Importar</button>
+                        <button id="import-cancel-btn" type="button" class="btn-secondary">Fechar</button>
+                    </div>
+                </div>
+            </div>
 
             <section id="tab-coverage" class="admin-panel hidden">
                 <div class="coverage-toolbar">

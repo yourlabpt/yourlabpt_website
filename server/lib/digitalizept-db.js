@@ -236,8 +236,28 @@ function migrate(db) {
         proxima_acao_em: "TEXT NOT NULL DEFAULT ''",
         revisitar_em: "TEXT NOT NULL DEFAULT ''",
         processo_json: "TEXT NOT NULL DEFAULT '{}'",
-        atualizado_em: "TEXT NOT NULL DEFAULT ''"
+        atualizado_em: "TEXT NOT NULL DEFAULT ''",
+        // Deals pushed in from an independently-deployed sibling app (e.g.
+        // digitalizemeunegocio) — see lib/digitalizept-import.js. Empty for
+        // every lead created directly in this system.
+        origem_externa: "TEXT NOT NULL DEFAULT ''",
+        origem_externa_id: "TEXT NOT NULL DEFAULT ''"
     });
+    db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_lead_origem_externa_id
+        ON lead(origem_externa_id)
+    `);
+    // Recurring "mensalidade" plans: the initial checkout is one payment row like
+    // any other, but renewals/failures/cancellations arrive later via webhook,
+    // keyed by the subscription id rather than this row's own id.
+    addMissingColumns(db, 'digitalize_pagamento', {
+        stripe_subscription_id: "TEXT NOT NULL DEFAULT ''",
+        subscription_estado: "TEXT NOT NULL DEFAULT ''"
+    });
+    db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_digitalize_pagamento_subscription
+        ON digitalize_pagamento(stripe_subscription_id)
+    `);
     // First insert stays on criado_em forever; atualizado_em tracks later edits.
     db.prepare(`
         UPDATE lead SET atualizado_em = criado_em

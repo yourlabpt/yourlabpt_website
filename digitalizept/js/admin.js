@@ -59,6 +59,13 @@ const el = {
     leadsOrdem: document.getElementById('leads-ordem'),
     leadsFilterSummary: document.getElementById('leads-filter-summary'),
     dealsFilter: document.getElementById('deals-filter'),
+    dealsImportBtn: document.getElementById('deals-import-btn'),
+    importModal: document.getElementById('import-modal'),
+    importJsonInput: document.getElementById('import-json-input'),
+    importError: document.getElementById('import-error'),
+    importSuccess: document.getElementById('import-success'),
+    importSubmitBtn: document.getElementById('import-submit-btn'),
+    importCancelBtn: document.getElementById('import-cancel-btn'),
     catalogAddBtn: document.getElementById('catalog-add-btn'),
     leadsEmailDemosBtn: document.getElementById('leads-email-demos-btn'),
     coverageFilter: document.getElementById('coverage-filter'),
@@ -1555,6 +1562,51 @@ if (el.leadsSituacao) {
     });
 }
 el.dealsFilter.addEventListener('input', renderDeals);
+if (el.dealsImportBtn) {
+    el.dealsImportBtn.addEventListener('click', () => {
+        el.importJsonInput.value = '';
+        el.importError.textContent = '';
+        el.importSuccess.textContent = '';
+        el.importModal.classList.remove('hidden');
+        el.importJsonInput.focus();
+    });
+}
+if (el.importCancelBtn) {
+    el.importCancelBtn.addEventListener('click', () => el.importModal.classList.add('hidden'));
+}
+if (el.importSubmitBtn) {
+    el.importSubmitBtn.addEventListener('click', async () => {
+        el.importError.textContent = '';
+        el.importSuccess.textContent = '';
+        let payload;
+        try {
+            payload = JSON.parse(el.importJsonInput.value);
+        } catch (_) {
+            el.importError.textContent = 'JSON inválido — cole exatamente o que o botão «Copiar JSON» copiou.';
+            return;
+        }
+        el.importSubmitBtn.disabled = true;
+        try {
+            const { response, data } = await api('/api/digitalizept/import-negocio/manual', {
+                method: 'POST',
+                body: payload
+            });
+            if (!response.ok || !data.ok) {
+                el.importError.textContent = data.error || 'Não foi possível importar.';
+                return;
+            }
+            el.importSuccess.textContent = data.alreadyImported
+                ? 'Este negócio já tinha sido importado antes — nada duplicado.'
+                : 'Importado com sucesso — já aparece em Propostas.';
+            await loadDeals();
+            toast('Negócio importado.');
+        } catch (_) {
+            el.importError.textContent = 'Sem ligação ao servidor.';
+        } finally {
+            el.importSubmitBtn.disabled = false;
+        }
+    });
+}
 el.coverageFilter.addEventListener('input', () => {
     if (coverageUi) coverageUi.repaint();
 });
