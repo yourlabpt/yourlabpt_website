@@ -72,11 +72,18 @@ function normalizeCapabilities(value = {}) {
   };
 }
 
+/**
+ * The manifest entry that will run this package, if the runtime advertised one.
+ * A requested id that the runtime does not know falls back to task type rather than
+ * giving up: the persona travels with the package, so a name the runtime never
+ * registered is not a reason to refuse the work.
+ */
 function selectedAgent(capabilities, agentId, agentType) {
   const requestedId = text(agentId);
-  if (requestedId) {
-    return capabilities.agents.find((agent) => agent.id === requestedId) || null;
-  }
+  const byId = requestedId
+    ? capabilities.agents.find((agent) => agent.id === requestedId) || null
+    : null;
+  if (byId) return byId;
   return capabilities.agents.find((agent) => agent.taskTypes.includes(agentType)) || null;
 }
 
@@ -100,26 +107,27 @@ function assessCompatibility(packageValue, capabilitiesValue) {
     reasons.push(`contract-version:${contract.version}`);
   }
 
+  // The persona travels with the package as a complete definition, so the runtime is
+  // not required to have pre-registered an agent under that name. Whether it *can* do
+  // the work is answered by protocol, skills and tools below — never by a name lookup.
+  // A missing name used to block dispatch and surfaced as "no compatible agent",
+  // which described the platform's bookkeeping rather than anything the operator
+  // could fix.
   const agent = selectedAgent(
     capabilities,
     taskPackage.agent?.id || taskPackage.agentId,
     taskPackage.agent?.type || taskPackage.agentType
   );
-  if (capabilities.agents.length && !agent && !capabilities.features.includes('accepts_any_agent')) {
-    reasons.push(`agent:${taskPackage.agent?.id || taskPackage.agentId || 'unspecified'}`);
-  }
-  const requestedAgentType = text(taskPackage.agent?.type || taskPackage.agentType);
-  if (
-    agent
-    && requestedAgentType
-    && agent.taskTypes.length
-    && !agent.taskTypes.includes(requestedAgentType)
-  ) {
-    reasons.push(`agent-type:${requestedAgentType}`);
-  }
 
-  const availableSkills = [...capabilities.skills, ...(agent?.skills || [])];
-  const availableTools = [...capabilities.tools, ...(agent?.tools || [])];
+  // When the manifest identifies the agent that will run this, judge that agent on its
+  // own skills and tools — otherwise picking between two advertised agents would be
+  // meaningless, since every one of them would look equally capable. With no agent
+  // identified, judge the runtime as a whole: it is the runtime that receives the
+  // package, and the persona definition travels inside it.
+  const scopedSkills = agent ? (agent.skills || []) : capabilities.agents.flatMap((e) => e.skills || []);
+  const scopedTools = agent ? (agent.tools || []) : capabilities.agents.flatMap((e) => e.tools || []);
+  const availableSkills = [...capabilities.skills, ...scopedSkills];
+  const availableTools = [...capabilities.tools, ...scopedTools];
   for (const skill of missingCapabilities(stringList(taskPackage.requirements?.skills || taskPackage.requiredSkills), availableSkills)) {
     reasons.push(`skill:${skill}`);
   }

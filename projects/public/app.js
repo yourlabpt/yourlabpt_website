@@ -2093,7 +2093,7 @@ function renderRequirementModuleControls(project) {
       const isChecked = shouldCheckAll || checked.has(moduleName);
       return `
         <label class="module-chip">
-          <input type="checkbox" data-module-generate="${escapeHtml(moduleName)}" ${isChecked ? 'checked' : ''} />
+          <input type="checkbox" class="check-dot" data-module-generate="${escapeHtml(moduleName)}" ${isChecked ? 'checked' : ''} />
           ${escapeHtml(moduleName)} (${total})
         </label>
       `;

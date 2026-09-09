@@ -53,7 +53,6 @@
   function readFormSettings() {
     const defaults = state.settings?.executionDefaults || {};
     return {
-      agentId: $('agentsDefaultAgentId')?.value?.trim() || '',
       modelProfileId: $('agentsDefaultModel')?.value || defaults.modelProfileId || 'medium',
       maxTokens: Number($('agentsDefaultMaxTokens')?.value) || 0,
       externalMaxTokens: Number($('agentsDefaultExternalTokens')?.value) || 120000,
@@ -71,7 +70,6 @@
 
   function fillForm(settings) {
     const defaults = settings?.executionDefaults || {};
-    if ($('agentsDefaultAgentId')) $('agentsDefaultAgentId').value = defaults.agentId || '';
     if ($('agentsDefaultModel')) $('agentsDefaultModel').value = defaults.modelProfileId || 'medium';
     if ($('agentsDefaultMaxTokens')) $('agentsDefaultMaxTokens').value = defaults.maxTokens || 0;
     if ($('agentsDefaultExternalTokens')) $('agentsDefaultExternalTokens').value = defaults.externalMaxTokens || 120000;
@@ -107,21 +105,22 @@
     `;
   }
 
-  function personaBindingBadge(persona) {
-    if (!state.personaConnector) {
-      return '<span class="section-badge badge-gray">Sem runtime ligado</span>';
+  /**
+   * A persona is an agent. The only things that can stop it running are the runtime
+   * being offline, the persona being switched off, or the runtime not exposing a tool
+   * it needs — so those are the only three states shown.
+   */
+  function personaReadyBadge(persona) {
+    if (!persona.runtimeOnline) {
+      return '<span class="section-badge badge-gray">Runtime desligado</span>';
     }
-    if (persona.pinnedAgentMissing) {
-      return '<span class="section-badge badge-red">Agente fixado indisponível</span>';
+    if (!persona.enabled) {
+      return '<span class="section-badge badge-gray">Desactivada</span>';
     }
-    if (!persona.satisfied) {
-      const blocked = persona.candidates.find((candidate) => candidate.typeMatch);
-      const detail = blocked?.missingTools?.length
-        ? `Faltam ferramentas: ${blocked.missingTools.join(', ')}`
-        : 'Nenhum agente declara este tipo de tarefa';
-      return `<span class="section-badge badge-amber" title="${escapeHtml(detail)}">Sem agente compatível</span>`;
+    if (persona.missingTools.length) {
+      return `<span class="section-badge badge-amber">Faltam ${persona.missingTools.length} ferramenta(s)</span>`;
     }
-    return `<span class="section-badge badge-green">${escapeHtml(persona.boundAgentName || persona.boundAgentId)}</span>`;
+    return '<span class="section-badge badge-green">Pronta</span>';
   }
 
   function renderPersonas() {
@@ -135,27 +134,39 @@
       const options = state.modelProfiles.map((profile) => `
         <option value="${escapeHtml(profile)}"${profile === persona.modelProfileId ? ' selected' : ''}>${escapeHtml(profile)}</option>
       `).join('');
-      const agentOptions = ['<option value="">Automático</option>']
-        .concat(persona.candidates.map((candidate) => `
-          <option value="${escapeHtml(candidate.agentId)}"${candidate.agentId === persona.boundAgentId && persona.pinnedAgentMissing === false ? '' : ''}>
-            ${escapeHtml(candidate.name)}${candidate.eligible ? '' : ' (incompatível)'}
-          </option>
-        `))
-        .join('');
+      // Tools are what this agent is allowed to reach. A missing one is marked in
+      // place, so the fix is visible without reading a separate error.
+      const missing = new Set(persona.missingTools);
+      const tools = persona.tools.map((tool) => `
+        <span class="agent-tool${missing.has(tool) ? ' is-missing' : ''}">${escapeHtml(tool)}</span>
+      `).join('');
       return `
         <article class="agents-persona-row read-card" data-persona-id="${escapeHtml(persona.personaId)}">
           <div class="panel-title-row">
             <div>
               <strong>${persona.order}. ${escapeHtml(persona.label)}</strong>
-              <p class="muted-text">${escapeHtml(persona.pipelineSteps.join(' · '))} — fases: ${escapeHtml(persona.deliveryStages.join(', '))}</p>
+              <p class="muted-text">
+                <code>${escapeHtml(persona.agentId)}</code> ·
+                ${escapeHtml(persona.pipelineSteps.join(' · '))} —
+                fases: ${escapeHtml(persona.deliveryStages.join(', '))}
+              </p>
             </div>
-            ${personaBindingBadge(persona)}
+            ${personaReadyBadge(persona)}
           </div>
+          <div class="agent-tools mt-8">${tools}</div>
+          ${persona.missingTools.length ? `
+            <p class="muted-text mt-8">
+              O runtime ligado não expõe ${escapeHtml(persona.missingTools.join(', '))}.
+              Active essas ferramentas MCP no runtime para esta persona poder correr.
+            </p>` : ''}
+          ${!persona.toolsVerified && persona.runtimeOnline ? `
+            <p class="muted-text mt-8">O runtime não declarou que ferramentas tem, por isso não foi possível confirmar estas.</p>` : ''}
           <div class="form-grid compact mt-8">
             <label>Perfil do modelo<select data-persona-field="modelProfileId">${options}</select></label>
-            <label>Agente do runtime<select data-persona-field="agentId">${agentOptions}</select></label>
             <label>Limite tokens<input type="number" min="0" data-persona-field="maxTokens" value="${Number(persona.maxTokens) || 0}" /></label>
             <label>Tempo máximo (min)<input type="number" min="0" data-persona-field="maxWallClockMinutes" value="${Number(persona.maxWallClockMinutes) || 0}" /></label>
+          </div>
+          <div class="agent-toggle-row mt-8">
             <label class="checkline"><input type="checkbox" data-persona-field="enabled"${persona.enabled ? ' checked' : ''} /> Activa</label>
             <label class="checkline"><input type="checkbox" data-persona-field="requiresHumanApproval"${persona.requiresHumanApproval ? ' checked' : ''} /> Exige aprovação humana</label>
           </div>
@@ -167,14 +178,6 @@
         </article>
       `;
     }).join('');
-    // The pinned agent is a stored override, not the resolved binding — set it after
-    // render so an unavailable pin still shows as "Automático" rather than vanishing.
-    for (const persona of state.personas) {
-      const row = host.querySelector(`[data-persona-id="${persona.personaId}"]`);
-      const select = row?.querySelector('[data-persona-field="agentId"]');
-      const pinned = state.settings?.personas?.[persona.personaId]?.agentId || '';
-      if (select) select.value = pinned;
-    }
   }
 
   function readPersonaForm() {
@@ -187,7 +190,6 @@
       personas[personaId] = {
         enabled: field('enabled')?.checked !== false,
         modelProfileId: field('modelProfileId')?.value || 'medium',
-        agentId: field('agentId')?.value || '',
         maxTokens: Number(field('maxTokens')?.value) || 0,
         maxWallClockMinutes: Number(field('maxWallClockMinutes')?.value) || 0,
         requiresHumanApproval: field('requiresHumanApproval')?.checked === true,

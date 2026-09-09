@@ -671,21 +671,103 @@ textarea {
   padding: 0;
 }
 
+/* Pill toggle. The checkbox stays in the DOM for the keyboard and the screen reader,
+   but is never drawn: the label is the control, grey when off and accent when on.
+   See UI-RULES.md #1 - no raw checkboxes anywhere in this interface. */
 .checkline {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   text-transform: none;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
+.checkline:hover {
+  border-color: var(--line-2);
+  color: var(--text);
+}
+
+/* Reachable and focusable, just never visible. */
 .checkline input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  min-height: 14px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
   margin: 0;
-  accent-color: var(--accent);
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkline:has(input[type="checkbox"]:checked) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Focus must show on the pill, because the input it belongs to is invisible. */
+.checkline:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.checkline:has(input[type="checkbox"]:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A pill is a control: it never stretches to fill a form-grid cell. */
+.checkline.full {
+  align-self: start;
+  width: fit-content;
+}
+
+/* Row selection and done-marks inside dense lists and tables, where a full pill would
+   not fit. A ring when off, filled accent with a tick when on — the iOS selection
+   circle, not a browser checkbox. See UI-RULES.md #1. */
+.check-dot {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+  background: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 15px 15px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.check-dot:hover {
+  border-color: var(--accent);
+}
+
+.check-dot:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%23141414' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+[data-theme="light"] .check-dot:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.check-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .table-wrap {
@@ -1686,6 +1768,101 @@ th {
   gap: 8px;
   padding: 4px 0;
   border-top: 0.5px solid var(--line);
+}
+
+/* UI-RULES.md #2 — no bullet lists in the interface. `:not([class])` hits exactly the
+   lists rendered without a list class (risks, goals, assumptions, tests, commits) and
+   can never touch a list that was deliberately styled. Rows read as rows: a leading
+   hairline-grey dash carries the same "separate item" meaning as a disc without the
+   dotted-topic look. */
+ul:not([class]) {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+ul:not([class]) > li {
+  position: relative;
+  padding: 3px 0 3px 14px;
+  line-height: 1.45;
+}
+
+ul:not([class]) > li::before {
+  content: "";
+  position: absolute;
+  top: 0.72em;
+  left: 0;
+  width: 6px;
+  height: 1px;
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+/* The MCP tools an agent-persona is allowed to reach. A tool the runtime does not
+   expose is marked in place, so the gap is visible without a separate error. */
+.agent-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.agent-tool {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.agent-tool.is-missing {
+  border-color: var(--danger);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.agent-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Commits and change requests. Rows with a hairline, never bullets — a commit list
+   is data, not prose. See UI-RULES.md #2. */
+.commit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.commit-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 0.5px solid var(--line);
+}
+
+.commit-sha {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commit-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-author {
+  flex: none;
+  font-size: 12px;
 }
 
 .repo-picker-list code,
@@ -5776,12 +5953,9 @@ body.help-drawer-open {
   background: color-mix(in srgb, var(--line) 28%, var(--bg));
 }
 
+/* Size and colour come from .check-dot; only placement belongs here. */
 .req-card-controls .req-select-cb {
-  width: 15px;
-  height: 15px;
   margin: 0;
-  cursor: pointer;
-  accent-color: var(--accent, #2563eb);
   flex-shrink: 0;
 }
 
@@ -8776,7 +8950,8 @@ body.help-drawer-open {
   font-size: .72rem;
   vertical-align: middle;
 }
-.ado-show-completed { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .8rem; white-space: nowrap; }
+/* Layout only: .checkline owns the pill colours, so nothing here may override them. */
+.ado-show-completed { white-space: nowrap; }
 .ado-priority-intro { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent-gold) 5%, var(--surface)); }
 .ado-priority-intro strong { color: var(--heading); font-size: .88rem; }
 .ado-priority-intro span { color: var(--muted); font-size: .78rem; }
@@ -12448,7 +12623,8 @@ body.is-client-readonly [data-writes-only] {
   font-weight: 700;
 }
 .ado-card { position: relative; }
-.ado-card-select { position: absolute; top: 10px; right: 10px; accent-color: var(--accent); }
+/* Placement only — .check-dot draws it. */
+.ado-card-select { position: absolute; top: 10px; right: 10px; }
 .ado-source-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .ado-source-list span { border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 5px 9px; font-size: 12px; }
 .ado-client-visible-field small { color: var(--muted); line-height: 1.35; }

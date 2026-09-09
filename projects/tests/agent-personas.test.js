@@ -88,35 +88,56 @@ describe('agent persona registry', () => {
     assert.equal(resolved.canWriteCode, false);
   });
 
-  it('binds personas to runtime agents and explains the misses', () => {
-    const report = personas.personaBindingReport(RUNTIME_CAPABILITIES);
+  it('reports a persona as ready without asking the runtime to name an agent', () => {
+    const report = personas.personaReadiness(RUNTIME_CAPABILITIES, {}, { runtimeOnline: true });
     const byId = new Map(report.map((row) => [row.personaId, row]));
 
-    assert.equal(byId.get('product_owner').satisfied, true);
-    assert.equal(byId.get('product_owner').boundAgentId, 'product-owner-agent');
+    // The persona is the agent: its own id is the identity sent to the runtime.
+    assert.equal(byId.get('product_owner').agentId, 'product_owner');
+    assert.equal(byId.get('product_owner').ready, true);
 
-    assert.equal(byId.get('developer').satisfied, true);
-    assert.equal(byId.get('developer').boundAgentId, 'code-agent');
-
-    // The tester candidate matches the task type but is missing tools it needs.
-    const tester = byId.get('tester');
-    assert.equal(tester.satisfied, false);
-    const candidate = tester.candidates.find((entry) => entry.agentId === 'half-equipped-tester');
-    assert.equal(candidate.typeMatch, true);
-    assert.ok(candidate.missingTools.includes('tests.run'));
-
-    // No runtime agent declares UX work at all.
-    assert.equal(byId.get('ux').satisfied, false);
-    assert.equal(byId.get('ux').candidates.every((entry) => !entry.typeMatch), true);
+    // No runtime agent declares UX work, and that no longer matters. What is reported
+    // is the concrete gap — the mockup tools this runtime does not expose — instead of
+    // the old "no compatible agent", which named nothing the operator could fix.
+    const ux = byId.get('ux');
+    assert.deepEqual(ux.missingTools, ['mockups.read', 'mockups.write']);
+    assert.equal(ux.ready, false);
   });
 
-  it('flags a pinned agent that the runtime no longer offers', () => {
-    const report = personas.personaBindingReport(RUNTIME_CAPABILITIES, {
-      developer: { agentId: 'agent-that-left' },
-    });
+  it('names the missing tools rather than calling the persona incompatible', () => {
+    const report = personas.personaReadiness(
+      { protocol: { id: 'yourlab.agent-dispatch', versions: [2] }, agents: [], tools: ['project.read'] },
+      {},
+      { runtimeOnline: true },
+    );
     const developer = report.find((row) => row.personaId === 'developer');
-    assert.equal(developer.pinnedAgentMissing, true);
-    assert.equal(developer.satisfied, false);
+    assert.equal(developer.ready, false);
+    assert.ok(developer.missingTools.includes('repo.patch'));
+    // Every missing tool is named, so the operator knows exactly what to enable.
+    assert.ok(developer.missingTools.length > 1);
+  });
+
+  it('claims nothing is missing when the runtime declared no tools at all', () => {
+    const report = personas.personaReadiness({ agents: [], tools: [] }, {}, { runtimeOnline: true });
+    const developer = report.find((row) => row.personaId === 'developer');
+    assert.equal(developer.toolsVerified, false);
+    assert.deepEqual(developer.missingTools, []);
+    assert.equal(developer.ready, true);
+  });
+
+  it('an offline runtime blocks every persona, and says so once', () => {
+    const report = personas.personaReadiness(RUNTIME_CAPABILITIES, {}, { runtimeOnline: false });
+    assert.equal(report.every((row) => row.ready === false), true);
+    assert.equal(report.every((row) => row.runtimeOnline === false), true);
+  });
+
+  it('a disabled persona is not ready, whatever the runtime offers', () => {
+    const report = personas.personaReadiness(RUNTIME_CAPABILITIES, {
+      developer: { enabled: false },
+    }, { runtimeOnline: true });
+    const developer = report.find((row) => row.personaId === 'developer');
+    assert.equal(developer.enabled, false);
+    assert.equal(developer.ready, false);
   });
 
   it('rejects out-of-scope work before a package is frozen', () => {

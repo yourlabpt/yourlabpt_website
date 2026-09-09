@@ -125,7 +125,7 @@
         <div class="pdos-card-top">
           <span class="delivery-card-kind">Ata</span>
           <label class="minute-select-check checkline">
-            <input type="checkbox" data-minute-id="${escapeHtml(entry.id)}" ${checked} />
+            <input type="checkbox" class="check-dot" data-minute-id="${escapeHtml(entry.id)}" ${checked} />
             Seleccionar
           </label>
         </div>

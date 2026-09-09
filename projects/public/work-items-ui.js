@@ -655,7 +655,7 @@
       <article class="ado-card"
         data-work-item-id="${escapeHtml(item.id)}"
         draggable="${state.canManage ? 'true' : 'false'}">
-        ${state.canManage ? `<input class="ado-card-select" type="checkbox" data-ado-select="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? 'checked' : ''} aria-label="Seleccionar tarefa" />` : ''}
+        ${state.canManage ? `<input class="ado-card-select check-dot" type="checkbox" data-ado-select="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? 'checked' : ''} aria-label="Seleccionar tarefa" />` : ''}
         <div class="ado-card-type">${escapeHtml(originClassLabel(item.origin))} · ${escapeHtml(statusLabel(item.status))}</div>
         <h4 class="ado-card-title">${escapeHtml(item.title)}</h4>
         <div class="ado-card-foot">
@@ -703,7 +703,7 @@
       </div>
       ${state.items.map((item) => `
         <div class="ado-list-row ado-list-row-task ${item.requiresAttention ? 'needs-attention' : ''}" data-work-item-id="${escapeHtml(item.id)}" role="button" tabindex="0">
-          <span>${state.canManage ? `<input type="checkbox" data-ado-select="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? 'checked' : ''} aria-label="Seleccionar tarefa" />` : ''}</span>
+          <span>${state.canManage ? `<input type="checkbox" class="check-dot" data-ado-select="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? 'checked' : ''} aria-label="Seleccionar tarefa" />` : ''}</span>
           <span class="ado-list-title"><strong>${escapeHtml(item.title)}</strong>${item.agentRequestId ? `<small>Plano de agente${item.progressTotal ? ` · ${item.progressCurrent}/${item.progressTotal}` : ''}</small>` : ''}</span>
           <span class="ado-list-status"><span class="ado-status-dot status-${escapeHtml(item.status)}"></span>${escapeHtml(attentionLabel(item))}</span>
           <span class="ado-list-assignee">${escapeHtml(executorLabel(item))}</span>
@@ -842,7 +842,7 @@
         <button type="button" class="ado-filter-toggle ${state.filtersOpen ? 'is-open' : ''}" data-ado-toggle-filters>
           <span aria-hidden="true">≡</span> Filtros${activeFilters ? ` <strong>${activeFilters}</strong>` : ''}
         </button>
-        <label class="ado-show-completed"><input type="checkbox" data-ado-show-completed ${state.showCompleted ? 'checked' : ''}> Concluídas</label>
+        <label class="ado-show-completed checkline"><input type="checkbox" data-ado-show-completed ${state.showCompleted ? 'checked' : ''}> Concluídas</label>
       </div>
       <div class="ado-toolbar-filters ${state.filtersOpen ? '' : 'hidden'}">
         <select class="ado-field-inline" data-ado-filter="origin" aria-label="Filtrar por tipo">

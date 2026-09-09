@@ -2516,7 +2516,9 @@ function registerAgentRuntimeRoutes(app, deps) {
         connector: connector
           ? { id: connector.id, name: connector.name, runtimeVersion: connector.runtimeVersion }
           : null,
-        personas: agentPersonas.personaBindingReport(capabilities, settings.personas),
+        personas: agentPersonas.personaReadiness(capabilities, settings.personas, {
+          runtimeOnline: Boolean(connector),
+        }),
       });
     } catch (error) {
       return res.status(500).json({ message: error.message });

@@ -110,11 +110,19 @@
       <div class="mt-12">
         <p>${openspec}</p>
         <p class="muted-text">${(activity.branches || []).length} ramo(s) · ${(activity.changeRequests || []).length} pedido(s) de integração aberto(s)${activity.lastCommitAt ? ` · último commit ${new Date(activity.lastCommitAt).toLocaleString('pt-PT')}` : ''}</p>
-        ${commits.length ? `<ul class="mt-8">${commits.map((commit) => `
-          <li><code>${escapeHtml(commit.sha.slice(0, 7))}</code> ${escapeHtml(commit.message)} <span class="muted-text">— ${escapeHtml(commit.author)}</span></li>
+        ${commits.length ? `<ul class="commit-list mt-8">${commits.map((commit) => `
+          <li>
+            <code class="commit-sha">${escapeHtml(commit.sha.slice(0, 7))}</code>
+            <span class="commit-message">${escapeHtml(commit.message)}</span>
+            <span class="muted-text commit-author">${escapeHtml(commit.author)}</span>
+          </li>
         `).join('')}</ul>` : '<p class="muted-text mt-8">Sem commits ainda.</p>'}
-        ${(activity.changeRequests || []).length ? `<ul class="mt-8">${activity.changeRequests.map((cr) => `
-          <li><a href="${escapeHtml(cr.url)}" target="_blank" rel="noopener noreferrer">#${cr.number} ${escapeHtml(cr.title)}</a> <span class="muted-text">— ${escapeHtml(cr.branch)}${cr.draft ? ' (rascunho)' : ''}</span></li>
+        ${(activity.changeRequests || []).length ? `<ul class="commit-list mt-8">${activity.changeRequests.map((cr) => `
+          <li>
+            <code class="commit-sha">#${cr.number}</code>
+            <span class="commit-message"><a href="${escapeHtml(cr.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cr.title)}</a></span>
+            <span class="muted-text commit-author">${escapeHtml(cr.branch)}${cr.draft ? ' · rascunho' : ''}</span>
+          </li>
         `).join('')}</ul>` : ''}
       </div>`;
   }

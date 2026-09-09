@@ -464,11 +464,22 @@ describe('secure outbound agent connector', () => {
       requiredSkills: ['software_delivery'],
       allowedMcpTools: ['repo.write'],
     }, connector.capabilities).compatible, true);
+    // A name the runtime never registered is not a refusal: the persona definition
+    // travels with the package, so what decides is skills and tools, not bookkeeping.
     assert.equal(assessCompatibility({
       contract: { id: CONTRACT_ID, version: 1 },
       agentId: 'missing-agent',
       agentType: 'implementation_tasks',
-    }, connector.capabilities).compatible, false);
+    }, connector.capabilities).compatible, true);
+    // Capability itself still gates: a skill the runtime does not have is refused.
+    const refused = assessCompatibility({
+      contract: { id: CONTRACT_ID, version: 1 },
+      agentId: 'missing-agent',
+      agentType: 'implementation_tasks',
+      requiredSkills: ['web_research'],
+    }, connector.capabilities);
+    assert.equal(refused.compatible, false);
+    assert.ok(refused.reasons.includes('skill:web_research'));
     db.close();
   });
 

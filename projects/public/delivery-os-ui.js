@@ -2671,7 +2671,7 @@
     const acc = (task.acceptanceCriteria || []).map((c) => `<li>${escapeHtml(c)}</li>`).join('');
     const subtasks = (task.subtasks || []).map((st) => `
       <li class="impl-subtask">
-        <label><input type="checkbox" data-subtask="${escapeHtml(st.id)}" ${st.done ? 'checked' : ''}> <span class="${st.done ? 'impl-sub-done' : ''}">${escapeHtml(st.title)}</span></label>
+        <label><input type="checkbox" class="check-dot" data-subtask="${escapeHtml(st.id)}" ${st.done ? 'checked' : ''}> <span class="${st.done ? 'impl-sub-done' : ''}">${escapeHtml(st.title)}</span></label>
         ${st.descriptionMarkdown ? `<p class="impl-sub-desc">${escapeHtml(st.descriptionMarkdown)}</p>` : ''}
       </li>`).join('');
     const linksText = (task.outputLinks || []).map((l) => (l.label ? `${l.label} ${l.url}` : l.url)).join('\n');

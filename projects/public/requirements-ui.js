@@ -497,7 +497,7 @@
     const checked = reqUiState.selectedReqIds.has(req.id);
     const chrome = (showSelect || draggable)
       ? `<div class="req-card-controls">
-          ${showSelect ? `<input type="checkbox" class="req-select-cb" data-select-req="${escapeHtml(req.id)}" aria-label="Seleccionar ${escapeHtml(req.id)}" ${checked ? 'checked' : ''} />` : ''}
+          ${showSelect ? `<input type="checkbox" class="req-select-cb check-dot" data-select-req="${escapeHtml(req.id)}" aria-label="Seleccionar ${escapeHtml(req.id)}" ${checked ? 'checked' : ''} />` : ''}
           ${draggable ? '<span class="req-drag-handle" title="Arrastar para outro módulo/fase" aria-hidden="true">⠿</span>' : ''}
         </div>`
       : '';

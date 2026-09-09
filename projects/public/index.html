@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=92" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=95" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -692,7 +692,6 @@
                   <h4>Predefinições de execução</h4>
                   <p class="muted-text">Estas definições aplicam-se às novas execuções. As tarefas mostram apenas o estado e um atalho para aqui.</p>
                   <div class="form-grid compact mt-8">
-                    <label>Agente preferido<input id="agentsDefaultAgentId" placeholder="ID do agente no runtime" /></label>
                     <label>Perfil do modelo<select id="agentsDefaultModel"><option value="small">small</option><option value="medium">medium</option><option value="large">large</option><option value="high">high</option><option value="max">max</option><option value="long_context">long_context</option></select></label>
                     <label>Limite tokens locais<input id="agentsDefaultMaxTokens" type="number" min="0" value="0" /></label>
                     <label>Limite tokens externos<input id="agentsDefaultExternalTokens" type="number" min="0" value="120000" /></label>
@@ -710,8 +709,8 @@
                 <section class="settings-section mt-12">
                   <div class="panel-title-row">
                     <div>
-                      <h4>Personas da linha de produção</h4>
-                      <p class="muted-text">Intenção → Proposta → OpenSpec → UX → Módulos → Interfaces → Construir → Testar → Integrar. Cada persona liga a um agente do runtime.</p>
+                      <h4>Agentes da linha de produção</h4>
+                      <p class="muted-text">Intenção → Proposta → OpenSpec → UX → Módulos → Interfaces → Construir → Testar → Integrar. Cada persona <strong>é</strong> um agente: o seu nome, o seu modelo e as suas ferramentas MCP são a definição completa, e é isso que a plataforma envia ao runtime.</p>
                     </div>
                     <button type="button" class="btn primary" id="agentsSavePersonasBtn">Guardar personas</button>
                   </div>
@@ -1385,19 +1384,19 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/app.js?v=52" defer></script>
-  <script src="/projects/static/requirements-map-ui.js?v=13" defer></script>
-  <script src="/projects/static/requirements-ui.js?v=16" defer></script>
+  <script src="/projects/static/app.js?v=53" defer></script>
+  <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
+  <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
-  <script src="/projects/static/minutes-ui.js?v=3" defer></script>
+  <script src="/projects/static/minutes-ui.js?v=4" defer></script>
   <script src="/projects/static/diagrams-ui.js?v=8" defer></script>
-  <script src="/projects/static/delivery-os-ui.js?v=76" defer></script>
+  <script src="/projects/static/delivery-os-ui.js?v=77" defer></script>
   <script src="/projects/static/engineering-state-ui.js?v=3" defer></script>
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
-  <script src="/projects/static/work-items-ui.js?v=32" defer></script>
-  <script src="/projects/static/agents-admin-ui.js?v=2" defer></script>
+  <script src="/projects/static/work-items-ui.js?v=33" defer></script>
+  <script src="/projects/static/agents-admin-ui.js?v=4" defer></script>
   <script src="/projects/static/platform-settings-ui.js?v=2" defer></script>
-  <script src="/projects/static/project-repository-ui.js?v=2" defer></script>
+  <script src="/projects/static/project-repository-ui.js?v=3" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=9" defer></script>
   <script src="/projects/static/resume-ui.js?v=1" defer></script>

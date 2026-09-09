@@ -281,7 +281,8 @@ function personaExecutionSettings(personaId, platformExecutionDefaults = {}, tas
   return workItems.normalizeExecutionSettings({
     ...base,
     modelProfileId: persona.modelProfileId,
-    agentId: persona.agentId || base.agentId || '',
+    // The persona is the agent: its id is the identity the runtime is asked for.
+    agentId: persona.id,
     allowedMcpTools: persona.allowedTools,
     ...(persona.maxTokens ? { maxTokens: persona.maxTokens, tokenBudgetMode: 'limited' } : {}),
     ...(persona.maxWallClockMinutes
@@ -293,46 +294,30 @@ function personaExecutionSettings(personaId, platformExecutionDefaults = {}, tas
 }
 
 /**
- * Which runtime agents (from a connector capability manifest) can serve this persona.
- * A candidate must cover one of the persona's task types and every tool it needs.
+ * Is this persona ready to run, and if not, what is missing.
+ *
+ * A persona IS an agent: its id, its model tier and its MCP tools are the whole
+ * definition, and the platform sends that to the runtime. There is deliberately no
+ * matching against a list of agents the runtime pre-registered — that was two names
+ * for one concept, and it produced "no compatible agent" for personas that were
+ * perfectly well defined. The only real questions are whether a runtime is connected
+ * and whether it exposes the tools this persona needs.
  */
-function personaCandidateAgents(personaId, capabilities = {}, overrides = {}) {
-  const persona = resolvePersona(personaId, overrides);
-  if (!persona) return [];
-  const agents = Array.isArray(capabilities.agents) ? capabilities.agents : [];
-  const globalTools = new Set(stringList(capabilities.tools));
-  const wantedTypes = new Set(persona.taskTypes);
-  return agents
-    .map((agent) => {
-      const agentTools = new Set([...stringList(agent.tools), ...globalTools]);
-      const missingTools = persona.allowedTools.filter((tool) => !agentTools.has(tool));
-      const typeMatch = stringList(agent.taskTypes).some((type) => wantedTypes.has(type));
-      return {
-        agentId: agent.id,
-        name: textOr(agent.name, agent.id),
-        typeMatch,
-        missingTools,
-        eligible: typeMatch && missingTools.length === 0,
-      };
-    })
-    .sort((left, right) => Number(right.eligible) - Number(left.eligible)
-      || Number(right.typeMatch) - Number(left.typeMatch));
-}
+function personaReadiness(capabilities = {}, overrides = {}, { runtimeOnline = true } = {}) {
+  const offered = new Set(stringList(capabilities.tools));
+  // A runtime may list tools per agent as well as globally; both count as available,
+  // because the persona is dispatched to the runtime, not to one of its agents.
+  for (const agent of Array.isArray(capabilities.agents) ? capabilities.agents : []) {
+    for (const tool of stringList(agent.tools)) offered.add(tool);
+  }
+  const knowsTools = offered.size > 0;
 
-/**
- * Binding report for the admin UI: for every persona, is there a runtime agent that
- * can actually run it, and if not, why not.
- */
-function personaBindingReport(capabilities = {}, overrides = {}) {
   return listPersonas(overrides).map((persona) => {
-    const candidates = personaCandidateAgents(persona.id, capabilities, overrides);
-    const pinned = persona.agentId
-      ? candidates.find((candidate) => candidate.agentId === persona.agentId) || null
-      : null;
-    const eligible = candidates.filter((candidate) => candidate.eligible);
-    // A pin is deliberate: if the pinned agent is gone, report it rather than
-    // silently rerouting the persona onto a different agent.
-    const bound = persona.agentId ? pinned : (eligible[0] || null);
+    // With no tool manifest at all we cannot claim anything is missing — say so,
+    // rather than inventing a failure the operator cannot act on.
+    const missingTools = knowsTools
+      ? persona.allowedTools.filter((tool) => !offered.has(tool))
+      : [];
     return {
       personaId: persona.id,
       label: persona.label,
@@ -345,11 +330,14 @@ function personaBindingReport(capabilities = {}, overrides = {}) {
       deliveryStages: persona.deliveryStages,
       pipelineSteps: persona.pipelineSteps,
       requiresHumanApproval: persona.requiresHumanApproval,
-      boundAgentId: bound?.agentId || '',
-      boundAgentName: bound?.name || '',
-      pinnedAgentMissing: Boolean(persona.agentId) && !pinned,
-      satisfied: Boolean(bound?.eligible),
-      candidates,
+      tools: persona.allowedTools,
+      taskTypes: persona.taskTypes,
+      // The persona's own id is the agent identity sent to the runtime.
+      agentId: persona.id,
+      runtimeOnline: Boolean(runtimeOnline),
+      toolsVerified: knowsTools,
+      missingTools,
+      ready: Boolean(runtimeOnline) && persona.enabled && missingTools.length === 0,
     };
   });
 }
@@ -411,8 +399,7 @@ module.exports = {
   normalizeModelProfileId,
   normalizePersonaOverride,
   normalizePersonaOverrides,
-  personaBindingReport,
-  personaCandidateAgents,
+  personaReadiness,
   personaDefinition,
   personaExecutionSettings,
   personaViolations,
