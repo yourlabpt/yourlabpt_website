@@ -675,6 +675,10 @@ textarea {
    but is never drawn: the label is the control, grey when off and accent when on.
    See UI-RULES.md #1 - no raw checkboxes anywhere in this interface. */
 .checkline {
+  /* Positioned so the input below is contained by the pill. Without this the input
+     escapes to a distant positioned ancestor, and clicking the pill focuses something
+     hundreds of pixels away — which scrolls the page and eats the click. */
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -696,15 +700,20 @@ textarea {
   color: var(--text);
 }
 
-/* Reachable and focusable, just never visible. */
+/* The input covers the whole pill: invisible, but it is the real click target, so a
+   click lands on it directly instead of relying on label activation. */
 .checkline input[type="checkbox"] {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
+  border: 0;
   opacity: 0;
-  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
 }
 
 .checkline:has(input[type="checkbox"]:checked) {

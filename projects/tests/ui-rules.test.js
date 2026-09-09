@@ -23,6 +23,20 @@ test('every checkbox is a pill or a selection dot, never a raw browser checkbox'
   assert.match(css, /\.checkline:has\(input\[type="checkbox"\]:checked\)[^}]*var\(--accent\)/s);
   // Focus has to remain visible once the input itself is not.
   assert.match(css, /\.checkline:has\(input\[type="checkbox"\]:focus-visible\)/);
+
+  // The hidden input is absolutely positioned, so the pill MUST establish the
+  // containing block. Without this the input escapes to a distant positioned
+  // ancestor: clicking the pill then focuses something hundreds of pixels away,
+  // the browser scrolls there mid-click, and the toggle never registers.
+  const pillRule = css.slice(css.indexOf('.checkline {'), css.indexOf('.checkline:hover'));
+  assert.match(pillRule, /position: relative;/, '.checkline must contain its hidden input');
+  // And the input covers the pill, so the click lands on the control itself.
+  const inputRule = css.slice(
+    css.indexOf('.checkline input[type="checkbox"] {'),
+    css.indexOf('.checkline:has(input[type="checkbox"]:checked)'),
+  );
+  assert.match(inputRule, /inset: 0;/);
+  assert.doesNotMatch(inputRule, /pointer-events: none/);
   // Dense rows get the circular selection target instead.
   assert.match(css, /\.check-dot\s*\{[^}]*appearance: none;/s);
 
