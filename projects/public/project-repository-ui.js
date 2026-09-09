@@ -145,12 +145,28 @@
       </div>
       <p class="muted-text mt-8">Clonar: <code>${escapeHtml(repository.cloneUrl)}</code></p>
       ${isSuperAdmin() ? `
-      <div class="form-grid compact mt-12">
-        <label class="full">Pasta local no servidor
-          <input id="repoLocalPath" value="${escapeHtml(repository.localPath || state.data?.suggestedLocalPath || '')}" placeholder="./workspaces/dono/nome" />
-          <small class="field-help">Onde o servidor mantém a cópia de trabalho deste repositório. Os agentes escrevem aqui; nada é enviado para o GitHub sem a sua aceitação.</small>
-        </label>
-        <div class="settings-save-row"><button type="button" class="btn" id="repoLocalPathBtn">Guardar pasta</button></div>
+      <div class="sandbox-explainer mt-12">
+        <p><strong>Sandbox de desenvolvimento</strong></p>
+        <p class="muted-text">
+          É aqui que o trabalho acontece antes de existir no GitHub. A sequência é sempre
+          a mesma, e é o que lhe dá o controlo:
+        </p>
+        <ol class="sandbox-steps mt-8">
+          <li><strong>Alterar</strong> — os agentes escrevem nesta pasta, nunca no GitHub.</li>
+          <li><strong>Testar</strong> — os testes correm aqui, sobre as alterações reais.</li>
+          <li><strong>Rever</strong> — vê o diff e decide.</li>
+          <li><strong>Commit</strong> — só a sua aceitação envia alguma coisa para o GitHub.</li>
+        </ol>
+        <div class="form-grid compact mt-12">
+          <label class="full">Pasta da sandbox
+            <input id="repoLocalPath" value="${escapeHtml(repository.localPath || state.data?.suggestedLocalPath || '')}" placeholder="./workspaces/dono/nome" />
+            <small class="field-help">
+              No servidor onde corre o Agent Runtime. Uma pasta por projecto, para que
+              duas execuções nunca se pisem.
+            </small>
+          </label>
+          <div class="settings-save-row"><button type="button" class="btn" id="repoLocalPathBtn">Guardar pasta</button></div>
+        </div>
       </div>` : ''}
       ${renderActivity(activity)}`;
   }

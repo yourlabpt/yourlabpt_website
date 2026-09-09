@@ -33,6 +33,37 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Plataforma vs Runtime — política e capacidade
+Where a setting belongs, decided once so it stops being re-litigated.
+
+**The platform owns policy. The runtime owns capability. Neither owns both.**
+
+The platform is authoritative for what personas exist and what each may touch, the
+model **tier**, budget caps, approval gates, task order, and what gets committed. The
+runtime declares which MCP tools it actually implements, which model backs each tier,
+its own keys and endpoints, and where its working clone lives.
+
+The test: **if getting it wrong is a policy mistake it is the platform's; if it is a
+fact about an environment it is the runtime's.** "Developer may only touch its own
+module" is policy. "standard = a given model on DeepInfra" is an environment fact —
+which is why `modelProfileId` maps to a `runtimeTier` and the platform never names a
+model.
+
+The runtime runs beside the code, and inference is remote. See
+`docs/adr/0001-runtime-runs-beside-the-code.md`. One concept defined in two places is
+what produced the "no compatible agent" failure this platform had to remove; splitting
+agent configuration across two machines would rebuild it.
+
+## Sandbox (pasta local do projecto)
+The working clone the runtime changes code in, one per project. It is the human-control
+loop made physical: **alterar → testar → rever → commit.** Agents write here and never
+to the provider; tests run here against the real changes; the diff is reviewed; only a
+human's acceptance sends anything to GitHub.
+
+The pending change set reaches the platform as **content** (`path` + `content`), not as
+a checkout — so the platform still needs no filesystem of its own, and a diff stays
+reviewable while the runtime is offline.
+
 ## Ferramenta MCP (MCP tool)
 A capability an agent-persona is allowed to use, named `area.verb` — `openspec.write`,
 `repo.patch`, `tests.run`. A persona declares the tools it needs; the runtime declares
