@@ -33,6 +33,25 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Ferramenta MCP (MCP tool)
+A capability an agent-persona is allowed to use, named `area.verb` — `openspec.write`,
+`repo.patch`, `tests.run`. A persona declares the tools it needs; the runtime declares
+the tools it has; the difference is what the platform reports as missing.
+
+Each tool belongs to one of two **surfaces**, and that is the whole answer to "how do
+I provide this one":
+
+- **platform** — the runtime calls back into the platform's HTTP API with its connector
+  token. Nothing to install; the call just has to be implemented.
+- **local** — the runtime acts on the working clone and the machine it runs on. Needs
+  filesystem access, and for `tests.run`, a runner it can execute.
+
+The catalogue lives in `lib/agent-tools.js` and is the single place a tool is explained.
+A tool a persona can require but nobody can describe is a bug, and a test enforces that.
+
+Declaring a tool the runtime does not actually implement moves the failure from
+configuration time to execution time — worse, not better.
+
 ## Linha de produção (production line)
 The nine-stage Delivery OS pipeline (Ideia → Descoberta → Requisitos → Arquitectura →
 Roteiro → Implementação → Validação → Entrega → Operação) IS the **Entrega tab** —

@@ -1759,19 +1759,27 @@ th {
   justify-content: flex-end;
 }
 
-/* One item per row, scannable, no bullets — the repository picker and the survey
-   both list many short technical items and read badly stacked. */
+/* One item per row, scannable, no bullets — these all list many short technical
+   items and read badly stacked. See UI-RULES.md #2. */
 .repo-picker-list,
-.survey-list {
+.survey-list,
+.reference-list {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* Lists you scan and pick from are capped and scroll inside their block. A reference
+   list is meant to be read end to end, so it is never trapped in a scroller. */
+.repo-picker-list,
+.survey-list {
   max-height: 240px;
   overflow-y: auto;
 }
 
 .repo-picker-list li,
-.survey-list li {
+.survey-list li,
+.reference-list li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1837,6 +1845,42 @@ ul:not([class]) > li::before {
   gap: 8px;
 }
 
+/* What a tool does, next to its id. The id alone explains nothing to an operator. */
+.agent-tool-what {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+
+/* The gap, stated as something to act on rather than as a failure. */
+.agent-missing {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.agent-missing p {
+  margin: 0;
+}
+
+.agents-tool-help:not(:empty) {
+  margin-bottom: 12px;
+}
+
+.agent-manifest {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* Commits and change requests. Rows with a hairline, never bullets — a commit list
    is data, not prose. See UI-RULES.md #2. */
 .commit-list {
@@ -1875,7 +1919,8 @@ ul:not([class]) > li::before {
 }
 
 .repo-picker-list code,
-.survey-list code {
+.survey-list code,
+.reference-list code {
   flex: 1;
   min-width: 0;
   overflow: hidden;

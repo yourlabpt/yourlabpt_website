@@ -9,6 +9,7 @@
  * and produces, and which runtime agent may serve it.
  */
 const workItems = require('./work-items');
+const agentTools = require('./agent-tools');
 const { stringList } = require('./agent-connector-contract');
 
 const PIPELINE_STEPS = [
@@ -330,13 +331,13 @@ function personaReadiness(capabilities = {}, overrides = {}, { runtimeOnline = t
       deliveryStages: persona.deliveryStages,
       pipelineSteps: persona.pipelineSteps,
       requiresHumanApproval: persona.requiresHumanApproval,
-      tools: persona.allowedTools,
+      tools: agentTools.describeTools(persona.allowedTools),
       taskTypes: persona.taskTypes,
       // The persona's own id is the agent identity sent to the runtime.
       agentId: persona.id,
       runtimeOnline: Boolean(runtimeOnline),
       toolsVerified: knowsTools,
-      missingTools,
+      missingTools: agentTools.describeTools(missingTools),
       ready: Boolean(runtimeOnline) && persona.enabled && missingTools.length === 0,
     };
   });

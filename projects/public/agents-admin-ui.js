@@ -134,11 +134,12 @@
       const options = state.modelProfiles.map((profile) => `
         <option value="${escapeHtml(profile)}"${profile === persona.modelProfileId ? ' selected' : ''}>${escapeHtml(profile)}</option>
       `).join('');
-      // Tools are what this agent is allowed to reach. A missing one is marked in
-      // place, so the fix is visible without reading a separate error.
-      const missing = new Set(persona.missingTools);
+      // Tools are what this agent is allowed to reach. Each chip carries what the tool
+      // actually does, because an id like `openspec.write` explains nothing on its own.
+      const missing = new Set(persona.missingTools.map((tool) => tool.id));
       const tools = persona.tools.map((tool) => `
-        <span class="agent-tool${missing.has(tool) ? ' is-missing' : ''}">${escapeHtml(tool)}</span>
+        <span class="agent-tool${missing.has(tool.id) ? ' is-missing' : ''}"
+              title="${escapeHtml(tool.label)} — ${escapeHtml(tool.description)}">${escapeHtml(tool.id)}</span>
       `).join('');
       return `
         <article class="agents-persona-row read-card" data-persona-id="${escapeHtml(persona.personaId)}">
@@ -155,10 +156,20 @@
           </div>
           <div class="agent-tools mt-8">${tools}</div>
           ${persona.missingTools.length ? `
-            <p class="muted-text mt-8">
-              O runtime ligado não expõe ${escapeHtml(persona.missingTools.join(', '))}.
-              Active essas ferramentas MCP no runtime para esta persona poder correr.
-            </p>` : ''}
+            <div class="agent-missing mt-8">
+              <p><strong>Falta isto para esta persona poder correr:</strong></p>
+              <ul class="reference-list mt-8">
+                ${persona.missingTools.map((tool) => `
+                  <li>
+                    <code>${escapeHtml(tool.id)}</code>
+                    <span class="agent-tool-what">${escapeHtml(tool.description)}</span>
+                    <span class="muted-text">${tool.surface === 'local' ? 'no seu Mac' : 'na plataforma'}</span>
+                  </li>`).join('')}
+              </ul>
+              <button type="button" class="btn tiny ghost mt-8" data-fix-persona="${escapeHtml(persona.personaId)}">
+                Como adicionar estas ferramentas
+              </button>
+            </div>` : ''}
           ${!persona.toolsVerified && persona.runtimeOnline ? `
             <p class="muted-text mt-8">O runtime não declarou que ferramentas tem, por isso não foi possível confirmar estas.</p>` : ''}
           <div class="form-grid compact mt-8">
@@ -235,11 +246,14 @@
       state.settings = settingsPayload.settings;
       state.runs = runsPayload.runs || [];
       state.personas = personasPayload.personas || [];
+      state.toolCatalogue = personasPayload.toolCatalogue || {};
+      state.toolSurfaces = personasPayload.toolSurfaces || {};
       state.modelProfiles = personasPayload.modelProfiles || [];
       state.personaConnector = personasPayload.connector || null;
       fillForm(state.settings);
       renderHealth();
       renderPersonas();
+      renderToolCatalogue();
       renderRuns();
     } catch (error) {
       const host = $('agentsAdminRoot');
@@ -267,6 +281,95 @@
     window.showToast?.('Personas guardadas.', 'ok');
   }
 
+  /**
+   * The whole catalogue, so an operator can read what a tool is without first having
+   * it reported as missing.
+   */
+  function renderToolCatalogue() {
+    const host = $('agentsToolCatalogueBody');
+    if (!host) return;
+    const catalogue = state.toolCatalogue || {};
+    const ids = Object.keys(catalogue);
+    if (!ids.length) { host.innerHTML = '<p class="muted-text">Catálogo indisponível.</p>'; return; }
+
+    const group = (surface, title) => {
+      const rows = ids.filter((id) => catalogue[id].surface === surface);
+      if (!rows.length) return '';
+      return `
+        <p class="mt-12"><strong>${title}</strong></p>
+        <p class="muted-text">${escapeHtml(state.toolSurfaces?.[surface] || '')}</p>
+        <ul class="reference-list mt-8">
+          ${rows.map((id) => `
+            <li><code>${escapeHtml(id)}</code>
+            <span class="agent-tool-what">${escapeHtml(catalogue[id].description)}</span></li>`).join('')}
+        </ul>`;
+    };
+
+    host.innerHTML = group('platform', 'Servidas pela plataforma')
+      + group('local', 'Servidas pelo seu Mac');
+  }
+
+  /**
+   * Naming a missing tool is only half an answer. This is the other half: what the
+   * tool is, which side has to provide it, and the exact manifest to send so the
+   * platform stops reporting it as missing.
+   */
+  function showHowToAdd(personaId) {
+    const persona = state.personas.find((entry) => entry.personaId === personaId);
+    if (!persona) return;
+    const host = $('agentsToolHelp');
+    if (!host) return;
+
+    const bySurface = { platform: [], local: [], unknown: [] };
+    for (const tool of persona.missingTools) bySurface[tool.surface || 'unknown'].push(tool);
+
+    const section = (surface, title, howTo) => {
+      const entries = bySurface[surface];
+      if (!entries.length) return '';
+      return `
+        <div class="mt-12">
+          <p><strong>${title}</strong></p>
+          <ul class="reference-list mt-8">
+            ${entries.map((tool) => `
+              <li><code>${escapeHtml(tool.id)}</code>
+              <span class="agent-tool-what">${escapeHtml(tool.description)}</span></li>`).join('')}
+          </ul>
+          <p class="muted-text mt-8">${howTo}</p>
+        </div>`;
+    };
+
+    const ids = persona.missingTools.map((tool) => tool.id);
+    const snippet = JSON.stringify({
+      capabilities: {
+        protocol: { id: 'yourlab.agent-dispatch', versions: [2] },
+        tools: [...new Set([...persona.tools.map((t) => t.id)])].sort(),
+      },
+    }, null, 2);
+
+    host.innerHTML = `
+      <div class="read-card">
+        <div class="panel-title-row">
+          <div><strong>${escapeHtml(persona.label)} — ${ids.length} ferramenta(s) em falta</strong></div>
+          <button type="button" class="btn tiny ghost" id="agentsToolHelpClose">Fechar</button>
+        </div>
+        ${section('platform', 'Servidas pela plataforma',
+          'O runtime não precisa de instalar nada: chama a API da plataforma com o token de ligação que recebeu ao emparelhar. Falta implementar essa chamada no runtime.')}
+        ${section('local', 'Servidas pelo seu Mac',
+          'O runtime actua na cópia de trabalho local: precisa de acesso de leitura e escrita à pasta do repositório e, para os testes, de um comando que os consiga correr.')}
+        ${section('unknown', 'Desconhecidas',
+          'Esta versão da plataforma não conhece estas ferramentas. Provavelmente é um erro de escrita na definição da persona.')}
+        <p class="mt-12"><strong>Depois, declare-as no manifesto que o runtime envia:</strong></p>
+        <pre class="agent-manifest mt-8"><code>${escapeHtml(snippet)}</code></pre>
+        <p class="muted-text mt-8">
+          O manifesto é enviado ao emparelhar e outra vez em cada heartbeat, por isso
+          basta acrescentar as ferramentas e esperar o próximo heartbeat — não é preciso
+          voltar a emparelhar. Declarar uma ferramenta que o runtime não implementa faz
+          a tarefa falhar em execução em vez de aqui.
+        </p>
+      </div>`;
+    host.scrollIntoView({ block: 'nearest' });
+  }
+
   function wireEvents() {
     $('agentsSaveDefaultsBtn')?.addEventListener('click', () => {
       saveDefaults().catch((error) => window.showToast?.(error.message, 'error'));
@@ -276,6 +379,13 @@
     });
     $('agentsRefreshBtn')?.addEventListener('click', () => {
       refresh().catch((error) => window.showToast?.(error.message, 'error'));
+    });
+    $('agentsPersonasList')?.addEventListener('click', (event) => {
+      const fix = event.target.closest('[data-fix-persona]');
+      if (fix) showHowToAdd(fix.dataset.fixPersona);
+    });
+    $('agentsToolHelp')?.addEventListener('click', (event) => {
+      if (event.target.id === 'agentsToolHelpClose') $('agentsToolHelp').innerHTML = '';
     });
     $('agentsRunsList')?.addEventListener('click', (event) => {
       const openTask = event.target.closest('[data-agents-open-task], [data-agents-open-run]');

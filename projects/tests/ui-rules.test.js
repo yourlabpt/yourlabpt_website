@@ -97,8 +97,10 @@ test('the readiness states name something the operator can act on', () => {
   for (const state of ['Runtime desligado', 'Desactivada', 'Faltam', 'Pronta']) {
     assert.match(ui, new RegExp(state), `missing readiness state: ${state}`);
   }
-  // A missing tool is named, not counted away into a generic failure.
-  assert.match(ui, /O runtime ligado não expõe \$\{escapeHtml\(persona\.missingTools\.join/);
+  // A missing tool is named and explained, not counted away into a generic failure.
+  assert.match(ui, /Falta isto para esta persona poder correr/);
+  assert.match(ui, /persona\.missingTools\.map\(\(tool\) =>/);
+  assert.match(ui, /escapeHtml\(tool\.description\)/);
 });
 
 test('colours come from theme tokens, not literals, in the new components', () => {

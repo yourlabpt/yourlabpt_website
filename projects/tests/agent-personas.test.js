@@ -100,7 +100,9 @@ describe('agent persona registry', () => {
     // is the concrete gap — the mockup tools this runtime does not expose — instead of
     // the old "no compatible agent", which named nothing the operator could fix.
     const ux = byId.get('ux');
-    assert.deepEqual(ux.missingTools, ['mockups.read', 'mockups.write']);
+    assert.deepEqual(ux.missingTools.map((tool) => tool.id), ['mockups.read', 'mockups.write']);
+    // Each gap carries its own explanation, so the operator knows what it is.
+    assert.ok(ux.missingTools.every((tool) => tool.description && tool.surface));
     assert.equal(ux.ready, false);
   });
 
@@ -112,9 +114,10 @@ describe('agent persona registry', () => {
     );
     const developer = report.find((row) => row.personaId === 'developer');
     assert.equal(developer.ready, false);
-    assert.ok(developer.missingTools.includes('repo.patch'));
+    const ids = developer.missingTools.map((tool) => tool.id);
+    assert.ok(ids.includes('repo.patch'));
     // Every missing tool is named, so the operator knows exactly what to enable.
-    assert.ok(developer.missingTools.length > 1);
+    assert.ok(ids.length > 1);
   });
 
   it('claims nothing is missing when the runtime declared no tools at all', () => {

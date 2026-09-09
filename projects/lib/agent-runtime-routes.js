@@ -10,6 +10,7 @@ const { registerAgentConnectorRoutes } = require('./agent-connector-routes');
 const engineeringState = require('./engineering-state');
 const agentPlatformSettings = require('./agent-platform-settings');
 const agentPersonas = require('./agent-personas');
+const agentTools = require('./agent-tools');
 const gitRepositories = require('./git-repositories');
 const { resolveRuntimeReachability } = require('./work-items-routes');
 const {
@@ -2519,6 +2520,10 @@ function registerAgentRuntimeRoutes(app, deps) {
         personas: agentPersonas.personaReadiness(capabilities, settings.personas, {
           runtimeOnline: Boolean(connector),
         }),
+        // The catalogue travels with the report so the UI can explain a tool rather
+        // than just naming it, and show exactly what to send to stop it being missing.
+        toolCatalogue: agentTools.TOOL_CATALOGUE,
+        toolSurfaces: agentTools.SURFACE_LABELS,
       });
     } catch (error) {
       return res.status(500).json({ message: error.message });
