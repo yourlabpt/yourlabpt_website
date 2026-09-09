@@ -177,6 +177,22 @@
             <label>Limite tokens<input type="number" min="0" data-persona-field="maxTokens" value="${Number(persona.maxTokens) || 0}" /></label>
             <label>Tempo máximo (min)<input type="number" min="0" data-persona-field="maxWallClockMinutes" value="${Number(persona.maxWallClockMinutes) || 0}" /></label>
           </div>
+          <details class="agent-knowledge mt-8">
+            <summary>O que este agente já sabe
+              <span class="muted-text">${persona.knowledge.length
+                ? `${persona.knowledge.length} nota(s)`
+                : 'nada acrescentado'}</span>
+            </summary>
+            <p class="muted-text mt-8">
+              Regras da casa, convenções, coisas aprendidas à custa. Vão com esta persona
+              em todas as tarefas que corre — acrescentar aqui é como a plataforma
+              melhora, sem ninguém publicar nada.
+            </p>
+            <textarea class="agent-knowledge-input mt-8" data-persona-field="knowledge" rows="4"
+              placeholder="Uma nota por bloco, separadas por uma linha em branco.&#10;A primeira linha de cada bloco é o título.">${escapeHtml(
+                persona.knowledge.map((entry) => `${entry.title}\n${entry.markdown}`).join('\n\n'),
+              )}</textarea>
+          </details>
           <div class="agent-toggle-row mt-8">
             <label class="checkline"><input type="checkbox" data-persona-field="enabled"${persona.enabled ? ' checked' : ''} /> Activa</label>
             <label class="checkline"><input type="checkbox" data-persona-field="requiresHumanApproval"${persona.requiresHumanApproval ? ' checked' : ''} /> Exige aprovação humana</label>
@@ -198,7 +214,21 @@
     host.querySelectorAll('[data-persona-id]').forEach((row) => {
       const personaId = row.dataset.personaId;
       const field = (name) => row.querySelector(`[data-persona-field="${name}"]`);
+      // Blocks separated by a blank line; first line of each is its title. Typing a
+      // structured list is worse than typing prose, and this is prose.
+      const knowledge = (field('knowledge')?.value || '')
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter(Boolean)
+        .map((block, index) => {
+          const [title, ...rest] = block.split('\n');
+          return rest.length
+            ? { id: `know_${index + 1}`, title: title.trim(), markdown: rest.join('\n').trim() }
+            : { id: `know_${index + 1}`, title: `Nota ${index + 1}`, markdown: title.trim() };
+        });
+
       personas[personaId] = {
+        knowledge,
         enabled: field('enabled')?.checked !== false,
         modelProfileId: field('modelProfileId')?.value || 'medium',
         maxTokens: Number(field('maxTokens')?.value) || 0,

@@ -1839,6 +1839,24 @@ ul:not([class]) > li::before {
   text-decoration: line-through;
 }
 
+/* Knowledge you attach to a persona. Collapsed by default: it is how the platform
+   improves over time, not something to read on every visit. */
+.agent-knowledge > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.agent-knowledge-input {
+  width: 100%;
+  min-height: 90px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .agent-toggle-row {
   display: flex;
   flex-wrap: wrap;

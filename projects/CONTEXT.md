@@ -33,6 +33,28 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Briefing de persona
+What a persona is told before it starts, assembled in `lib/persona-briefing.js` from the
+policy it already has: what its stage must produce, when that stage counts as done, that
+its output is not final until a person accepts it, and what changing that output would
+put in doubt. On a refinamento it also says why it is running out of sequence, and to
+adjust what is needed **and no more**.
+
+None of this reached the agent before — it had to infer the method from the prompt, and
+inferring the method is how an agent ends up building something plausible nobody asked
+for. It travels twice: appended to the instructions as prose, and in
+`context.policy` as structure, so a runtime can act on the rules rather than parse them.
+
+Facts and rules only. Nothing here tells a persona *how* to think; that is its own
+business.
+
+## Conhecimento de persona (knowledge)
+Notes attached to a persona in Agentes — house rules, conventions, things learned the
+hard way — that travel with it into every task it runs. Stored as data on the persona
+override, so **the platform gets better at its job by being told things, not by being
+redeployed**. Written as blocks separated by a blank line, the first line of each being
+its title, because typing a structured list is worse than typing prose.
+
 ## Propagação de alterações
 What else a change puts in doubt, in `lib/change-propagation.js`. Two directions, and
 only one of them is declarable.

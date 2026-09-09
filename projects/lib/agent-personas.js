@@ -213,6 +213,22 @@ function runtimeTierFor(modelProfileId) {
  * User-supplied overrides for one persona. Only the fields an operator is allowed to
  * change: the role's contract (writeScope, produces, consumes) is not configurable.
  */
+/**
+ * A persona's knowledge pack. Short entries with a title, because an agent given one
+ * long undifferentiated blob weighs all of it equally.
+ */
+function normalizeKnowledge(raw) {
+  const seen = new Set();
+  return (Array.isArray(raw) ? raw : []).map((entry, index) => {
+    const body = textOr(entry?.markdown || entry?.body);
+    if (!body) return null;
+    const id = textOr(entry?.id, `know_${index + 1}`);
+    if (seen.has(id)) return null;
+    seen.add(id);
+    return { id, title: textOr(entry?.title, `Nota ${index + 1}`), markdown: body };
+  }).filter(Boolean);
+}
+
 function normalizePersonaOverride(personaId, raw = {}) {
   const definition = personaDefinition(personaId);
   if (!definition) return null;
@@ -235,6 +251,10 @@ function normalizePersonaOverride(personaId, raw = {}) {
       ? src.requiresHumanApproval === true
       : definition.requiresHumanApproval === true,
     instructions: textOr(src.instructions),
+    // Knowledge a persona carries into every task it runs: house rules, a checklist, a
+    // convention learned the hard way. Data, so the platform gets better at its job by
+    // being told things rather than by being redeployed.
+    knowledge: normalizeKnowledge(src.knowledge),
   };
 }
 
@@ -333,6 +353,7 @@ function personaReadiness(capabilities = {}, overrides = {}, { runtimeOnline = t
       requiresHumanApproval: persona.requiresHumanApproval,
       tools: agentTools.describeTools(persona.allowedTools),
       taskTypes: persona.taskTypes,
+      knowledge: persona.knowledge,
       // The persona's own id is the agent identity sent to the runtime.
       agentId: persona.id,
       runtimeOnline: Boolean(runtimeOnline),
@@ -400,6 +421,7 @@ module.exports = {
   normalizeModelProfileId,
   normalizePersonaOverride,
   normalizePersonaOverrides,
+  normalizeKnowledge,
   personaReadiness,
   personaDefinition,
   personaExecutionSettings,

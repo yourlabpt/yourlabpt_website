@@ -388,6 +388,15 @@ function normalizeWorkItem(raw, options = {}) {
     // Repository write scope for code-writing agents: which module this task owns and
     // the paths it may touch. Without these a scoped agent is refused the commit.
     moduleName: textOr(src.moduleName || src.module),
+    // Why this task exists when it is a reconciliation: what moved, what that puts in
+    // doubt, and the policy rule. Carried so the persona is briefed with it, and so the
+    // task can still explain itself long after the run.
+    reconcile: src.reconcile && typeof src.reconcile === 'object' ? {
+      artifact: textOr(src.reconcile.artifact),
+      sourceArtifact: textOr(src.reconcile.sourceArtifact),
+      direction: textOr(src.reconcile.direction),
+      rule: textOr(src.reconcile.rule),
+    } : null,
     repositoryPaths: [...new Set(ensureArray(src.repositoryPaths)
       .map((entry) => textOr(entry))
       .filter(Boolean))],

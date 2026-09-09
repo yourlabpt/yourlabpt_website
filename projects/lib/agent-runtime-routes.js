@@ -11,6 +11,7 @@ const engineeringState = require('./engineering-state');
 const agentPlatformSettings = require('./agent-platform-settings');
 const agentPersonas = require('./agent-personas');
 const agentTools = require('./agent-tools');
+const personaBriefing = require('./persona-briefing');
 const gitRepositories = require('./git-repositories');
 const { resolveRuntimeReachability } = require('./work-items-routes');
 const {
@@ -1514,6 +1515,18 @@ function registerAgentRuntimeRoutes(app, deps) {
             ],
         } : null;
 
+        // What the policy already knows about this stage: what it must produce, when it
+        // counts as done, and what changing its output puts in doubt. Without this the
+        // agent has to infer the method from the prompt, which is how it ends up
+        // building something plausible that nobody asked for.
+        const briefing = runningPersona
+          ? personaBriefing.buildBriefing(project, runningPersona, {
+            stageId: textOr(delegatedTask.deliveryStageId),
+            reconcile: delegatedTask.reconcile || null,
+          })
+          : null;
+        const briefingMarkdown = briefing ? personaBriefing.briefingToMarkdown(briefing) : '';
+
         const frozenPackage = buildFrozenTaskPackage({
           projectId,
           workItemId: delegatedTask.id,
@@ -1525,11 +1538,14 @@ function registerAgentRuntimeRoutes(app, deps) {
           contextSnapshotHash: canonicalPackage.contextSnapshotHash,
           agentId,
           agentType: platformAgentType,
-          instructions: `${canonicalPackage.text || built.fullPrompt}${engineeringInstructions}`,
+          instructions: `${canonicalPackage.text || built.fullPrompt}${engineeringInstructions}${
+            briefingMarkdown ? `\n\n${briefingMarkdown}` : ''}`,
           context: {
             ...built.contextPack,
             ...(engineeringContext ? { engineering: engineeringContext } : {}),
             ...(repositoryContext ? { repository: repositoryContext } : {}),
+            // Also as data, so a runtime can act on the rules rather than re-read prose.
+            ...(briefing ? { policy: briefing } : {}),
           },
           taskGraph: canonicalPackage.children?.map((task) => ({
             id: task.id,

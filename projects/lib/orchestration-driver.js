@@ -33,6 +33,7 @@ function createPersonaWorkItem(project, persona, actorUserId, reconcile = null) 
     agentId: text(persona.agentId),
     deliveryStageId: persona.deliveryStages[0],
     descriptionMarkdown: reconcile ? reconcile.rule : persona.summary,
+    reconcile: reconcile && reconcile.direction !== 'produces' ? reconcile : null,
     createdBy: actorUserId,
   }, { project });
 
