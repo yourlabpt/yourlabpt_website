@@ -1715,6 +1715,44 @@
     window.WorkItemsMarkdown?.resize(acceptRoot, { minHeight: 140 });
   }
 
+  const DECISION_STATUS = {
+    proposed: ['badge-amber', 'À sua espera'],
+    accepted: ['badge-green', 'Aceite'],
+    rejected: ['badge-gray', 'Rejeitada'],
+  };
+
+  /**
+   * A decision is not a comment. It says what moved, what that puts in doubt, and what
+   * is proposed — and until someone rules on it, nothing about the earlier phase counts
+   * as changed.
+   */
+  function renderDecision(entry, decision) {
+    const [badgeClass, label] = DECISION_STATUS[decision.status] || ['badge-gray', decision.status];
+    const affects = decision.affects.length
+      ? `<p class="ado-decision-line"><span>Põe em causa</span> ${decision.affects.map((a) => `<code>${escapeHtml(a)}</code>`).join(' ')}</p>`
+      : '';
+    const decided = decision.status !== 'proposed'
+      ? `<p class="muted-text">${escapeHtml(label)} por ${userLabel(decision.decidedBy)} · ${escapeHtml(formatWhen(decision.decidedAt))}</p>`
+      : '';
+    return `
+      <div class="ado-decision">
+        <div class="ado-decision-head">
+          <span class="section-badge ${badgeClass}">${escapeHtml(label)}</span>
+          <span class="muted-text">
+            ${decision.changedBy === 'human' ? 'a partir de uma alteração sua' : 'a partir de uma alteração de um agente'}
+            ${decision.artifact ? ` em <code>${escapeHtml(decision.artifact)}</code>` : ''}
+          </span>
+        </div>
+        ${affects}
+        ${decision.rationale ? `<p class="ado-decision-why">${escapeHtml(decision.rationale)}</p>` : ''}
+        ${decision.status === 'proposed' && state.canManage ? `
+          <div class="ado-action-bar">
+            <button type="button" class="ado-action-primary" data-ado-decide="${escapeHtml(entry.id)}" data-accept="1">Aceitar</button>
+            <button type="button" class="ado-action-ghost" data-ado-decide="${escapeHtml(entry.id)}" data-accept="0">Rejeitar</button>
+          </div>` : decided}
+      </div>`;
+  }
+
   function renderUpdatesTimeline(item) {
     const updates = [
       ...(item?.taskActivity || []).map((event) => ({ ...event, bodyMarkdown: event.message, createdBy: event.actorId, isSystemEvent: true })),
@@ -1729,8 +1767,9 @@
     }
     return updates.map((entry) => {
       const editing = state.editingUpdateId === entry.id;
+      const decision = entry.decision || null;
       return `
-        <article class="ado-update-item ${editing ? 'is-editing' : ''}" data-update-id="${escapeHtml(entry.id)}">
+        <article class="ado-update-item ${editing ? 'is-editing' : ''}${decision ? ` is-decision is-${escapeHtml(decision.status)}` : ''}" data-update-id="${escapeHtml(entry.id)}">
           <header class="ado-update-head">
             <div class="ado-update-meta">
               <strong class="ado-update-author">${escapeHtml(entry.isSystemEvent ? (entry.actorType === 'agent' ? 'Agente' : entry.actorType === 'platform' ? 'Plataforma' : userLabel(entry.createdBy)) : userLabel(entry.createdBy))}</strong>
@@ -1739,9 +1778,12 @@
                 ? `<span class="ado-update-edited">editado ${escapeHtml(formatWhen(entry.updatedAt))}</span>`
                 : ''}
             </div>
-            ${state.canEditUpdate && !entry.isSystemEvent ? `<button type="button" class="ado-action-ghost ado-action-small" data-ado-update-edit="${escapeHtml(entry.id)}">Editar</button>` : ''}
+            ${state.canEditUpdate && !entry.isSystemEvent && !(decision && decision.status !== 'proposed')
+              ? `<button type="button" class="ado-action-ghost ado-action-small" data-ado-update-edit="${escapeHtml(entry.id)}">Editar</button>`
+              : ''}
           </header>
           <div class="ado-update-body ${editing ? 'hidden' : ''}" data-ado-update-body>${escapeHtml(entry.bodyMarkdown)}</div>
+          ${decision ? renderDecision(entry, decision) : ''}
           ${editing ? `
             <div class="ado-update-edit-pane" data-ado-update-edit-pane>
               <textarea class="ado-update-edit-input" data-ado-update-edit-input rows="4">${escapeHtml(entry.bodyMarkdown)}</textarea>
@@ -2417,6 +2459,24 @@
       if (event.target.closest('[data-ado-update-cancel]')) {
         state.editingUpdateId = null;
         refreshUpdatesTimeline();
+        return;
+      }
+
+      const decideBtn = event.target.closest('[data-ado-decide]');
+      if (decideBtn) {
+        const updateId = decideBtn.dataset.adoDecide;
+        const accepted = decideBtn.dataset.accept === '1';
+        try {
+          const payload = await apiRequest(
+            `/projects/${encodeURIComponent(project.id)}/work-items/${encodeURIComponent(state.selectedId)}/decisions/${encodeURIComponent(updateId)}`,
+            { method: 'POST', body: { accepted } },
+          );
+          state.detail = payload.workItem;
+          refreshUpdatesTimeline();
+          showToast(accepted ? 'Decisão aceite.' : 'Decisão rejeitada.', 'ok');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
         return;
       }
 

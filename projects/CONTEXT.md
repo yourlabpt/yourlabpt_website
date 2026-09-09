@@ -33,6 +33,24 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Decisão (decision on a task)
+A record that something moved, that it puts something earlier in doubt, and what is
+proposed about it. It rides on an ordinary task update — same feed, same order, next to
+everything else that happened to that task — because a decision filed somewhere separate
+is a decision nobody reads.
+
+`{ artifact, affects[], proposal, rationale, changedBy: 'human' | 'agent',
+status: 'proposed' | 'accepted' | 'rejected', decidedBy, decidedAt }`
+
+**Nothing counts until a person rules on it.** A persona may propose that an earlier
+phase is no longer true; only acceptance makes that so. And once ruled on, the record is
+frozen: rewriting it would mean the thing that was accepted is not the thing that
+stands, so an edit is refused and a new decision must be recorded instead.
+
+`changedBy` distinguishes a ripple from your own hand-edit from one an agent caused —
+the two are treated identically by the chain (see snapshots above), but a person reading
+the task deserves to know which it was.
+
 ## Snapshot e fingerprint — como se sabe que algo mudou
 A snapshot is what a run was built on; a fingerprint is the cheap way to ask whether it
 has changed since. Shared by stage transitions and the persona chain, in

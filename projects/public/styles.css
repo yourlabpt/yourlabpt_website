@@ -1845,6 +1845,47 @@ ul:not([class]) > li::before {
   gap: 8px;
 }
 
+/* A decision is not a comment. It states what moved, what that puts in doubt, and what
+   is proposed — and it stays visibly open until someone rules on it. */
+.ado-decision {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+
+.ado-update-item.is-decision.is-proposed .ado-decision {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.ado-update-item.is-decision.is-accepted .ado-decision { border-left-color: var(--ok); }
+.ado-update-item.is-decision.is-rejected .ado-decision { opacity: 0.65; }
+
+.ado-decision-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ado-decision-line,
+.ado-decision-why {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ado-decision-line span {
+  color: var(--muted);
+}
+
+.ado-decision-why {
+  color: var(--text-2);
+}
+
 /* Project definition. Each question shows why it is asked, because a question whose
    purpose is invisible gets a throwaway answer — and a throwaway answer is what sends
    an agent off building the wrong thing. */

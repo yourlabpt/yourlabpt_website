@@ -1414,6 +1414,95 @@ function registerWorkItemRoutes(app, deps) {
     }
   });
 
+  /**
+   * Records a decision on a task: what changed, what it affects, and what is proposed.
+   * Lands in the same feed as any other update — a decision filed somewhere separate is
+   * a decision nobody reads.
+   */
+  app.post('/api/projects/projects/:projectId/work-items/:workItemId/decisions', authMiddleware, loadProjectLiteForUser, requireProjectEditor, async (req, res) => {
+    try {
+      const { projectId, workItemId } = req.params;
+      let created = null;
+      let updated = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const list = workItems.getWorkItems(project);
+        const existing = list.find((item) => item.id === workItemId);
+        if (!existing) throw new Error('Tarefa nao encontrada.');
+
+        const result = workItems.addWorkItemDecision(existing, req.body?.decision || req.body, {
+          actorUserId: req.auth.user.id,
+          bodyMarkdown: req.body?.bodyMarkdown,
+          nowIso,
+        });
+        result.item.updatedAt = nowIso();
+        result.item.updatedBy = req.auth.user.id;
+        workItems.setWorkItems(project, list.map((item) => (item.id === workItemId ? result.item : item)));
+        project.updatedAt = nowIso();
+        created = result.update;
+        updated = result.item;
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: 'work_item_decision_proposed',
+          details: {
+            workItemId,
+            updateId: result.update.id,
+            artifact: result.update.decision.artifact,
+            affects: result.update.decision.affects,
+          },
+        });
+      });
+      return res.status(201).json({ workItem: updated, update: created });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /**
+   * Accepting or rejecting one. This is where the human keeps control: nothing a persona
+   * proposes about an earlier phase counts until someone rules on it.
+   */
+  app.post('/api/projects/projects/:projectId/work-items/:workItemId/decisions/:updateId', authMiddleware, loadProjectLiteForUser, requireProjectEditor, async (req, res) => {
+    try {
+      const { projectId, workItemId, updateId } = req.params;
+      const accepted = req.body?.accepted !== false;
+      let decided = null;
+      let updated = null;
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === projectId);
+        if (!project) throw new Error('Projeto nao encontrado.');
+        const list = workItems.getWorkItems(project);
+        const existing = list.find((item) => item.id === workItemId);
+        if (!existing) throw new Error('Tarefa nao encontrada.');
+
+        const result = workItems.decideWorkItemUpdate(existing, updateId, {
+          accepted,
+          actorUserId: req.auth.user.id,
+          nowIso,
+        });
+        result.item.updatedAt = nowIso();
+        result.item.updatedBy = req.auth.user.id;
+        workItems.setWorkItems(project, list.map((item) => (item.id === workItemId ? result.item : item)));
+        project.updatedAt = nowIso();
+        decided = result.update;
+        updated = result.item;
+
+        appendActivity(store, {
+          actorUserId: req.auth.user.id,
+          projectId,
+          action: accepted ? 'work_item_decision_accepted' : 'work_item_decision_rejected',
+          details: { workItemId, updateId, artifact: result.update.decision.artifact },
+        });
+      });
+      return res.json({ workItem: updated, update: decided });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
   app.patch('/api/projects/projects/:projectId/work-items/:workItemId/updates/:updateId', authMiddleware, loadProjectLiteForUser, requireProjectEditor, async (req, res) => {
     try {
       const projectId = req.params.projectId;

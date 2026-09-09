@@ -44,13 +44,49 @@ function normalizePriority(raw) {
   const value = textOr(raw).toLowerCase();
   return PRIORITIES.has(value) ? value : '';
 }
+const DECISION_STATUSES = new Set(['proposed', 'accepted', 'rejected']);
+
+/**
+ * A decision recorded on a task: something changed, it affects something else, and this
+ * is what the persona proposes doing about it.
+ *
+ * It rides on an ordinary update rather than living in a table of its own, so it appears
+ * in the same feed, in the same order, next to everything else that happened to this
+ * task. A decision nobody sees is not a decision.
+ */
+function normalizeDecision(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const proposal = textOr(raw.proposal);
+  // A decision with nothing proposed decides nothing; it is a note.
+  if (!proposal) return null;
+  const status = textOr(raw.status, 'proposed');
+  return {
+    // What moved.
+    artifact: textOr(raw.artifact),
+    // What is no longer necessarily true because of it.
+    affects: ensureArray(raw.affects).map((entry) => textOr(entry)).filter(Boolean),
+    proposal,
+    rationale: textOr(raw.rationale),
+    // Whether the change that triggered this came from a person or from an agent.
+    changedBy: raw.changedBy === 'human' ? 'human' : 'agent',
+    status: DECISION_STATUSES.has(status) ? status : 'proposed',
+    decidedBy: textOr(raw.decidedBy),
+    decidedAt: textOr(raw.decidedAt),
+  };
+}
+
 function normalizeUpdate(raw, options = {}) {
-  const bodyMarkdown = textOr(raw?.bodyMarkdown || raw?.body);
+  const decision = normalizeDecision(raw?.decision);
+  // A decision always reads as its proposal when no separate body was written, so the
+  // timeline never shows an empty entry.
+  const bodyMarkdown = textOr(raw?.bodyMarkdown || raw?.body) || (decision ? decision.proposal : '');
   if (!bodyMarkdown) return null;
   const now = options.nowIso ? options.nowIso() : new Date().toISOString();
   const actor = textOr(options.actorUserId);
   return {
     id: textOr(raw?.id, `wup_${crypto.randomUUID()}`), bodyMarkdown,
+    kind: decision ? 'decision' : 'note',
+    ...(decision ? { decision } : {}),
     createdAt: textOr(raw?.createdAt, now), updatedAt: textOr(raw?.updatedAt, now),
     createdBy: textOr(raw?.createdBy, actor), updatedBy: textOr(raw?.updatedBy, actor),
   };
@@ -737,15 +773,61 @@ function addWorkItemUpdate(item, bodyMarkdown, options = {}) {
   if (!update) throw new Error('A actualizacao nao pode estar vazia.');
   return { ...item, updates: [...ensureArray(item.updates), update] };
 }
+
+function addWorkItemDecision(item, decision, options = {}) {
+  const update = normalizeUpdate({ decision, bodyMarkdown: options.bodyMarkdown }, options);
+  if (!update?.decision) throw new Error('Uma decisao precisa de dizer o que propoe.');
+  return { item: { ...item, updates: [...ensureArray(item.updates), update] }, update };
+}
 function patchWorkItemUpdate(item, id, bodyMarkdown, options = {}) {
   const body = textOr(bodyMarkdown); if (!body) throw new Error('A actualizacao nao pode estar vazia.');
   let found = false; const now = options.nowIso ? options.nowIso() : new Date().toISOString();
   const updates = ensureArray(item.updates).map((entry) => {
     if (entry.id !== id) return entry; found = true;
+    // A decision you already ruled on is a record of what was agreed. Letting its text
+    // change afterwards would mean the thing you accepted is not the thing that stands.
+    if (entry.decision && entry.decision.status !== 'proposed') {
+      throw new Error('Esta decisao ja foi decidida e nao pode ser reescrita. Registe uma nova.');
+    }
     return { ...entry, bodyMarkdown: body, updatedAt: now, updatedBy: textOr(options.actorUserId, entry.updatedBy) };
   });
   if (!found) throw new Error('Actualizacao nao encontrada.');
   return { ...item, updates };
+}
+
+/**
+ * Rules on a proposed decision. This is the moment the human keeps control of the
+ * chain: nothing a persona proposes about an earlier phase counts until it is accepted.
+ */
+function decideWorkItemUpdate(item, id, { accepted, actorUserId = '', nowIso } = {}) {
+  const now = nowIso ? nowIso() : new Date().toISOString();
+  let found = null;
+  const updates = ensureArray(item.updates).map((entry) => {
+    if (entry.id !== id) return entry;
+    if (!entry.decision) throw new Error('Esta actualizacao nao e uma decisao.');
+    if (entry.decision.status !== 'proposed') {
+      throw new Error('Esta decisao ja foi decidida.');
+    }
+    found = {
+      ...entry,
+      updatedAt: now,
+      updatedBy: textOr(actorUserId, entry.updatedBy),
+      decision: {
+        ...entry.decision,
+        status: accepted === false ? 'rejected' : 'accepted',
+        decidedBy: textOr(actorUserId),
+        decidedAt: now,
+      },
+    };
+    return found;
+  });
+  if (!found) throw new Error('Decisao nao encontrada.');
+  return { item: { ...item, updates }, update: found };
+}
+
+/** Decisions still waiting on a person, oldest first. */
+function pendingDecisions(item) {
+  return ensureArray(item?.updates).filter((entry) => entry.decision?.status === 'proposed');
 }
 function findWorkItemUpdate(item, id) { return ensureArray(item?.updates).find((entry) => entry.id === id) || null; }
 
@@ -775,6 +857,7 @@ module.exports = {
   getWorkItems, setWorkItems, findWorkItem, findBySourceRef, sourceRefKey, findByExternalRef, externalRefKey,
   toSlimCard, toSlimCards, computeMetaCounts, validateWorkItemForCreate, validateWorkItemForUpdate,
   validateHierarchy, validateDependencies, filterByTransitionFromStage, relevantWorkItems, sortPrioritized, priorityRank,
+  addWorkItemDecision, decideWorkItemUpdate, normalizeDecision, pendingDecisions,
   isTerminalStatus, deriveContainerStatus, deriveParentStatuses, normalizeStatus,
   buildOrchestrationProjection, executionStatusChip, resolveLinkedAgentJob, isAgentExecutionLinked,
   normalizeExecutionSettings,
