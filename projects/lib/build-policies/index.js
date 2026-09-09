@@ -94,6 +94,30 @@ function validatePolicy(productType = DEFAULT_PRODUCT_TYPE) {
 }
 
 /**
+ * The stages a persona actually reads from — where its inputs live.
+ *
+ * Derived from what it consumes rather than where it works: `deliveryStages` is where a
+ * persona writes, and writing somewhere does not make you sensitive to changes there.
+ * What makes a persona's output stale is a change to something it *read*.
+ */
+function stagesFeedingPersona(productType, persona) {
+  const policy = policyFor(productType);
+  const roots = new Set(policy.ROOT_ARTIFACTS);
+  const stages = new Set();
+
+  for (const artifact of persona?.consumes || []) {
+    // Root artifacts come from the answers, which live with the idea.
+    if (roots.has(artifact)) { stages.add('idea'); continue; }
+    for (const stage of policy.STAGES) {
+      const produced = stage.produces.includes(artifact)
+        || Object.values(stage.approvalTransforms || {}).includes(artifact);
+      if (produced) stages.add(stage.stage);
+    }
+  }
+  return [...stages].sort();
+}
+
+/**
  * Which required questions are still unanswered. The Execução gate, and the only place
  * an unanswered question blocks anything.
  */
@@ -116,6 +140,7 @@ module.exports = {
   policyFor,
   producibleArtifacts,
   stageRule,
+  stagesFeedingPersona,
   unansweredRequired,
   validatePolicy,
 };

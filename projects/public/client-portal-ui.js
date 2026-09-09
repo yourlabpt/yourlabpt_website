@@ -162,14 +162,23 @@
       ? `<p class="muted-text">Total do projecto: ${money(rollup.totalSpentUsd)} · ${(rollup.totalHours || 0).toFixed(1)}h em ${rollup.count} execução(ões).</p>`
       : '';
 
-    // A project with no repository has nowhere for the agents to write, so the form
-    // is replaced by what is missing instead of failing on submit.
+    // Something is missing, so the form is replaced by what it is — rather than the
+    // form failing on submit, or a fixed sentence that names the wrong cause.
     if (!exec && orch.blockedReason) {
+      const gaps = (orch.readiness || []).length
+        ? orch.readiness
+        : [{ reason: 'unknown', message: orch.blockedReason }];
       return `
         <div class="read-card">
           <p class="muted-text" style="margin:0 0 8px">Execução</p>
-          <p><span class="section-badge badge-amber">Projecto incompleto</span>
-          Este projecto ainda não tem repositório. Ligue um em <strong>Definições do projecto</strong> antes de executar.</p>
+          <p><span class="section-badge badge-amber">Projecto incompleto</span></p>
+          <ul class="reference-list mt-8">${gaps.map((gap) => `
+            <li>
+              <span class="agent-tool-what">${escapeHtml(gap.message)}</span>
+              ${gap.reason === 'intake'
+                ? '<button type="button" class="btn tiny ghost" id="execOpenIntakeBtn">Responder</button>'
+                : ''}
+            </li>`).join('')}</ul>
           ${rollupLine}
         </div>`;
     }
@@ -211,7 +220,10 @@
       <button type="button" class="btn" id="execRaiseBtn">Aumentar limite e continuar</button>` : '';
 
     const activity = exec.status === 'running' && orch.next?.personaId
-      ? `<p class="muted-text mt-8"><i class="ti ti-loader-2" aria-hidden="true"></i> A trabalhar: <code>${escapeHtml(orch.next.personaId)}</code></p>`
+      ? `<p class="muted-text mt-8"><i class="ti ti-loader-2" aria-hidden="true"></i> A trabalhar: <code>${escapeHtml(orch.next.personaId)}</code>${
+        orch.next.rerunBecauseInputsChanged
+          ? ' — <strong>a refazer</strong> porque algo em que se baseia mudou'
+          : ''}</p>`
       : '';
 
     return `
@@ -320,6 +332,13 @@
     `;
 
     if (!partner) return;
+
+    $('execOpenIntakeBtn')?.addEventListener('click', () => {
+      const panel = document.getElementById('pdosIntake');
+      if (!panel) return;
+      panel.open = true;
+      panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
 
     $('surveyRefreshBtn')?.addEventListener('click', async () => {
       try {

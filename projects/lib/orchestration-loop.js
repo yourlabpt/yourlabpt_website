@@ -19,6 +19,8 @@
  */
 const crypto = require('crypto');
 const agentPersonas = require('./agent-personas');
+const buildPolicies = require('./build-policies');
+const workSnapshot = require('./work-snapshot');
 const projectBudget = require('./project-budget');
 const workItems = require('./work-items');
 
@@ -30,6 +32,9 @@ const FINISHED_STATUSES = new Set(['completed', 'abandoned']);
 // Execução's life.
 const ALL_STATUSES = new Set(['running', 'waiting_human', 'paused_budget', 'halted', ...FINISHED_STATUSES]);
 const REPEAT_LIMIT = 3;
+// How many times a persona may be re-run because its inputs moved. Beyond this the
+// project is oscillating rather than converging, and a person has to look.
+const STALE_RERUN_LIMIT = 2;
 
 /**
  * Two ways work enters the factory.
@@ -100,6 +105,9 @@ function normalizeExecucao(raw = {}) {
       failureSignature: text(entry?.failureSignature),
       costUsd: Number(entry?.costUsd) || 0,
       seconds: Number(entry?.seconds) || 0,
+      // What this run was built on. Dropping it here would silently disable staleness
+      // detection on the next load, which is the whole point of recording it.
+      inputFingerprint: text(entry?.inputFingerprint),
       at: text(entry?.at),
     })),
     budget: projectBudget.normalizeProjectBudget(src.budget),
@@ -158,6 +166,46 @@ function repeatedFailure(history) {
 /** Personas that completed at least once, by id. */
 function completedPersonaIds(history) {
   return new Set(history.filter((entry) => entry.outcome === 'completed').map((entry) => entry.personaId));
+}
+
+/**
+ * A fingerprint of everything this persona reads. If it moves, whatever the persona
+ * produced was built on something that is no longer true.
+ *
+ * Deliberately blind to who moved it. A person editing the idea by hand and an agent
+ * rewriting it are the same event here, which is what stops a manual change being
+ * quietly overwritten by whatever the AI last produced.
+ */
+function personaInputFingerprint(project, persona) {
+  const stages = buildPolicies.stagesFeedingPersona(project?.productType, persona);
+  return workSnapshot.fingerprint(workSnapshot.stagesSnapshot(project, stages));
+}
+
+/** The last time this persona finished, and what it was looking at. */
+function lastCompletedRun(history, personaId) {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (entry.personaId === personaId && entry.outcome === 'completed') return entry;
+  }
+  return null;
+}
+
+/**
+ * Has this persona's work gone stale? Only answerable once it has run at least once
+ * *and* recorded what it saw — work finished before this existed is left alone rather
+ * than being declared stale on no evidence.
+ */
+function isStale(project, persona, history) {
+  const last = lastCompletedRun(history, persona.id);
+  if (!last || !last.inputFingerprint) return false;
+  return last.inputFingerprint !== personaInputFingerprint(project, persona);
+}
+
+/** How many times a persona has already been re-run because its inputs moved. */
+function staleRerunCount(history, personaId) {
+  return Math.max(0, history.filter(
+    (entry) => entry.personaId === personaId && entry.outcome === 'completed',
+  ).length - 1);
 }
 
 /**
@@ -241,7 +289,24 @@ function decideNext(project, options = {}) {
       }
       continue;
     }
-    if (completed.has(persona.id)) continue;
+    // Already run — unless what it read has moved since, in which case its output was
+    // built on something no longer true and it is eligible again. This is what makes a
+    // rerun resume from what is left instead of starting over.
+    if (completed.has(persona.id)) {
+      if (!isStale(project, persona, execucao.history)) continue;
+      if (staleRerunCount(execucao.history, persona.id) >= STALE_RERUN_LIMIT) {
+        return {
+          action: 'halt',
+          execucao,
+          reason: `${persona.label} ja foi refeito ${STALE_RERUN_LIMIT}x porque o que le continua a mudar. Isto costuma significar duas decisoes em conflito — resolva-as antes de continuar.`,
+        };
+      }
+      return {
+        action: 'dispatch', persona, execucao, budget, workItem: null,
+        // Named so the UI and the task can say why this is running a second time.
+        reason: 'inputs-changed',
+      };
+    }
 
     const missing = persona.requiresUpstream.filter((id) => !completed.has(id));
     if (missing.length) {
@@ -409,6 +474,7 @@ function recordResult(project, result = {}, now = Date.now()) {
   if (!execucao) throw new Error('Nao ha execucao activa.');
   const personaId = text(result.personaId, execucao.currentPersonaId);
   const outcome = text(result.outcome, 'completed');
+  const persona = agentPersonas.resolvePersona(personaId, result.personaOverrides || {});
 
   const entry = {
     personaId,
@@ -420,6 +486,9 @@ function recordResult(project, result = {}, now = Date.now()) {
       : '',
     costUsd: Number(result.costUsd) || 0,
     seconds: Number(result.seconds) || 0,
+    // What this run was built on. A later run compares against it to know whether
+    // anything it depended on has moved since — by a person or by another agent.
+    inputFingerprint: persona ? personaInputFingerprint(project, persona) : '',
     at: new Date(now).toISOString(),
   };
 
@@ -431,7 +500,6 @@ function recordResult(project, result = {}, now = Date.now()) {
     history: [...execucao.history, entry],
   }, now));
 
-  const persona = agentPersonas.resolvePersona(personaId, result.personaOverrides || {});
   const sequence = PERSONA_SEQUENCE_BY_KIND[execucao.kind] || [];
   const finishesReviewedKind = KINDS_REVIEWED_AT_END.has(execucao.kind)
     && sequence[sequence.length - 1] === personaId;
@@ -469,6 +537,8 @@ function stopChain(project, status = 'abandoned', now = Date.now()) {
 
 module.exports = {
   EXECUCAO_KINDS,
+  STALE_RERUN_LIMIT,
+  personaInputFingerprint,
   PERSONA_SEQUENCE_BY_KIND,
   REPEAT_LIMIT,
   activeExecucao,

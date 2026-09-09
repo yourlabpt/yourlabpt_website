@@ -92,6 +92,9 @@ function publicState(project, decision, now = Date.now()) {
       personaId: decision.persona?.id || decision.personaId || '',
       personaLabel: decision.persona?.label || '',
       reason: decision.reason || decision.budget?.reason || '',
+      // A rerun is worth explaining: it happened because something it reads moved,
+      // which is usually an edit the person themselves just made.
+      rerunBecauseInputsChanged: decision.reason === 'inputs-changed',
       remainingUnits: decision.remainingUnits || 0,
     } : null,
   };

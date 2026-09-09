@@ -33,6 +33,28 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Snapshot e fingerprint — como se sabe que algo mudou
+A snapshot is what a run was built on; a fingerprint is the cheap way to ask whether it
+has changed since. Shared by stage transitions and the persona chain, in
+`lib/work-snapshot.js`.
+
+**A human edit and an agent edit are the same event.** Nothing here asks *who* changed
+something, which is exactly why a hand-edited idea is picked up on the next run instead
+of being overwritten by whatever the AI last produced.
+
+A persona depends on **what it reads**, not where it writes: `stagesFeedingPersona`
+derives the stages from `consumes`, so writing to a stage does not make you sensitive to
+changes there. Every run records the fingerprint it saw; a persona whose inputs have
+moved becomes eligible again, and the chain resumes at that point rather than starting
+over. After `STALE_RERUN_LIMIT` reruns the project is oscillating rather than
+converging, and it halts for a person.
+
+Two identities, deliberately different. `contextSnapshot` (stage transitions) includes
+`updatedAt`, so any save counts. `stageSnapshot`/`stagesSnapshot` (staleness) are
+**content only** — a write timestamp moves on every save, including the save that
+records the run itself, so including it would mark every persona stale the instant it
+finished and re-dispatch it forever.
+
 ## Tipo de produto e política de construção
 What is being built decides how it is built. `project.productType` (today only
 `web_app`) selects a **build policy** in `lib/build-policies/` — a declarative module

@@ -6,13 +6,9 @@ const workItems = require('./work-items');
 
 function ensureArray(value) { return Array.isArray(value) ? value : []; }
 function textOr(value, fallback = '') { const v = value == null ? '' : String(value).trim(); return v || fallback; }
-function hash(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex'); }
-function stable(value) {
-  if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === 'object') return Object.keys(value).sort().reduce((out, key) => { out[key] = stable(value[key]); return out; }, {});
-  return value;
-}
-function fingerprint(value) { return hash(JSON.stringify(stable(value))); }
+// Snapshotting and fingerprinting are shared with the persona chain: the question
+// "has what I built on moved?" is the same one wherever it is asked.
+const { contextSnapshot, fingerprint, hash, promptDiff } = require('./work-snapshot');
 function transitionKey(fromStageId, toStageId, direction = 'forward') { return `${textOr(fromStageId)}->${textOr(toStageId)}:${textOr(direction, 'forward')}`; }
 
 const SKILLS_BY_STAGE = {
@@ -65,29 +61,6 @@ function saveConfig(project, input, actorUserId, nowIso = () => new Date().toISO
   return record;
 }
 
-function contextSnapshot(project, fromStageId, toStageId) {
-  const common = { id: project.id, name: project.name, updatedAt: project.updatedAt };
-  const source = {
-    idea: { originalIdeaText: project.originalIdeaText, vision: project.vision, ideaBriefMarkdown: project.ideaBriefMarkdown },
-    discovery: { discovery: project.discovery, businessObjectives: project.businessObjectives, stakeholders: project.stakeholders },
-    requirements: { requirements: ensureArray(project.requirements).map((row) => ({ id: row.id, type: row.type, title: row.title, shall: row.shall, status: row.status, updatedAt: row.updatedAt, phase: row.implementationPhase || row.phase })) },
-    architecture: { diagrams: project.diagramArtifacts, capabilities: project.capabilities, technicalApproach: project.technicalApproach },
-    roadmap: { roadmap: project.roadmap, phases: project.phases }, implementation: { implementation: project.implementation },
-    validation: { validation: project.validation, testCases: ensureArray(project.requirements).filter((row) => row.type === 'test_case') },
-    delivery: { documents: ensureArray(project.documents).map((row) => ({ id: row.id, title: row.title, stageId: row.deliveryStageId, updatedAt: row.updatedAt })) },
-    operations: { operations: project.operations },
-  };
-  return stable({ project: common, from: source[fromStageId] || {}, to: source[toStageId] || {} });
-}
-
-function promptDiff(previous, current) {
-  const before = String(previous || '').split('\n'); const after = String(current || '').split('\n');
-  if (previous === current) return '';
-  const beforeSet = new Set(before); const afterSet = new Set(after); const lines = [];
-  before.filter((line) => !afterSet.has(line)).slice(0, 30).forEach((line) => lines.push(`- ${line}`));
-  after.filter((line) => !beforeSet.has(line)).slice(0, 30).forEach((line) => lines.push(`+ ${line}`));
-  return lines.join('\n').slice(0, 12000);
-}
 function baselineFor(project, key) {
   const backedRequestIds = new Set(
     workItems.getWorkItems(project).map((task) => task.agentRequestId).filter(Boolean)
