@@ -33,6 +33,34 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Tipo de produto e política de construção
+What is being built decides how it is built. `project.productType` (today only
+`web_app`) selects a **build policy** in `lib/build-policies/` — a declarative module
+that says, per stage: who owns it, what it must produce, which intake answers it needs,
+and what "done" means. A second product type is a sibling file, never a branch in code.
+
+The policy **guides and rarely blocks**. Exactly two things refuse: a required intake
+question left unanswered, and (later) a change to an artifact a human already approved.
+Everything else it has to say is a finding recorded on a task. This is a platform for
+building new things — a wall of preconditions would defeat the point.
+
+`approvalTransforms` makes human approval a producer: approving `ux_mockup` is what
+creates `ux_mockup_approved`. Before it was declared, three personas consumed that
+artifact and nothing produced it. `validatePolicy()` fails on exactly that class of
+drift, and is run as a test.
+
+## Definição do projecto (intake)
+The fixed set of questions a project must answer before agents work on it, in
+`lib/intake/`. Each question declares the stage and artifact it feeds, and carries a
+`why` shown to the person answering — a question whose purpose is invisible gets a
+throwaway answer, and a throwaway answer is what sends an agent off building the wrong
+thing.
+
+The intake **produces the root artifacts** (`intention`, `project_context`,
+`visual_reference`) that personas consume and no persona produces. The Product Owner
+asks follow-up rounds on top, where an answer is thin; the core set works with the
+runtime offline, so a project is never blocked on an agent in order to be defined.
+
 ## Plataforma vs Runtime — política e capacidade
 Where a setting belongs, decided once so it stops being re-litigated.
 

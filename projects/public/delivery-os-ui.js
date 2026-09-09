@@ -5018,6 +5018,7 @@
     // entry point as the rest of it. Leaving this to the caller meant that whichever
     // route happened to trigger the render decided whether the dashboard appeared.
     window.ClientPortalUI?.refresh?.(project);
+    window.IntakeUI?.render?.(project);
   }
 
   function renderSnapshotsList(project) {

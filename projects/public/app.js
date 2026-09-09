@@ -743,8 +743,11 @@ function valueToLines(value) {
 
 function autoResizeTextarea(node) {
   if (!node || node.tagName !== 'TEXTAREA') return;
+  // A floor of 64px suits a long-form field, but a form of many short answers reads
+  // as a wall of empty boxes. Any field may declare its own.
+  const floor = Number(node.dataset.minHeight) || 64;
   node.style.height = 'auto';
-  node.style.height = `${Math.max(node.scrollHeight, 64)}px`;
+  node.style.height = `${Math.max(node.scrollHeight, floor)}px`;
 }
 
 function refreshAutoResize(root = document) {

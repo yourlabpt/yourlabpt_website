@@ -8,6 +8,7 @@
  */
 const loop = require('./orchestration-loop');
 const gitRepositories = require('./git-repositories');
+const buildPolicies = require('./build-policies');
 const projectBudget = require('./project-budget');
 const agentPlatformSettings = require('./agent-platform-settings');
 const { canEditProject, isClientViewer } = require('./project-access');
@@ -23,13 +24,41 @@ function requirePartnerOrAdmin(req, res, next) {
 }
 
 /**
- * Agents write code, and code has to land somewhere. Without a repository there is
- * nowhere to write, so the project is incomplete and cannot execute.
+ * Everything standing between this project and its first Execução.
+ *
+ * There are deliberately only two: nowhere to write the code, and questions that define
+ * the project still unanswered. Everything else the policy has to say is guidance
+ * recorded on a task, never a refusal — this is a platform for building new things, and
+ * a wall of preconditions would defeat that.
  */
+function readinessGaps(project) {
+  const gaps = [];
+
+  if (!gitRepositories.normalizeProjectRepository(project?.repository)) {
+    gaps.push({
+      reason: 'repository',
+      message: 'Este projecto ainda nao tem repositorio. Ligue um em Definicoes do projecto antes de executar.',
+    });
+  }
+
+  const missing = buildPolicies.unansweredRequired(
+    project?.productType,
+    project?.intake?.answers || [],
+  );
+  if (missing.length) {
+    gaps.push({
+      reason: 'intake',
+      message: `Faltam ${missing.length} resposta(s) que definem o projecto. Sem elas os agentes trabalham sobre suposicoes.`,
+      questions: missing,
+    });
+  }
+
+  return gaps;
+}
+
+/** First blocking sentence, or empty. Kept for callers that want one line. */
 function repositoryGap(project) {
-  return gitRepositories.normalizeProjectRepository(project?.repository)
-    ? ''
-    : 'Este projecto ainda nao tem repositorio. Ligue um em Definicoes do projecto antes de executar.';
+  return readinessGaps(project)[0]?.message || '';
 }
 
 /** What the partner/admin UI needs to show the chain's state in one call. */
@@ -56,6 +85,8 @@ function publicState(project, decision, now = Date.now()) {
     rollup,
     // Empty when the project is ready to execute; a sentence to show when it is not.
     blockedReason: repositoryGap(project),
+    // The same thing itemised, so the UI can link straight to what is missing.
+    readiness: readinessGaps(project),
     next: decision ? {
       action: decision.action,
       personaId: decision.persona?.id || decision.personaId || '',

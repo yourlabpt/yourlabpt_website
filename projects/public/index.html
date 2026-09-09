@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
-  <link rel="stylesheet" href="/projects/static/styles.css?v=99" />
+  <link rel="stylesheet" href="/projects/static/styles.css?v=102" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -505,6 +505,10 @@
 
                 <div id="pdosClientPortal" class="pdos-client-portal" aria-label="Linha de produção"></div>
 
+                <details class="pdos-secondary-panel" id="pdosIntake" hidden>
+                  <summary>Definição do projecto <span id="pdosIntakeSummary" class="pdos-intake-summary"></span></summary>
+                  <div id="pdosIntakeBody" class="mt-8"></div>
+                </details>
                 <details class="pdos-secondary-panel" id="pdosTechnicalDetail">
                   <summary>Módulos e diagramas</summary>
                   <div class="pdos-module-block">
@@ -1389,13 +1393,13 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/app.js?v=53" defer></script>
+  <script src="/projects/static/app.js?v=54" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
   <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
   <script src="/projects/static/minutes-ui.js?v=4" defer></script>
   <script src="/projects/static/diagrams-ui.js?v=8" defer></script>
-  <script src="/projects/static/delivery-os-ui.js?v=77" defer></script>
+  <script src="/projects/static/delivery-os-ui.js?v=78" defer></script>
   <script src="/projects/static/engineering-state-ui.js?v=3" defer></script>
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
   <script src="/projects/static/work-items-ui.js?v=33" defer></script>
@@ -1405,6 +1409,7 @@
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=9" defer></script>
   <script src="/projects/static/resume-ui.js?v=1" defer></script>
+  <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

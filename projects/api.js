@@ -10,6 +10,7 @@ const projectAudit = require('./lib/project-audit');
 const { createSplitStoreLayer, projectFileName } = require('./lib/split-store');
 const projectPayload = require('./lib/project-payload');
 const projectResume = require('./lib/project-resume');
+const buildPolicies = require('./lib/build-policies');
 const blobStore = require('./lib/blob-store');
 const { createSqliteStore } = require('./lib/sqlite-store');
 const { migrateToHybridStorage } = require('./lib/hybrid-migrate');
@@ -33,6 +34,7 @@ const gitRepositories = require('./lib/git-repositories');
 const { registerGitRoutes } = require('./lib/git-routes');
 const { registerOpenspecRoutes } = require('./lib/openspec-routes');
 const { registerSurveyRoutes } = require('./lib/survey-routes');
+const { registerIntakeRoutes } = require('./lib/intake-routes');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
 
@@ -905,6 +907,9 @@ function registerRequirementsPlatform(app, options) {
       risks: ensureArray(project.risks),
       integrations: ensureArray(project.integrations),
       repository: gitRepositories.normalizeProjectRepository(project.repository),
+      // What is being built decides which policy and which questions apply.
+      productType: buildPolicies.normalizeProductType(project.productType),
+      intake: normalizeProjectIntake(project.intake),
       technicalApproach: project.technicalApproach || defaultTechnicalApproach(),
       requirements: skipRequirements
         ? []
@@ -1338,6 +1343,8 @@ function registerRequirementsPlatform(app, options) {
         clientName,
         description: String(body.description || ''),
         status: 'active',
+        productType: buildPolicies.normalizeProductType(body.productType),
+        intake: normalizeProjectIntake(body.intake),
         proposalCode: String(body.proposalCode || ''),
         subtitle: String(body.subtitle || 'Proposta Comercial e Tecnica'),
         currency: String(body.currency || 'EUR'),
@@ -3976,6 +3983,14 @@ function registerRequirementsPlatform(app, options) {
     dataDir,
   });
 
+  registerIntakeRoutes(app, {
+    authMiddleware,
+    loadProjectForUser,
+    requireProjectEditor,
+    updateStore,
+    appendActivity,
+  });
+
   registerSurveyRoutes(app, {
     authMiddleware,
     requireRole,
@@ -5908,6 +5923,30 @@ function normalizeMinutesPromptHistory(history) {
 function normalizeDeliveryLevel(level) {
   const normalized = textOr(level, 'standard').toLowerCase();
   return DELIVERY_LEVELS.includes(normalized) ? normalized : 'standard';
+}
+
+/**
+ * The answers that define a project. Stored whole, replaced whole — an answer carries
+ * who gave it and when, because a human editing an answer later is a real event the
+ * chain has to notice, not a silent overwrite.
+ */
+function normalizeProjectIntake(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const seen = new Set();
+  const answers = ensureArray(src.answers).map((entry) => {
+    const questionId = String(entry?.questionId || '').trim();
+    if (!questionId || seen.has(questionId)) return null;
+    seen.add(questionId);
+    return {
+      questionId,
+      answer: String(entry?.answer ?? '').trim(),
+      answeredAt: String(entry?.answeredAt || '').trim() || new Date().toISOString(),
+      answeredBy: String(entry?.answeredBy || '').trim(),
+      // 'human' or 'agent_followup' — the Product Owner may add answers of its own.
+      source: entry?.source === 'agent_followup' ? 'agent_followup' : 'human',
+    };
+  }).filter(Boolean);
+  return { answers, updatedAt: String(src.updatedAt || '').trim() };
 }
 
 function normalizeProjectStages(stages, deliveryLevel = 'standard') {

@@ -1845,6 +1845,96 @@ ul:not([class]) > li::before {
   gap: 8px;
 }
 
+/* Project definition. Each question shows why it is asked, because a question whose
+   purpose is invisible gets a throwaway answer — and a throwaway answer is what sends
+   an agent off building the wrong thing. */
+.pdos-intake-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.intake-group + .intake-group {
+  margin-top: 18px;
+}
+
+.intake-group h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.intake-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.intake-question {
+  padding: 10px 0;
+  border-top: 0.5px solid var(--line);
+}
+
+.intake-question label {
+  display: grid;
+  gap: 4px;
+}
+
+/* A question is a sentence, not a field label — the global uppercase for labels would
+   turn it into shouting and make it markedly harder to read. */
+.intake-question label {
+  text-transform: none;
+}
+
+.intake-ask {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.intake-required {
+  flex: none;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.intake-why {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* A required question still unanswered is what is holding the project up. */
+.intake-question.is-missing {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+
+.intake-question textarea,
+.intake-question select {
+  width: 100%;
+  margin-top: 4px;
+  text-transform: none;
+}
+
+/* Short by default: the whole set has to stay scannable, and it grows with the answer.
+   Specificity is deliberate — `.content textarea` sets a 132px floor further down the
+   file, which at equal specificity would win on source order alone. */
+.intake-list .intake-question textarea {
+  min-height: 0;
+  height: auto;
+  padding: 7px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 /* The sandbox is the whole human-control loop in one place: alter, test, review,
    commit. Stating the sequence is the point — the path on its own explains nothing. */
 .sandbox-explainer {
