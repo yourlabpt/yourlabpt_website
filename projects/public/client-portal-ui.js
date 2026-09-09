@@ -191,7 +191,20 @@
             <select id="execKind">
               <option value="construcao">Construir — partir da ideia até ao código</option>
               <option value="levantamento">Levantar o que já existe — a app já funciona, falta descrevê-la</option>
+              <option value="refinamento">Refinar — mudar uma coisa e acertar o que ela afecta</option>
             </select>
+          </label>
+          <label class="exec-kind-field hidden" id="execTargetField">O que vai mudar
+            <select id="execTargetArtifact">
+              <option value="ux_mockup">O mockup</option>
+              <option value="openspec_change">Os requisitos</option>
+              <option value="module_spec">Os módulos</option>
+              <option value="code_change">O código</option>
+            </select>
+            <small class="field-help">
+              Só correm as personas que a alteração obriga a reconciliar — o resto do que
+              já está construído fica como está.
+            </small>
           </label>
           <textarea id="execGoalInput" placeholder="O que quer que a fábrica construa? Ex.: Criar o mockup e os requisitos das reservas" style="width:100%;min-height:64px;margin:8px 0"></textarea>
           <div class="form-grid compact" style="margin-bottom:8px">
@@ -354,8 +367,11 @@
     $('execKind')?.addEventListener('change', (event) => {
       const goalEl = $('execGoalInput');
       if (!goalEl) return;
+      const kind = event.target.value;
+      // The target only means anything for a refinamento.
+      $('execTargetField')?.classList.toggle('hidden', kind !== 'refinamento');
       const survey = 'Levantar o que a aplicação já faz: requisitos e mapa de módulos a partir do código.';
-      if (event.target.value === 'levantamento') {
+      if (kind === 'levantamento') {
         if (!goalEl.value.trim()) goalEl.value = survey;
       } else if (goalEl.value.trim() === survey) {
         goalEl.value = '';
@@ -379,6 +395,7 @@
           body: {
             goal,
             kind,
+            targetArtifact: kind === 'refinamento' ? ($('execTargetArtifact')?.value || '') : '',
             maxCostUsd: Number($('execMaxCost')?.value) || 0,
             maxHours: Number($('execMaxHours')?.value) || 0,
           },

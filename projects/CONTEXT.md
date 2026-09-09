@@ -33,6 +33,38 @@ job is to give the personas (and the person reviewing them) something concrete t
 at, so a requirement nobody can trace back to the code is visibly suspect. Stored on the
 project and replaced whole on each run: two surveys side by side would only be ambiguous.
 
+## Propagação de alterações
+What else a change puts in doubt, in `lib/change-propagation.js`. Two directions, and
+only one of them is declarable.
+
+**Downstream is derived.** If an artifact changes, everything built on it may no longer
+hold — and `consumes`/`produces` already says who built on it. It follows
+`approvalTransforms` on the way, because the personas downstream of a mockup consume
+`ux_mockup_approved`, not `ux_mockup`.
+
+**Upstream is judgement.** No graph can tell you that a new screen means the *idea* was
+incomplete rather than the screen being wrong. Those rules are written by hand in the
+build policy, each carrying the sentence that explains it, and the persona receives the
+sentence rather than a bare instruction.
+
+## Refinamento (a third kind of Execução)
+Changes one artifact that already exists and absorbs the consequences. Its persona
+sequence is **not declared anywhere** — it is computed from what the change touches, so
+it runs the few who must reconcile and nobody else. Changing a mockup runs `ux`,
+`product_owner`, `module_architect` and `tech_lead`; `orchestrator`, `developer` and
+`tester` never enter the list. That is what makes a late change an increment on what is
+built rather than a reason to redo it.
+
+Order matters: the producer first (the change is theirs to make), then reconciliation,
+then rebuilding. Fixing the idea and then building on the corrected idea is the point —
+the other way round rebuilds on something already known to be wrong.
+
+Each reconciliation arrives as a **decision on its own task**, proposed and awaiting a
+ruling. The one thing that stops the chain instead of recording and carrying on: a
+reconcile target whose stage a human already approved. Rewriting that silently would
+make the approval meaningless, so it asks once, and remembers the answer in
+`execucao.acknowledged`.
+
 ## Decisão (decision on a task)
 A record that something moved, that it puts something earlier in doubt, and what is
 proposed about it. It rides on an ordinary task update — same feed, same order, next to

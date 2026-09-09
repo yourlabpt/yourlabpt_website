@@ -20,19 +20,37 @@ function text(value, fallback = '') {
   return result || fallback;
 }
 
-function createPersonaWorkItem(project, persona, actorUserId) {
-  const item = workItems.normalizeWorkItem({
+function createPersonaWorkItem(project, persona, actorUserId, reconcile = null) {
+  let item = workItems.normalizeWorkItem({
     id: `task_${crypto.randomUUID()}`,
-    title: `${persona.label} — ${text(project.name, 'projecto')}`,
+    title: reconcile && reconcile.direction !== 'produces'
+      ? `${persona.label} — reconciliar ${reconcile.artifact}`
+      : `${persona.label} — ${text(project.name, 'projecto')}`,
     status: 'ready',
     origin: 'orchestration',
     executorMode: 'agent',
     agentType: persona.taskTypes[0],
     agentId: text(persona.agentId),
     deliveryStageId: persona.deliveryStages[0],
-    descriptionMarkdown: persona.summary,
+    descriptionMarkdown: reconcile ? reconcile.rule : persona.summary,
     createdBy: actorUserId,
   }, { project });
+
+  // A reconciliation exists because something else moved. Saying so on the task, as a
+  // decision awaiting a ruling, is what keeps the call with the person: the persona
+  // proposes, and nothing about the earlier phase counts until someone accepts.
+  if (reconcile && reconcile.direction !== 'produces') {
+    item = workItems.addWorkItemDecision(item, {
+      artifact: reconcile.sourceArtifact || reconcile.artifact,
+      affects: [reconcile.artifact],
+      proposal: reconcile.direction === 'upstream'
+        ? `Actualizar ${reconcile.artifact} para acompanhar a alteracao.`
+        : `Rever o que foi construido sobre ${reconcile.artifact}.`,
+      rationale: reconcile.rule,
+      changedBy: reconcile.changedBy || 'agent',
+    }, { actorUserId }).item;
+  }
+
   workItems.setWorkItems(project, [...workItems.getWorkItems(project), item]);
   return item;
 }
@@ -78,6 +96,18 @@ function createDriver(deps) {
         }
         return;
       }
+      // A refinamento that wants to touch something already approved asks first. The
+      // decision names the question; persisting it is what actually stops the chain.
+      if (decision.action === 'wait_human' && decision.question) {
+        if (!loop.activeExecucao(project)?.question) {
+          loop.raiseQuestion(project, decision.question);
+          appendActivity(store, {
+            actorUserId, projectId, action: 'orchestration_question_raised',
+            details: { personaId: decision.question.personaId, artifact: decision.question.artifact },
+          });
+        }
+        return;
+      }
       if (decision.action === 'complete') {
         loop.stopChain(project, 'completed');
         appendActivity(store, { actorUserId, projectId, action: 'orchestration_completed', details: {} });
@@ -85,7 +115,8 @@ function createDriver(deps) {
       }
       if (decision.action !== 'dispatch') return;
 
-      const item = decision.workItem || createPersonaWorkItem(project, decision.persona, actorUserId);
+      const item = decision.workItem
+        || createPersonaWorkItem(project, decision.persona, actorUserId, decision.reconcile || null);
       loop.markDispatched(project, decision.persona, item);
       project.updatedAt = nowIso();
       dispatch = {

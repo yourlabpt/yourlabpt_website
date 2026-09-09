@@ -71,6 +71,7 @@ function publicState(project, decision, now = Date.now()) {
       goal: execucao.goal,
       changeId: execucao.changeId,
       kind: execucao.kind,
+      targetArtifact: execucao.targetArtifact,
       status: execucao.status,
       currentPersonaId: execucao.currentPersonaId,
       question: execucao.question,
@@ -134,6 +135,7 @@ function registerOrchestrationRoutes(app, deps) {
         goal: req.body?.goal,
         changeId: req.body?.changeId,
         kind: req.body?.kind,
+        targetArtifact: req.body?.targetArtifact,
         maxCostUsd: req.body?.maxCostUsd,
         maxHours: req.body?.maxHours,
       };

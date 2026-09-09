@@ -20,6 +20,7 @@
 const crypto = require('crypto');
 const agentPersonas = require('./agent-personas');
 const buildPolicies = require('./build-policies');
+const changePropagation = require('./change-propagation');
 const workSnapshot = require('./work-snapshot');
 const projectBudget = require('./project-budget');
 const workItems = require('./work-items');
@@ -47,8 +48,13 @@ const STALE_RERUN_LIMIT = 2;
  * describing an app that is already live makes no sense, so the survey runs only the
  * personas that read and describe, and stops there. What it produces is reviewed like
  * any other result, and the building starts from real requirements afterwards.
+ *
+ * 'refinamento' changes one artifact that already exists and absorbs the consequences.
+ * Its persona sequence is not declared anywhere — it is computed from what the change
+ * touches, so it runs the few who must reconcile and nobody else. That is what makes a
+ * late change an increment on what is built rather than a reason to redo it.
  */
-const EXECUCAO_KINDS = new Set(['construcao', 'levantamento']);
+const EXECUCAO_KINDS = new Set(['construcao', 'levantamento', 'refinamento']);
 
 const PERSONA_SEQUENCE_BY_KIND = {
   levantamento: ['product_owner', 'module_architect'],
@@ -80,6 +86,11 @@ function normalizeExecucao(raw = {}) {
     // reads an app that already exists and writes down what it does. They need
     // different personas in a different order, so the kind travels with the Execução.
     kind: EXECUCAO_KINDS.has(text(src.kind)) ? text(src.kind) : 'construcao',
+    // What a refinamento is about. Its whole persona sequence derives from this.
+    targetArtifact: text(src.targetArtifact),
+    // Artifacts whose stage was already approved and whose change a person has since
+    // agreed to. Without this the same question would be asked on every pass.
+    acknowledged: ensureArray(src.acknowledged).map((entry) => text(entry)).filter(Boolean),
     // The change proposal this Execução targets — what it costs and what it touches
     // are the same question once both point at the same id.
     changeId: text(src.changeId),
@@ -92,6 +103,9 @@ function normalizeExecucao(raw = {}) {
       personaId: text(src.question.personaId),
       kind: text(src.question.kind, 'review'),
       text: text(src.question.text),
+      // What the answer is about. Dropping it here would lose the acknowledgement, and
+      // the same approved artifact would be queried again on the next pass.
+      artifact: text(src.question.artifact),
       workItemId: text(src.question.workItemId),
       raisedAt: text(src.question.raisedAt),
     } : null,
@@ -240,12 +254,24 @@ function decideNext(project, options = {}) {
 
   if (!execucao) return { action: 'idle', execucao: null };
 
-  // A levantamento runs a shorter chain, in the order its kind declares. Anything
-  // outside that list simply never comes up for this Execução.
-  const sequence = PERSONA_SEQUENCE_BY_KIND[execucao.kind];
+  // A levantamento runs a shorter chain in a declared order. A refinamento's order is
+  // not declared at all: it is derived from what the change actually touches, so only
+  // the personas that must reconcile come up — the rest never enter the list.
+  const plan = execucao.kind === 'refinamento'
+    ? changePropagation.reconcilePlan(project?.productType, execucao.targetArtifact)
+    : null;
+  const sequence = plan ? plan.map((step) => step.personaId) : PERSONA_SEQUENCE_BY_KIND[execucao.kind];
   const personas = sequence
     ? sequence.map((id) => enabled.find((persona) => persona.id === id)).filter(Boolean)
     : enabled;
+
+  if (plan && !plan.length) {
+    return {
+      action: 'halt',
+      execucao,
+      reason: `Nada depende de ${text(execucao.targetArtifact, 'nada')}, por isso nao ha nada para reconciliar.`,
+    };
+  }
   if (execucao.status === 'halted') return { action: 'halt', execucao, reason: execucao.haltReason };
   if (execucao.status === 'paused_budget') {
     return { action: 'paused_budget', execucao, budget: projectBudget.budgetState(execucao.budget, now) };
@@ -308,14 +334,46 @@ function decideNext(project, options = {}) {
       };
     }
 
-    const missing = persona.requiresUpstream.filter((id) => !completed.has(id));
-    if (missing.length) {
+    // In a refinamento the upstream dependency rule does not apply: the point is to
+    // touch a few specific personas out of order, not to walk the pipeline again.
+    if (!plan) {
+      const missing = persona.requiresUpstream.filter((id) => !completed.has(id));
+      if (missing.length) {
+        return {
+          action: 'blocked', execucao, persona,
+          reason: `${persona.label} depende de ${missing.join(', ')}, que ainda nao correu.`,
+        };
+      }
+      return { action: 'dispatch', persona, execucao, budget, workItem: null };
+    }
+
+    const step = plan.find((entry) => entry.personaId === persona.id);
+    // Rewriting something a human already signed off, without saying so, would make the
+    // approval meaningless. Everything else is recorded and carries on.
+    if (
+      step.direction === 'upstream'
+      && changePropagation.isArtifactApproved(project, project?.productType, step.artifact)
+      && !execucao.acknowledged.includes(step.artifact)
+    ) {
       return {
-        action: 'blocked', execucao, persona,
-        reason: `${persona.label} depende de ${missing.join(', ')}, que ainda nao correu.`,
+        action: 'wait_human',
+        execucao,
+        question: {
+          personaId: persona.id,
+          kind: 'approved_artifact_change',
+          artifact: step.artifact,
+          text: `Esta alteracao implica mexer em ${step.artifact}, que ja aprovou. ${step.rule} Aceita?`,
+          raisedAt: new Date(now).toISOString(),
+        },
       };
     }
-    return { action: 'dispatch', persona, execucao, budget, workItem: null };
+
+    return {
+      action: 'dispatch', persona, execucao, budget, workItem: null,
+      // Carried through so the task can say why this persona is running and what it is
+      // expected to reconcile — the raw material of the decision it will record.
+      reconcile: step,
+    };
   }
 
   // Reaching the end with nothing to build is not success. If the Tech Lead ran and
@@ -407,6 +465,7 @@ function startExecucao(project, input = {}, now = Date.now()) {
     goal: input.goal,
     changeId: input.changeId,
     kind: input.kind,
+    targetArtifact: input.targetArtifact,
     status: 'running',
     startedAt: startedAtIso,
     updatedAt: startedAtIso,
@@ -450,6 +509,11 @@ function answerQuestion(project, { accepted = true } = {}, now = Date.now()) {
     status: 'running',
     question: null,
     budget: projectBudget.startClock(execucao.budget, now),
+    // Agreeing to touch something already approved is remembered, so the chain does not
+    // ask again on every pass.
+    acknowledged: execucao.question.artifact
+      ? [...new Set([...execucao.acknowledged, execucao.question.artifact])]
+      : execucao.acknowledged,
   }, now));
 }
 
