@@ -2,6 +2,7 @@
  * Work items HTTP routes — lightweight, no full project sanitize on mutations.
  */
 const workItems = require('./work-items');
+const camadas = require('./camadas');
 const workItemsSync = require('./work-items-sync');
 const projectAccess = require('./project-access');
 const taskSuggestions = require('./task-suggestions');
@@ -776,6 +777,11 @@ function registerWorkItemRoutes(app, deps) {
       workItem: item,
       children: workItems.getWorkItems(project).filter((entry) => entry.parentTaskId === item.id),
       agentRequest: safeRequest,
+      // Whether this is actually the size an agent can finish in one run. Findings, not
+      // a refusal — the task still dispatches, and the person decides whether to split
+      // it. Empty for a coordination item, which is meant to hold several things.
+      camada: camadas.camadaOfWorkItem(item),
+      cutTest: camadas.cutTestFindings(item),
       orchestration,
       agentExecution: agentJob ? {
         runId: agentJob.id,

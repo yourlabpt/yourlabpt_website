@@ -773,6 +773,90 @@ textarea {
   padding-left: 6px;
 }
 
+/* The cut test on a task: a finding names where it is fixed, not only what is wrong. */
+.ado-cut-test {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+.ado-cut-test-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/*
+ * Plano: Camadas 1-3 stacked, each section separated by a hairline rather than another
+ * border — an epic card already has one, and nesting two is what the rules forbid.
+ */
+.plano-section + .plano-section {
+  border-top: 0.5px solid var(--line);
+  padding-top: 12px;
+}
+
+.plano-vision textarea {
+  width: 100%;
+}
+
+.plano-note {
+  margin: 8px 0 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.plano-new-epic {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent);
+}
+
+.plano-feature-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.plano-feature {
+  padding: 5px 0;
+  border-bottom: 0.5px solid var(--line);
+  font-size: 13px;
+}
+
+.plano-feature:last-child {
+  border-bottom: 0;
+}
+
+.plano-feature-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.plano-oversized summary {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.plano-oversized-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 4px 10px;
+}
+
+.plano-oversized-row {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
 /* One engine per row, hairline separated, so the same field lines up down the column. */
 .llm-option-list {
   display: flex;

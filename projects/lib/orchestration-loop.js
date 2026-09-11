@@ -94,6 +94,11 @@ function normalizeExecucao(raw = {}) {
     // The change proposal this Execução targets — what it costs and what it touches
     // are the same question once both point at the same id.
     changeId: text(src.changeId),
+    // The scope this run serves. An Epic is not an Execução: it is weeks wide and gets
+    // built by several runs, so the run points at the Epic rather than being it. Empty
+    // on a run that is not scoped to one — which is legitimate, not a missing value.
+    epicId: text(src.epicId),
+    featureId: text(src.featureId),
     status: ALL_STATUSES.has(text(src.status)) ? text(src.status) : 'running',
     startedAt: text(src.startedAt),
     updatedAt: text(src.updatedAt),
@@ -476,6 +481,8 @@ function startExecucao(project, input = {}, now = Date.now()) {
     changeId: input.changeId,
     kind: input.kind,
     targetArtifact: input.targetArtifact,
+    epicId: input.epicId,
+    featureId: input.featureId,
     status: 'running',
     startedAt: startedAtIso,
     updatedAt: startedAtIso,

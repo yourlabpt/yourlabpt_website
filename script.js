@@ -19,18 +19,18 @@ let currentLang = resolveInitialLang();
 const translations = {
     en: {
         // Document
-        pageTitle: 'YourLab — We turn messy processes into systems that are simple to use',
-        metaDescription: 'We test ideas, organise companies and fix half-finished applications. First useful version in weeks, with a fixed quote before we start. Portugal and Europe.',
+        pageTitle: 'YourLab — Web apps and systems built around your business',
+        metaDescription: 'We build the web app or system your business needs. Fixed quote before we start, first working version in weeks. Portugal and Europe.',
 
         // Header
         headerCta: 'Talk to us',
 
         // 1. Hero
-        heroH1: 'We turn messy processes into systems that are simple to use.',
-        heroSub: 'Have an idea to test, a process stuck in spreadsheets and messages, or an application left half-finished? We build the first useful version in weeks — with a fixed quote before we start.',
-        heroCtaPrimary: 'Tell us what needs improving',
+        heroH1: 'We build the web app your business needs.',
+        heroSub: 'We turn messy processes into systems that are simple to use. Tell us what you want to solve. You get a fixed quote before we start.',
+        heroCtaPrimary: 'Tell us what you need',
         heroCtaSecondary: 'See how we work',
-        heroMicrocopy: 'First call is free and carries no obligation. If building makes no sense, we tell you.',
+        heroMicrocopy: 'The first call is free. If building makes no sense, we tell you.',
 
         // 2. Situations
         situationsH2: 'Does any of this sound familiar?',
@@ -104,16 +104,16 @@ const translations = {
         diffNote: 'More speed in the doing, without handing responsibility to a tool.',
 
         // 8. Investment
-        priceEyebrow: 'INVESTMENT',
-        priceH2: 'Comfortable pricing, shaped around the reality of your business.',
-        priceBody1: "Our projects usually come in at four-figure amounts. When it's just a matter of looking at a problem and working out what's going on, consulting starts at €200.",
-        priceBody2: 'How you pay is agreed with you — in stages, as things get finished.',
-        priceItem1: 'Consulting on a problem, from €200',
-        priceItem2: 'Projects at four-figure amounts',
-        priceItem3: 'Payment in stages, agreed with you',
-        priceItem4: 'Fixed quote before we start',
-        priceAnchor: "The first call is free and carries no obligation. It's there to understand the problem and tell you honestly what's worth doing.",
-        priceNote: 'Once we understand what you need, you get a fixed quote — no hidden costs and no surprises halfway through.',
+        priceEyebrow: 'YOUR QUOTE',
+        priceH2: 'Tell us what you need. We tell you what it costs.',
+        priceBody1: "There's no price list, because no two businesses are the same. We understand what you need first, and quote after.",
+        priceBody2: 'That quote is fixed, and you pay it in stages as things get finished.',
+        priceItem1: 'Fixed quote before we start',
+        priceItem2: 'Payment in stages',
+        priceItem3: 'No hidden costs',
+        priceItem4: 'First call is free',
+        priceAnchor: "Tell us what you want to solve. We'll tell you honestly what's worth building, and what it costs.",
+        priceNote: 'No obligation, and no surprises halfway through.',
 
         // 9. FAQ
         faqH2: 'Questions we always get.',
@@ -131,8 +131,8 @@ const translations = {
         faq6A: "Yes, that's who we work with most of the time — small companies and teams, in Portugal and across Europe.",
 
         // 10. Invitation
-        chatHeading: 'Tell us what needs improving.',
-        inviteBody: "The first conversation is for understanding the problem. If building something makes sense, we explain the path and the cost. If it doesn't, we say that too.",
+        chatHeading: 'Tell us what you want to build.',
+        inviteBody: "The first conversation is for understanding the problem. If building makes sense, we explain the path and the cost. If it doesn't, we say that too.",
         inviteCta: 'Start the conversation',
         chatDescription: 'Describe your situation and leave your contact. Someone from the team replies to you directly.',
         chatGreeting: 'Tell us, in a few words, what is happening in your company.',
@@ -149,27 +149,27 @@ const translations = {
     },
     pt: {
         // Documento
-        pageTitle: 'YourLab — Transformamos processos confusos em sistemas simples de usar',
-        metaDescription: 'Testamos ideias, organizamos empresas e corrigimos aplicações. Primeira versão útil em semanas, com orçamento fechado antes de começar. Portugal e Europa.',
+        pageTitle: 'YourLab — Aplicações web e sistemas à medida do seu negócio',
+        metaDescription: 'Construímos a aplicação web ou o sistema que o seu negócio precisa. Orçamento fechado antes de começar e primeira versão a funcionar em semanas. Portugal e Europa.',
 
         // Header
         headerCta: 'Falar connosco',
 
         // 1. Hero
-        heroH1: 'Transformamos processos confusos em sistemas simples de usar.',
-        heroSub: 'Tem uma ideia para testar, um processo preso em folhas de cálculo e mensagens, ou uma aplicação que ficou a meio? Construímos a primeira versão útil em semanas — com orçamento fechado antes de começar.',
-        heroCtaPrimary: 'Conte-nos o que precisa de melhorar',
+        heroH1: 'Construímos a aplicação web que o seu negócio precisa.',
+        heroSub: 'Transformamos processos confusos em sistemas simples de usar. Conte-nos o que quer resolver. Damos-lhe um orçamento fechado antes de começar.',
+        heroCtaPrimary: 'Diga-nos o que precisa',
         heroCtaSecondary: 'Ver como trabalhamos',
-        heroMicrocopy: 'Primeira chamada gratuita e sem compromisso. Se não fizer sentido construir, dizemos-lhe isso.',
+        heroMicrocopy: 'A primeira chamada é gratuita. Se não fizer sentido construir, dizemos-lhe isso.',
 
         // 2. Situações reconhecíveis
         situationsH2: 'Reconhece alguma destas situações?',
         situation1Title: 'Tem uma ideia e não sabe por onde começar',
-        situation1Body: 'Sabe o problema que quer resolver, mas não sabe o que construir primeiro, quanto custa nem quanto tempo leva. Ajudamos a definir a primeira versão e a testá-la com pessoas reais.',
+        situation1Body: 'Sabe o problema que quer resolver, mas não sabe o que construir primeiro, quanto custa nem quanto demora. Ajudamos a definir a primeira versão e a testá-la com pessoas reais.',
         situation2Title: 'Começou a construir com IA e ficou preso',
-        situation2Body: 'A primeira versão saiu depressa, mas agora há erros que voltam sempre, nada funciona fora do seu computador e ninguém sabe explicar o que está lá dentro. Arrumamos o que já existe e deixamos aquilo a funcionar.',
+        situation2Body: 'A primeira versão saiu depressa. Agora há erros que voltam sempre, nada funciona fora do seu computador e ninguém sabe explicar o que está lá dentro. Arrumamos o que já existe e deixamos aquilo a funcionar.',
         situation3Title: 'A empresa cresceu e o trabalho ficou espalhado',
-        situation3Body: 'Informação em Excel, WhatsApp e e-mail. A equipa copia os mesmos dados, os relatórios são feitos à mão e ninguém consegue ver a operação toda. Juntamos isso num sistema só.',
+        situation3Body: 'Informação em Excel, WhatsApp e e-mail. A equipa copia os mesmos dados, os relatórios são feitos à mão e ninguém vê a operação toda. Juntamos isso num sistema só.',
         situationsClose: 'Em qualquer destes casos, o primeiro passo é o mesmo: entender bem o que precisa de acontecer.',
 
         // 4. Como ajudamos
@@ -234,16 +234,16 @@ const translations = {
         diffNote: 'Mais velocidade na execução, sem passar a responsabilidade para uma ferramenta.',
 
         // 8. Investimento
-        priceEyebrow: 'INVESTIMENTO',
-        priceH2: 'Preços confortáveis, ajustados à realidade do seu negócio.',
-        priceBody1: 'Os nossos projetos ficam normalmente em valores de quatro dígitos. Quando é só para olhar para um problema e perceber o que está a acontecer, a consultoria começa nos 200 €.',
-        priceBody2: 'A forma de pagamento é combinada consigo — por etapas, à medida que as coisas ficam prontas.',
-        priceItem1: 'Consultoria para um problema, desde 200 €',
-        priceItem2: 'Projetos em valores de quatro dígitos',
-        priceItem3: 'Pagamento por etapas, combinado consigo',
-        priceItem4: 'Orçamento fechado antes de começar',
-        priceAnchor: 'A primeira chamada é gratuita e sem compromisso. Serve para entender o problema e dizer-lhe, com honestidade, o que faz sentido fazer.',
-        priceNote: 'Depois de percebermos o que precisa, recebe um orçamento fechado — sem custos escondidos e sem surpresas a meio do trabalho.',
+        priceEyebrow: 'ORÇAMENTO',
+        priceH2: 'Diga-nos o que precisa. Nós dizemos quanto custa.',
+        priceBody1: 'Não há tabela de preços, porque não há dois negócios iguais. Percebemos primeiro o que precisa e só depois damos um valor.',
+        priceBody2: 'Esse valor é fechado e é pago por etapas, à medida que as coisas ficam prontas.',
+        priceItem1: 'Orçamento fechado antes de começar',
+        priceItem2: 'Pagamento por etapas',
+        priceItem3: 'Sem custos escondidos',
+        priceItem4: 'Primeira chamada gratuita',
+        priceAnchor: 'Conte-nos o que quer resolver. Dizemos-lhe, com honestidade, o que faz sentido construir e quanto custa.',
+        priceNote: 'Sem compromisso e sem surpresas a meio do trabalho.',
 
         // 9. Perguntas frequentes
         faqH2: 'Perguntas que nos fazem sempre.',
@@ -261,8 +261,8 @@ const translations = {
         faq6A: 'Sim, é com quem trabalhamos a maior parte do tempo — empresas e equipas pequenas, em Portugal e no resto da Europa.',
 
         // 10. Convite final
-        chatHeading: 'Conte-nos o que precisa de melhorar.',
-        inviteBody: 'A primeira conversa serve para entender o problema. Se fizer sentido construir alguma coisa, explicamos o caminho e o custo. Se não fizer, dizemos isso também.',
+        chatHeading: 'Conte-nos o que quer construir.',
+        inviteBody: 'A primeira conversa serve para entender o problema. Se fizer sentido construir, explicamos o caminho e o custo. Se não fizer, dizemos isso também.',
         inviteCta: 'Começar a conversa',
         chatDescription: 'Descreva a situação da sua empresa e deixe o seu contacto. Alguém da equipa responde-lhe diretamente.',
         chatGreeting: 'Conte-nos, em poucas palavras, o que está a acontecer na sua empresa.',
@@ -829,7 +829,7 @@ const chatCopy = {
             exploring: 'Explorar também é um bom sítio para começar. Sem pressa.'
         },
         faq: {
-            price: 'A resposta honesta é: depende. A consultoria para olhar um problema começa nos 200 €, e os projetos ficam normalmente em valores de quatro dígitos. A primeira chamada é gratuita.',
+            price: 'Depende do que precisa — não temos tabela de preços. Diga-me o que quer resolver e a equipa dá-lhe um orçamento fechado. A primeira chamada é gratuita.',
             time: 'A primeira versão costuma ficar pronta em 4 a 6 semanas, e o prazo concreto vai no orçamento.',
             lockin: 'O sistema e o código ficam seus, e fica tudo escrito para outra pessoa poder continuar.',
             who: 'Somos uma equipa pequena, a trabalhar de Portugal para clientes em Portugal e no resto da Europa.',
@@ -935,7 +935,7 @@ const chatCopy = {
             exploring: 'Exploring is a fine place to start. No rush.'
         },
         faq: {
-            price: 'The honest answer is: it depends. Consulting on a problem starts at €200, and projects usually come in at four-figure amounts. The first call is free.',
+            price: "It depends on what you need — we don't have a price list. Tell me what you want to solve and the team gives you a fixed quote. The first call is free.",
             time: 'The first version is usually ready in 4 to 6 weeks, and the exact deadline goes in the quote.',
             lockin: 'The system and the code stay yours, and everything is written down so someone else can carry on.',
             who: "We're a small team, working from Portugal for clients in Portugal and across Europe.",
@@ -1791,9 +1791,9 @@ function showSavedConversations() {
 
     function drawAtmosphere() {
         const atmosphere = ctx.createLinearGradient(0, 0, 0, state.height);
-        atmosphere.addColorStop(0, 'rgba(238, 237, 233, 0.035)');
-        atmosphere.addColorStop(0.35, 'rgba(238, 237, 233, 0.015)');
-        atmosphere.addColorStop(1, 'rgba(238, 237, 233, 0.005)');
+        atmosphere.addColorStop(0, 'rgba(74, 60, 36, 0.012)');
+        atmosphere.addColorStop(0.35, 'rgba(74, 60, 36, 0.006)');
+        atmosphere.addColorStop(1, 'rgba(74, 60, 36, 0.002)');
         ctx.fillStyle = atmosphere;
         ctx.fillRect(0, 0, state.width, state.height);
     }
@@ -1825,7 +1825,7 @@ function showSavedConversations() {
                 const alpha = 0.006 + (depth * 0.09) + (Math.abs(primary) * 0.02);
 
                 ctx.beginPath();
-                ctx.fillStyle = `rgba(238, 237, 233, ${Math.min(0.18, alpha).toFixed(4)})`;
+                ctx.fillStyle = `rgba(74, 60, 36, ${Math.min(0.09, alpha).toFixed(4)})`;
                 ctx.arc(sx, sy, size, 0, Math.PI * 2);
                 ctx.fill();
             }
@@ -1845,9 +1845,9 @@ function showSavedConversations() {
             if (sx < -radius || sx > state.width + radius || sy < -radius || sy > state.height + radius) continue;
 
             const gradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-            gradient.addColorStop(0, `rgba(238, 237, 233, ${(c.alpha * 1.35).toFixed(4)})`);
-            gradient.addColorStop(0.42, `rgba(238, 237, 233, ${(c.alpha * 0.55).toFixed(4)})`);
-            gradient.addColorStop(1, 'rgba(238, 237, 233, 0)');
+            gradient.addColorStop(0, `rgba(74, 60, 36, ${(c.alpha * 0.6).toFixed(4)})`);
+            gradient.addColorStop(0.42, `rgba(74, 60, 36, ${(c.alpha * 0.25).toFixed(4)})`);
+            gradient.addColorStop(1, 'rgba(74, 60, 36, 0)');
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(sx, sy, radius, 0, Math.PI * 2);
@@ -1855,9 +1855,9 @@ function showSavedConversations() {
         }
 
         const horizonMist = ctx.createLinearGradient(0, horizonY - (state.height * 0.16), 0, horizonY + (state.height * 0.14));
-        horizonMist.addColorStop(0, 'rgba(238, 237, 233, 0)');
-        horizonMist.addColorStop(0.45, 'rgba(238, 237, 233, 0.05)');
-        horizonMist.addColorStop(1, 'rgba(238, 237, 233, 0)');
+        horizonMist.addColorStop(0, 'rgba(74, 60, 36, 0)');
+        horizonMist.addColorStop(0.45, 'rgba(74, 60, 36, 0.022)');
+        horizonMist.addColorStop(1, 'rgba(74, 60, 36, 0)');
         ctx.fillStyle = horizonMist;
         ctx.fillRect(0, horizonY - (state.height * 0.16), state.width, state.height * 0.3);
     }
@@ -1873,8 +1873,8 @@ function showSavedConversations() {
         drawCloudSmoke(time, horizonY);
 
         const floorFog = ctx.createLinearGradient(0, state.height * 0.55, 0, state.height);
-        floorFog.addColorStop(0, 'rgba(238, 237, 233, 0)');
-        floorFog.addColorStop(1, 'rgba(238, 237, 233, 0.045)');
+        floorFog.addColorStop(0, 'rgba(74, 60, 36, 0)');
+        floorFog.addColorStop(1, 'rgba(74, 60, 36, 0.02)');
         ctx.fillStyle = floorFog;
         ctx.fillRect(0, state.height * 0.55, state.width, state.height * 0.45);
     }

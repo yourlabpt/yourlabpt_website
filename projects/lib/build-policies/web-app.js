@@ -37,7 +37,11 @@ const STAGES = [
     stage: 'idea',
     camada: 1,
     owner: 'product_owner',
-    produces: ['intention', 'project_context'],
+    // `vision` is what this is for in the long run; `constitution` is what must stay
+    // true whatever gets built. Both are declared as artifacts rather than left as bare
+    // project fields so the propagation graph can reach them — nothing can reconcile
+    // into something no stage produces.
+    produces: ['intention', 'project_context', 'vision', 'constitution'],
     requiresAnswered: ['quem-usa', 'processo-actual', 'dor', 'sucesso'],
     doneWhen: 'Sabe-se quem usa, o que faz hoje sem isto, o que corre mal, e como se reconhece que resultou.',
   },
@@ -131,6 +135,18 @@ const PROPAGATION = [
     reconcile: 'intention',
     owner: 'product_owner',
     rule: 'Um requisito que não serve nenhum dos objectivos da ideia ou está a mais, ou a ideia estava incompleta. Decida qual, e escreva a decisão.',
+  },
+  {
+    when: 'openspec_change',
+    reconcile: 'constitution',
+    owner: 'product_owner',
+    rule: 'Um requisito que viola uma regra que devia ser sempre verdadeira ou não se faz, ou a regra nunca foi mesmo uma regra. As duas coisas são decisões — nenhuma se resolve em silêncio.',
+  },
+  {
+    when: 'openspec_change',
+    reconcile: 'vision',
+    owner: 'product_owner',
+    rule: 'Se o que está a ser construído já não é a visão escrita, é a visão que está desactualizada. Reescreva-a para dizer o que isto é agora, em vez de deixar as duas a contradizerem-se.',
   },
   {
     when: 'module_spec',

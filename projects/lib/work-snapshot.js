@@ -44,6 +44,10 @@ function stageSources(project) {
     idea: {
       originalIdeaText: project.originalIdeaText,
       vision: project.vision,
+      // The rules that must stay true whatever gets built. Editing one is exactly the
+      // kind of change everything downstream should be re-checked against, so it has to
+      // be visible here or the edit would land silently.
+      constitution: project.constitution,
       ideaBriefMarkdown: project.ideaBriefMarkdown,
       // The answers that define the project are part of the idea. Editing one is an
       // edit to the brief, so everything derived from it becomes suspect — which is

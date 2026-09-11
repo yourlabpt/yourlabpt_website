@@ -36,6 +36,7 @@ const { registerOpenspecRoutes } = require('./lib/openspec-routes');
 const { registerSurveyRoutes } = require('./lib/survey-routes');
 const { registerIntakeRoutes } = require('./lib/intake-routes');
 const { registerMockupRoutes } = require('./lib/mockup-routes');
+const { registerEpicRoutes } = require('./lib/epic-routes');
 const { createMockupRunner } = require('./lib/mockup-runner');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
@@ -4012,6 +4013,15 @@ function registerRequirementsPlatform(app, options) {
       connectorStore,
       agentConnectionMode,
     }),
+  });
+
+  registerEpicRoutes(app, {
+    authMiddleware,
+    loadProjectForUser,
+    requireProjectEditor,
+    updateStore,
+    appendActivity,
+    nowIso,
   });
 
   registerSurveyRoutes(app, {

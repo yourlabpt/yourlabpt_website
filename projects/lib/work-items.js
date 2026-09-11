@@ -293,8 +293,15 @@ function normalizeExecutionSettings(raw) {
 }
 function stableKeysForWorkItem(item) {
   if (!item) return [];
+  // A regenerated item gets a fresh uuid, so an id-only key lets a deleted item come
+  // back on the next regeneration. `stableTaskKey` is what survives that — but its
+  // values ('step_1', 'framing') are only unique *within* a plan or an epic, so it is
+  // scoped before use. Unscoped it would tombstone every 'step_1' in the project.
+  const scope = textOr(item.parentTaskId) || textOr(item.epicId);
+  const stable = textOr(item.stableTaskKey);
   return [...new Set([
     item.id ? `work_item:${item.id}` : '',
+    scope && stable ? `stable:${scope}:${stable}` : '',
     ...ensureArray(item.sourceRefs).map((ref) => `source:${sourceRefKey(ref)}`),
     ...ensureArray(item.externalRefs).map((ref) => `external:${externalRefKey(ref)}`),
   ].filter((key) => key && !key.endsWith(':')))];
@@ -375,6 +382,9 @@ function normalizeWorkItem(raw, options = {}) {
     assigneeUserId: textOr(src.assigneeUserId), approverUserId: textOr(src.approverUserId),
     agentId: textOr(src.agentId || src.agentType), deliveryStageId: textOr(src.deliveryStageId || src.stageId, UNCLASSIFIED_STAGE_ID),
     planPhaseId: textOr(src.planPhaseId || src.roadmapPhaseId), parentTaskId: textOr(src.parentTaskId),
+    // Which Camada 2 slice this belongs to. A coordination item carrying one is a
+    // Feature (Camada 3); its children are the tasks (Camada 4).
+    epicId: textOr(src.epicId),
     taskRole: ['coordination', 'execution'].includes(textOr(src.taskRole)) ? textOr(src.taskRole) : 'execution',
     stableTaskKey: textOr(src.stableTaskKey), previousTaskId: textOr(src.previousTaskId),
     requiredSkills: normalizeStringList(src.requiredSkills), requiredMcpTools: normalizeStringList(src.requiredMcpTools),

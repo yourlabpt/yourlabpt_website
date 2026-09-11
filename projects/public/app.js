@@ -39,6 +39,8 @@ const NAV_GROUPS = [
       // Camada 0 comes first because it comes first: the intention is refined against
       // something you can look at before any of the rest has anything to work from.
       { id: 'camada0', label: 'Intenção', icon: 'bolt' },
+      // Camadas 1-3 read as one plan getting smaller, so they share a screen.
+      { id: 'plano', label: 'Plano', icon: 'plan' },
       { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
       { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
@@ -1330,7 +1332,7 @@ function renderNavItem(item, { compact = false } = {}) {
   `;
 }
 
-const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'deliveryos', 'requisitos', 'definicoes'];
+const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'plano', 'deliveryos', 'requisitos', 'definicoes'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1500,6 +1502,9 @@ function renderActiveTab(project, tabId) {
       break;
     case 'camada0':
       window.Camada0UI?.render?.(project.id);
+      break;
+    case 'plano':
+      window.PlanoUI?.render?.(project.id);
       break;
     case 'fases':
       renderImplementationPlan(project);

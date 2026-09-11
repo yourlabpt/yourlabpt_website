@@ -941,6 +941,27 @@
     if (options.openTaskId) await openEditor(project, options.openTaskId);
   }
 
+  /**
+   * Whether this task is the size one agent run can finish and verify.
+   *
+   * Shown, never enforced: the task still dispatches. What it buys is that an oversized
+   * task is visible *before* an agent spends money failing at it, and each finding names
+   * where it gets fixed rather than only what is wrong.
+   */
+  function cutTestBanner(detail) {
+    const findings = detail?.cutTest || [];
+    if (!findings.length) return '';
+    return `
+      <section class="ado-editor-section ado-cut-test">
+        <p class="ado-meta-label">TAMANHO DESTA TAREFA</p>
+        ${findings.map((finding) => `
+          <p class="ado-cut-test-row">
+            <span class="section-badge badge-amber">${escapeHtml(finding.fixWhere)}</span>
+            ${escapeHtml(finding.message)}
+          </p>`).join('')}
+      </section>`;
+  }
+
   async function openEditor(project, workItemId, seedDetail) {
     beginExecutionRequest();
     executionAppliedVersion = executionRequestVersion;
@@ -1476,6 +1497,8 @@
             ${item.progressTotal ? `<div class="ado-now-progress"><strong>${item.progressCurrent || 0}/${item.progressTotal}</strong><span>passos</span></div>` : ''}
           </section>
         ` : ''}
+
+        ${cutTestBanner(detail)}
 
         ${isCoordination ? `
           <section class="ado-editor-section ado-coordination-panel">
