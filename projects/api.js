@@ -35,6 +35,8 @@ const { registerGitRoutes } = require('./lib/git-routes');
 const { registerOpenspecRoutes } = require('./lib/openspec-routes');
 const { registerSurveyRoutes } = require('./lib/survey-routes');
 const { registerIntakeRoutes } = require('./lib/intake-routes');
+const { registerMockupRoutes } = require('./lib/mockup-routes');
+const { createMockupRunner } = require('./lib/mockup-runner');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
 
@@ -3989,6 +3991,27 @@ function registerRequirementsPlatform(app, options) {
     requireProjectEditor,
     updateStore,
     appendActivity,
+  });
+
+  registerMockupRoutes(app, {
+    authMiddleware,
+    loadProjectForUser,
+    requireProjectEditor,
+    updateStore,
+    appendActivity,
+    nowIso,
+    dataDir,
+    readJson,
+    writeJson,
+    // The generator is a seam: the default talks to the paired Agent Runtime, and a
+    // host can supply its own. Camada 0 is the one agent call that does not go through
+    // startAgentRun — see lib/mockup-runner.js for why.
+    startMockupRun: options.mockupRunner || createMockupRunner({
+      dataDir,
+      runtime: createAgentRuntimeClient(),
+      connectorStore,
+      agentConnectionMode,
+    }),
   });
 
   registerSurveyRoutes(app, {

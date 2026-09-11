@@ -32,6 +32,17 @@ function stageRule(productType, stageId) {
   return policyFor(productType).STAGES.find((entry) => entry.stage === String(stageId || '')) || null;
 }
 
+/**
+ * The planning layer a stage belongs to, or null when the stage is unknown.
+ *
+ * Null is not "layer zero" — an unclassified piece of work has no declared size, and
+ * treating it as the cheapest layer would quietly run it on the cheapest model.
+ */
+function camadaForStage(productType, stageId) {
+  const rule = stageRule(productType, stageId);
+  return Number.isInteger(rule?.camada) ? rule.camada : null;
+}
+
 /** Every artifact this policy can bring into existence, however it is produced. */
 function producibleArtifacts(policy) {
   const produced = new Set(policy.ROOT_ARTIFACTS);
@@ -135,6 +146,7 @@ function unansweredRequired(productType, answers = []) {
 
 module.exports = {
   DEFAULT_PRODUCT_TYPE,
+  camadaForStage,
   intakeFor,
   normalizeProductType,
   policyFor,

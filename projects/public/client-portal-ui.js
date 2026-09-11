@@ -67,8 +67,11 @@
     return roleKnown();
   }
 
+  // Agent spend, in USD — the currency the model providers price in. The euro amounts
+  // in this platform are the commercial ones (proposals, invoices) and are a different
+  // number entirely; showing this one with a euro sign made them look comparable.
   function money(value) {
-    return `${(Number(value) || 0).toFixed(2)}€`;
+    return `$${(Number(value) || 0).toFixed(2)}`;
   }
 
   async function loadClientPortal(projectId) {
@@ -154,6 +157,41 @@
     halted: ['badge-red', 'Parada por decisão'],
   };
 
+  const WRITE_SCOPE_LABEL = {
+    spec: 'especificações',
+    design: 'desenho e mockups',
+    contracts: 'contratos entre módulos',
+    module_code: 'código de um módulo',
+    tests: 'testes',
+    none: 'nada — só lê',
+  };
+
+  /**
+   * What is about to run, before it runs.
+   *
+   * Launching an agent spends money and touches a repository, so the four things a
+   * person needs in order to say yes are on screen together: who, on what engine, why
+   * that engine, and what it is allowed to write.
+   */
+  function renderLaunch(launch) {
+    if (!launch) return '';
+    const model = launch.model
+      ? `${escapeHtml(launch.model.label)} <span class="muted-text">${escapeHtml(launch.model.model)}</span>`
+      : '<span class="badge-amber">sem modelo activo</span>';
+    const warnings = (launch.warnings || []).length
+      ? `<p class="badge-amber" style="margin:6px 0 0">${launch.warnings.map(escapeHtml).join(' · ')}</p>`
+      : '';
+    return `
+      <div class="launch-card mt-8">
+        <p class="muted-text" style="margin:0 0 4px">A seguir</p>
+        <p style="margin:0"><strong>${escapeHtml(launch.personaLabel)}</strong> · ${model}</p>
+        <p class="muted-text" style="margin:4px 0 0">Porquê este modelo: ${escapeHtml(launch.why || 'perfil por omissão')}</p>
+        <p class="muted-text" style="margin:2px 0 0">Pode escrever: ${escapeHtml(WRITE_SCOPE_LABEL[launch.writeScope] || launch.writeScope)}${
+  launch.allowedTools?.length ? ` · ${launch.allowedTools.length} ferramenta(s)` : ''}</p>
+        ${warnings}
+      </div>`;
+  }
+
   function renderExecucaoPanel(orch) {
     if (!orch) return '';
     const exec = orch.execucao;
@@ -208,7 +246,7 @@
           </label>
           <textarea id="execGoalInput" placeholder="O que quer que a fábrica construa? Ex.: Criar o mockup e os requisitos das reservas" style="width:100%;min-height:64px;margin:8px 0"></textarea>
           <div class="form-grid compact" style="margin-bottom:8px">
-            <label>Limite de custo (€)<input type="number" id="execMaxCost" min="0" value="20" /></label>
+            <label>Limite de custo (USD)<input type="number" id="execMaxCost" min="0" value="20" /></label>
             <label>Limite de horas<input type="number" id="execMaxHours" min="0" value="4" /></label>
           </div>
           <button type="button" class="btn primary" id="execStartBtn">Iniciar execução</button>
@@ -250,6 +288,7 @@
         </div>
         <p class="muted-text mt-8">${money(exec.budget.spentUsd)} de ${exec.budget.maxCostUsd ? money(exec.budget.maxCostUsd) : '∞'} · ${exec.budget.hours.toFixed(1)}h de ${exec.budget.maxHours || '∞'}</p>
         ${activity}
+        ${renderLaunch(orch.launch)}
         ${haltedBlock}
         ${!halted && exec.status === 'running' ? '<button type="button" class="btn ghost mt-8" id="execStopBtn">Parar</button>' : ''}
         ${rollupLine}

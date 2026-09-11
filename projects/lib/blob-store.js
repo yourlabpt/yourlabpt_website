@@ -12,6 +12,10 @@ const KIND = {
   DOCUMENT: 'documents',
   HUMAN_REVIEW: 'human-reviews',
   SNAPSHOT: 'snapshots',
+  // Camada 0 mockup bodies. Deliberately not on the project record: the HTML is
+  // agent-written, large, and returned wholesale to every project member by
+  // GET /api/projects/:id — none of which you want for untrusted markup.
+  MOCKUP: 'mockups',
 };
 
 function ensureArray(value) {

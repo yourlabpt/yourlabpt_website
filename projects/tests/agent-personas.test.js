@@ -183,7 +183,10 @@ describe('agent persona registry', () => {
 describe('platform settings with personas', () => {
   it('seeds every persona with its default profile', () => {
     const settings = normalizePlatformSettings({});
-    assert.equal(settings.schemaVersion, 2);
+    // 3 added the engine catalogue and the persona × engine record.
+    assert.equal(settings.schemaVersion, 3);
+    assert.ok(settings.llmOptions.length > 0, 'always something able to run');
+    assert.deepEqual(settings.personaModelStats, {});
     assert.equal(settings.personas.product_owner.modelProfileId, 'medium');
     assert.equal(settings.personas.tech_lead.modelProfileId, 'large');
     assert.equal(settings.personas.developer.modelProfileId, 'medium');

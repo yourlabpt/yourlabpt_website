@@ -13,11 +13,46 @@
 const crypto = require('crypto');
 const loop = require('./orchestration-loop');
 const agentPlatformSettings = require('./agent-platform-settings');
+const buildPolicies = require('./build-policies');
+const modelRouting = require('./model-routing');
 const workItems = require('./work-items');
 
 function text(value, fallback = '') {
   const result = value === null || value === undefined ? '' : String(value).trim();
   return result || fallback;
+}
+
+/** How many times this persona has already run in this Execução. */
+function attemptsSoFar(execucao, personaId) {
+  const history = Array.isArray(execucao?.history) ? execucao.history : [];
+  return history.filter((entry) => entry?.personaId === personaId).length;
+}
+
+/**
+ * Writes the chosen engine onto the task.
+ *
+ * It goes into `executionSettings` because that is what the dispatch already reads, and
+ * a per-task setting already outranks the persona default there — so routing needs no
+ * new path to the runtime, only the right value in the existing one.
+ */
+function applyRouting(project, item, routed) {
+  const next = workItems.getWorkItems(project).map((entry) => (entry.id === item.id
+    ? workItems.normalizeWorkItem({
+      ...entry,
+      executionSettings: {
+        ...(entry.executionSettings || {}),
+        modelProfileId: routed.profileId,
+        llmOptionId: routed.optionId,
+      },
+    }, { project })
+    : entry));
+  workItems.setWorkItems(project, next);
+  item.executionSettings = {
+    ...(item.executionSettings || {}),
+    modelProfileId: routed.profileId,
+    llmOptionId: routed.optionId,
+  };
+  return item;
 }
 
 function createPersonaWorkItem(project, persona, actorUserId, reconcile = null) {
@@ -27,7 +62,10 @@ function createPersonaWorkItem(project, persona, actorUserId, reconcile = null) 
       ? `${persona.label} — reconciliar ${reconcile.artifact}`
       : `${persona.label} — ${text(project.name, 'projecto')}`,
     status: 'ready',
-    origin: 'orchestration',
+    // 'orchestration' is not a valid origin — normalizeOrigin silently coerced it to
+    // 'human', so every task the chain created was filed as one a person wrote, and
+    // "what did the agents do" could never be answered.
+    origin: 'platform',
     executorMode: 'agent',
     agentType: persona.taskTypes[0],
     agentId: text(persona.agentId),
@@ -118,6 +156,16 @@ function createDriver(deps) {
 
       const item = decision.workItem
         || createPersonaWorkItem(project, decision.persona, actorUserId, decision.reconcile || null);
+
+      // Choose the engine for this run. The persona is untouched by this — only which
+      // model executes it, and the reason is carried so the operator can see why.
+      const routed = agentPlatformSettings.routeForPersona(settings, {
+        personaId: decision.persona.id,
+        camada: buildPolicies.camadaForStage(project.productType, item.deliveryStageId),
+        attempt: attemptsSoFar(loop.activeExecucao(project), decision.persona.id),
+      });
+      applyRouting(project, item, routed);
+
       loop.markDispatched(project, decision.persona, item);
       project.updatedAt = nowIso();
       dispatch = {
@@ -126,10 +174,20 @@ function createDriver(deps) {
         agentType: decision.persona.taskTypes[0],
         agentId: text(decision.persona.agentId),
         deliveryStageId: item.deliveryStageId,
+        modelProfileId: routed.profileId,
+        llmOptionId: routed.optionId,
+        llmProvider: routed.option?.provider || '',
+        routingReason: routed.reason,
       };
       appendActivity(store, {
         actorUserId, projectId, action: 'orchestration_dispatch',
-        details: { personaId: decision.persona.id, workItemId: item.id },
+        details: {
+          personaId: decision.persona.id,
+          workItemId: item.id,
+          llmOptionId: routed.optionId,
+          modelProfileId: routed.profileId,
+          routingReason: routed.reason,
+        },
       });
     });
 
@@ -166,6 +224,7 @@ function createDriver(deps) {
   async function recordAndAdvance(projectId, result = {}, actorUserId = 'orchestration', options = {}) {
     const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
     let shouldAdvance = false;
+    let ranOn = null;
 
     await updateStore(async (store) => {
       const project = store.projects.find((entry) => entry.id === projectId);
@@ -174,7 +233,19 @@ function createDriver(deps) {
       // Only a chain-driven Execução advances itself; a hand-started run must not.
       if (!execucao || !['running', 'waiting_human'].includes(execucao.status)) return;
 
-      loop.recordResult(project, { ...result, personaOverrides: settings.personas || {} });
+      // Which engine actually ran this, read off the task rather than guessed, so the
+      // record below attributes the outcome to the model that produced it.
+      const ranItem = workItems.findWorkItem(project, result.workItemId || execucao.currentWorkItemId);
+      ranOn = {
+        optionId: text(ranItem?.executionSettings?.llmOptionId),
+        modelProfileId: text(ranItem?.executionSettings?.modelProfileId),
+      };
+
+      loop.recordResult(project, {
+        ...result,
+        modelProfileId: text(result.modelProfileId, ranOn.modelProfileId),
+        personaOverrides: settings.personas || {},
+      });
       project.updatedAt = nowIso();
       appendActivity(store, {
         actorUserId, projectId, action: 'orchestration_result',
@@ -188,6 +259,20 @@ function createDriver(deps) {
       // when it did not.
       shouldAdvance = loop.activeExecucao(project)?.status === 'running';
     });
+
+    // What this persona and this engine did, together. Kept outside the project store
+    // because it is platform-wide learning: a model that keeps failing one persona
+    // fails it on every project, and the next routing decision should already know.
+    if (ranOn?.optionId && text(result.personaId)) {
+      const nextStats = modelRouting.recordOutcome(settings.personaModelStats, {
+        personaId: text(result.personaId),
+        optionId: ranOn.optionId,
+        outcome: text(result.outcome, 'completed'),
+        failureSignature: loop.failureSignature(text(result.personaId), result.failureMessage || result.summary),
+        at: nowIso(),
+      });
+      await agentPlatformSettings.writeAgentPlatformSettings(dataDir, { personaModelStats: nextStats }, actorUserId);
+    }
 
     if (!shouldAdvance || options.advance === false) return { advanced: false };
     return { advanced: true, ...(await advanceOnce(projectId, actorUserId)) };

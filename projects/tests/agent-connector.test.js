@@ -389,6 +389,8 @@ describe('secure outbound agent connector', () => {
       'frozenAt',
       'identifiers',
       'instructions',
+      // The engine the platform chose, named rather than left to a tier lookup.
+      'llm',
       'objective',
       'outputContract',
       'requirements',

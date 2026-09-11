@@ -53,6 +53,18 @@ function resolveKey(dataDir) {
   };
 }
 
+/**
+ * A key for signing short-lived capability URLs, derived from the same material with a
+ * different salt.
+ *
+ * Separate from the encryption key on purpose: one key, one job. Reusing the at-rest key
+ * to sign URLs would mean a signing oracle and a decryption key are the same secret.
+ */
+function signingKey(dataDir) {
+  const resolved = envKeyMaterial() || fileKeyMaterial(dataDir);
+  return crypto.scryptSync(resolved.material, 'yourlab-platform-url-signing', 32);
+}
+
 function keySource(dataDir) {
   const fromEnv = envKeyMaterial();
   if (fromEnv) return fromEnv.source;
@@ -106,4 +118,5 @@ module.exports = {
   encryptSecret,
   keySource,
   maskSecret,
+  signingKey,
 };

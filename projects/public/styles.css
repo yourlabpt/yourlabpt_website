@@ -659,6 +659,159 @@ textarea {
   padding: 0;
 }
 
+/*
+ * What is about to run. Lives inside the Execução card, so it is separated by a
+ * hairline and an accent edge rather than a border of its own — two nested bordered
+ * boxes is the thing UI-RULES forbids.
+ */
+.launch-card {
+  border-top: 0.5px solid var(--line);
+  border-left: 2px solid var(--accent);
+  padding: 8px 0 0 8px;
+  margin-top: 8px;
+}
+
+.launch-card p {
+  font-size: 13px;
+}
+
+/*
+ * Camada 0: the intention on the left, the screen it produced on the right. Side by
+ * side because the decision is a comparison — reading one and then scrolling to the
+ * other is a different, worse question.
+ */
+.camada0-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.6fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .camada0-split { grid-template-columns: 1fr; }
+}
+
+.camada0-frame-slot {
+  min-height: 560px;
+  position: relative;
+}
+
+/* The escape hatch under the frame — see fillFrames in camada0-ui.js for why it is
+   always present rather than shown on failure. */
+.camada0-fallback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.camada0-frame {
+  width: 100%;
+  height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.camada0-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.camada0-ask {
+  display: block;
+  margin-top: 10px;
+}
+
+.camada0-note {
+  margin: 8px 0 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.camada0-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.camada0-history {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.camada0-history-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px;
+  border: 0;
+  border-bottom: 0.5px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.camada0-history-row:hover {
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.camada0-history-row.is-current {
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+}
+
+/* One engine per row, hairline separated, so the same field lines up down the column. */
+.llm-option-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.llm-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.llm-option-row:last-child {
+  border-bottom: 0;
+}
+
+.llm-option-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.llm-option-row input[type="number"] {
+  width: 108px;
+}
+
+.llm-option-note {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 /* Pill toggle. The checkbox stays in the DOM for the keyboard and the screen reader,
    but is never drawn: the label is the control, grey when off and accent when on.
    See UI-RULES.md #1 - no raw checkboxes anywhere in this interface. */

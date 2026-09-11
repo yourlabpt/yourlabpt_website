@@ -61,8 +61,45 @@ function repositoryGap(project) {
   return readinessGaps(project)[0]?.message || '';
 }
 
+/**
+ * What is about to happen, shown before it happens.
+ *
+ * Launching an agent is a real action with a real cost, so it is never a blind click:
+ * who runs, on which engine, why that engine, what it is allowed to touch. Null when
+ * the next move is not a dispatch — there is then nothing to confirm.
+ */
+function launchPreview(project, decision, platformSettings) {
+  if (!decision || decision.action !== 'dispatch' || !decision.persona) return null;
+  const persona = decision.persona;
+  const stageId = decision.workItem?.deliveryStageId || persona.deliveryStages?.[0] || '';
+  const routed = agentPlatformSettings.routeForPersona(platformSettings, {
+    personaId: persona.id,
+    camada: buildPolicies.camadaForStage(project?.productType, stageId),
+  });
+  return {
+    personaId: persona.id,
+    personaLabel: persona.label,
+    // What it may write, and where. The two questions a person actually asks before
+    // letting an agent near a repository.
+    writeScope: persona.writeScope,
+    allowedTools: persona.allowedTools || [],
+    stageId,
+    camada: buildPolicies.camadaForStage(project?.productType, stageId),
+    model: routed.option ? {
+      optionId: routed.option.id,
+      label: routed.option.label,
+      provider: routed.option.provider,
+      model: routed.option.model,
+      profileId: routed.profileId,
+    } : null,
+    // The sentence that answers "why this model", rather than leaving it to be inferred.
+    why: routed.reason,
+    warnings: routed.warnings,
+  };
+}
+
 /** What the partner/admin UI needs to show the chain's state in one call. */
-function publicState(project, decision, now = Date.now()) {
+function publicState(project, decision, now = Date.now(), platformSettings = null) {
   const execucao = loop.activeExecucao(project);
   const rollup = loop.projectSpendRollup(project, now);
   return {
@@ -98,6 +135,7 @@ function publicState(project, decision, now = Date.now()) {
       rerunBecauseInputsChanged: decision.reason === 'inputs-changed',
       remainingUnits: decision.remainingUnits || 0,
     } : null,
+    launch: launchPreview(project, decision, platformSettings),
   };
 }
 
@@ -112,16 +150,12 @@ function registerOrchestrationRoutes(app, deps) {
     driver,
   } = deps;
 
-  async function personaOverrides() {
-    const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
-    return settings.personas || {};
-  }
-
   app.get('/api/projects/:projectId/orchestration', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
       const project = req.loadedProject;
-      const decision = loop.decideNext(project, { personaOverrides: await personaOverrides() });
-      return res.json(publicState(project, decision));
+      const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
+      const decision = loop.decideNext(project, { personaOverrides: settings.personas || {} });
+      return res.json(publicState(project, decision, Date.now(), settings));
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -167,7 +201,8 @@ function registerOrchestrationRoutes(app, deps) {
 
   app.post('/api/projects/:projectId/orchestration/answer', authMiddleware, loadProjectForUser, requirePartnerOrAdmin, async (req, res) => {
     try {
-      const overrides = await personaOverrides();
+      const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
+      const overrides = settings.personas || {};
       let payload = null;
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);
@@ -176,7 +211,7 @@ function registerOrchestrationRoutes(app, deps) {
         const question = loop.activeExecucao(project)?.question;
         loop.answerQuestion(project, { accepted });
         project.updatedAt = nowIso();
-        payload = publicState(project, loop.decideNext(project, { personaOverrides: overrides }));
+        payload = publicState(project, loop.decideNext(project, { personaOverrides: overrides }), Date.now(), settings);
         appendActivity(store, {
           actorUserId: req.auth.user.id,
           projectId: project.id,

@@ -498,6 +498,19 @@
               </section>
             </div>
 
+            <!-- TAB: CAMADA 0 — REFINAR INTENÇÃO -->
+            <div class="tab-panel hidden" data-panel="camada0">
+              <section class="panel section-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <h3 class="panel-heading"><span class="section-badge badge-gray">CAMADA 0</span> Refinar a intenção</h3>
+                    <p class="muted-text">Descreva o que quer, veja um ecrã, decida. Repete-se até o ecrã deixar de mudar — e só então o resto do processo começa.</p>
+                  </div>
+                </div>
+                <div id="camada0Panel" class="mt-12"></div>
+              </section>
+            </div>
+
             <!-- TAB: DELIVERY OS -->
             <div class="tab-panel hidden" data-panel="deliveryos">
               <section class="panel section-panel pdos-shell" id="pdosShell">
@@ -699,7 +712,7 @@
                     <label>Perfil do modelo<select id="agentsDefaultModel"><option value="small">small</option><option value="medium">medium</option><option value="large">large</option><option value="high">high</option><option value="max">max</option><option value="long_context">long_context</option></select></label>
                     <label>Limite tokens locais<input id="agentsDefaultMaxTokens" type="number" min="0" value="0" /></label>
                     <label>Limite tokens externos<input id="agentsDefaultExternalTokens" type="number" min="0" value="120000" /></label>
-                    <label>Custo máximo (EUR)<input id="agentsDefaultMaxCost" type="number" min="0" step="0.01" value="0" /></label>
+                    <label>Custo máximo (USD)<input id="agentsDefaultMaxCost" type="number" min="0" step="0.01" value="0" /></label>
                     <label>Tempo máximo (min)<input id="agentsDefaultMaxMinutes" type="number" min="0" value="0" /></label>
                     <label>Passos por vaga<input id="agentsDefaultWaveSize" type="number" min="1" value="8" /></label>
                     <label class="full">Ferramentas MCP<input id="agentsDefaultTools" placeholder="project.read, docs.search" /></label>
@@ -764,6 +777,19 @@
                   </div>
                   <div class="settings-save-row mt-8">
                     <button type="button" class="btn primary" id="gitSaveBtn">Guardar predefinições</button>
+                  </div>
+                </section>
+                <section class="settings-section mt-12">
+                  <div class="panel-title-row">
+                    <div>
+                      <h4>Modelos</h4>
+                      <p class="muted-text">Os motores que as personas podem usar. A persona é sempre a mesma; o modelo é o que muda em cada execução.</p>
+                    </div>
+                  </div>
+                  <div id="llmOptionsPanel" class="mt-8"></div>
+                  <div class="settings-save-row mt-8">
+                    <button type="button" class="btn ghost" id="llmAddBtn">Adicionar modelo</button>
+                    <button type="button" class="btn primary" id="llmSaveBtn">Guardar modelos</button>
                   </div>
                 </section>
               </section>
@@ -1410,6 +1436,7 @@
   <script src="/projects/static/client-portal-ui.js?v=11" defer></script>
   <script src="/projects/static/resume-ui.js?v=1" defer></script>
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
+  <script src="/projects/static/camada0-ui.js?v=1" defer></script>
   <script>
     (function () {
       var tabs = document.getElementById('sectionTabs');

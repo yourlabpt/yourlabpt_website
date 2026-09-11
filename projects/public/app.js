@@ -36,6 +36,9 @@ const NAV_GROUPS = [
     label: 'Trabalho',
     requiresProject: true,
     items: [
+      // Camada 0 comes first because it comes first: the intention is refined against
+      // something you can look at before any of the rest has anything to work from.
+      { id: 'camada0', label: 'Intenção', icon: 'bolt' },
       { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
       { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
@@ -1327,7 +1330,7 @@ function renderNavItem(item, { compact = false } = {}) {
   `;
 }
 
-const COLLAPSED_QUICK_NAV = ['projetos', 'deliveryos', 'requisitos', 'definicoes'];
+const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'deliveryos', 'requisitos', 'definicoes'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1494,6 +1497,9 @@ function renderActiveTab(project, tabId) {
       }
       renderRequirementModuleControls(project);
       renderRequirements(project);
+      break;
+    case 'camada0':
+      window.Camada0UI?.render?.(project.id);
       break;
     case 'fases':
       renderImplementationPlan(project);
@@ -2995,6 +3001,13 @@ function switchToTab(tabId) {
     renderProjectsPage();
   } else if (state.selectedProject) {
     renderActiveTab(state.selectedProject, activeId);
+  } else if (activeId === 'agentes') {
+    // Agentes and Definições da plataforma describe the platform, not a project, and
+    // `renderActiveTab` refuses to run without one — so opening either of them with no
+    // project selected left an empty panel and no way to tell why.
+    window.AgentsAdminUI?.render?.();
+  } else if (activeId === 'definicoesPlataforma') {
+    window.PlatformSettingsUI?.render?.();
   }
   persistNavigationState();
 }

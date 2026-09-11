@@ -226,6 +226,11 @@ function buildFrozenTaskPackage(input = {}) {
         ? input.executionSettings
         : {},
     },
+    // The engine the platform chose, named outright rather than as a tier the runtime
+    // looks up in a table of its own. A runtime that does not understand this field
+    // falls back to that table, so sending it is safe against an older runtime; a
+    // runtime that does understand it bills against the pricing given here.
+    llm: input.llm && typeof input.llm === 'object' ? input.llm : null,
     objective: input.objective && typeof input.objective === 'object'
       ? input.objective
       : {},

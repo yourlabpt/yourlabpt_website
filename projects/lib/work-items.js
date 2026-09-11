@@ -220,6 +220,10 @@ function normalizeExecutionSettings(raw) {
     schemaVersion: 2,
     version: Math.max(1, Number(src.version) || 1), agentId: textOr(src.agentId),
     modelProfileId: textOr(src.modelProfileId, 'medium'),
+    // The engine routing chose for this run. Empty means nothing chose, and the runtime
+    // falls back to its own tier table — which is a different, weaker guarantee, so the
+    // two are not the same value and this one is not derived from the profile.
+    llmOptionId: textOr(src.llmOptionId),
     targetInputTokens: Math.max(0, Number(src.targetInputTokens) || 0),
     targetOutputTokens: Math.max(0, Number(src.targetOutputTokens) || 0),
     tokenPolicy,
@@ -229,7 +233,10 @@ function normalizeExecutionSettings(raw) {
     costPolicy: {
       mode: src.costPolicy?.mode === 'limited' || maxCost > 0 ? 'limited' : 'unlimited',
       maxCost,
-      currency: textOr(src.costPolicy?.currency, 'EUR'),
+      // Agent spend is USD: model pricing is quoted USD per 1M tokens, and this cap is
+      // compared against the Execução's `maxCostUsd`. The commercial side of the
+      // business is euros and stays euros — this field is not that.
+      currency: textOr(src.costPolicy?.currency, 'USD'),
       onLimit: 'checkpoint_pause',
     },
     timePolicy: {
@@ -612,7 +619,24 @@ function deriveParentStatuses(items) {
     if (!children.has(item.parentTaskId)) children.set(item.parentTaskId, []);
     children.get(item.parentTaskId).push(item);
   });
-  list.forEach((item) => {
+  // Deepest first. A parent is derived from its children's *derived* status, so at
+  // three levels or more (Epic → Feature → Task) plain array order would compute the
+  // grandparent from a child that has not been updated yet — the same input would then
+  // settle on a different answer depending on how the list happened to be ordered.
+  const byId = new Map(list.map((item) => [item.id, item]));
+  const depthOf = (item) => {
+    let depth = 0;
+    let cursor = item;
+    const seen = new Set();
+    while (cursor?.parentTaskId && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      cursor = byId.get(cursor.parentTaskId);
+      if (!cursor) break;
+      depth += 1;
+    }
+    return depth;
+  };
+  [...list].sort((a, b) => depthOf(b) - depthOf(a)).forEach((item) => {
     const descendants = children.get(item.id) || [];
     if (item.executorMode === 'both' || descendants.length) {
       item.status = item.taskRole === 'coordination'

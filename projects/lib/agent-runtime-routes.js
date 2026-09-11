@@ -11,6 +11,7 @@ const engineeringState = require('./engineering-state');
 const agentPlatformSettings = require('./agent-platform-settings');
 const agentPersonas = require('./agent-personas');
 const agentTools = require('./agent-tools');
+const llmOptions = require('./llm-options');
 const personaBriefing = require('./persona-briefing');
 const gitRepositories = require('./git-repositories');
 const { resolveRuntimeReachability } = require('./work-items-routes');
@@ -790,11 +791,14 @@ function registerAgentRuntimeRoutes(app, deps) {
         const project = snapshot.projects.find((entry) => entry.id === projectId);
         const personaId = orchestrationDriver.personaIdForWorkItem(project, workItemIdForRun(project, runId));
         if (personaId) {
+          const spend = runSpendForRun(project, runId);
           await orchestrationDriver.recordAndAdvance(projectId, {
             personaId,
             workItemId: workItemIdForRun(project, runId),
             outcome: 'completed',
             summary: textOr(review?.summaryMarkdown).slice(0, 400),
+            costUsd: spend.costUsd,
+            seconds: spend.seconds,
           });
         }
       } catch (error) {
@@ -810,6 +814,25 @@ function registerAgentRuntimeRoutes(app, deps) {
     const job = ensureArray(project?.agentJobs).find((entry) => entry.promptRunId === runId);
     return textOr(job?.workItemId)
       || textOr(ensureArray(project?.promptRuns).find((entry) => entry.id === runId)?.workItemId);
+  }
+
+  /**
+   * What this run actually cost, so the Execução budget reflects reality.
+   *
+   * The runtime reports spend and the job already stores it; until this was read back,
+   * `spentUsd` stayed at zero for the life of a project and `maxCostUsd` could never
+   * fire — the cap looked enforced and enforced nothing. A run the runtime never
+   * reported on contributes zero, which is honest rather than guessed.
+   */
+  function runSpendForRun(project, runId) {
+    const job = ensureArray(project?.agentJobs).find((entry) => entry.promptRunId === runId);
+    if (!job) return { costUsd: 0, seconds: 0 };
+    const startedAt = Date.parse(job.createdAt || '');
+    const endedAt = Date.parse(job.updatedAt || '');
+    const seconds = Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt > startedAt
+      ? Math.round((endedAt - startedAt) / 1000)
+      : 0;
+    return { costUsd: Math.max(0, Number(job.costUsed) || 0), seconds };
   }
 
   async function validateAgentOutput(dispatch, rawInput) {
@@ -1234,6 +1257,9 @@ function registerAgentRuntimeRoutes(app, deps) {
         return httpResult(400).json({ message: 'workItemId e obrigatorio. Crie e aprove uma tarefa canonica antes de iniciar o agente.' });
       }
 
+      // The engine catalogue, so the package can name the model rather than a tier.
+      const runSettings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
+
       const store = await readStore();
       const project = store.projects.find((entry) => entry.id === projectId);
       if (!project) {
@@ -1576,6 +1602,13 @@ function registerAgentRuntimeRoutes(app, deps) {
             maxNoProgressIterations: Number(options.maxNoProgressIterations) || 3,
           },
           executionSettings: workItems.normalizeExecutionSettings(options.executionSettings || options),
+          // Name the engine outright when routing chose one, so the runtime does not
+          // have to guess a tier from a profile label. Null when nothing chose, and the
+          // runtime then falls back to its own table.
+          llm: llmOptions.wireSpec(llmOptions.findOption(
+            runSettings.llmOptions,
+            workItems.normalizeExecutionSettings(options.executionSettings || options).llmOptionId,
+          )),
           objective: {
             statement: delegatedTask.executionPackage?.objective
               || delegatedTask.descriptionMarkdown,
@@ -2490,7 +2523,14 @@ function registerAgentRuntimeRoutes(app, deps) {
   app.get('/api/projects/agent-platform/settings', authMiddleware, requireRole('super_admin'), async (req, res) => {
     try {
       const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
-      return res.json({ settings });
+      return res.json({
+        settings,
+        modelProfiles: llmOptions.PROFILE_IDS,
+        // Anything worth saying about an engine before it is used to spend money.
+        llmWarnings: Object.fromEntries(settings.llmOptions.map((option) => (
+          [option.id, llmOptions.optionWarnings(option)]
+        ))),
+      });
     } catch (error) {
       return res.status(500).json({ message: error.message });
     }
@@ -2508,6 +2548,22 @@ function registerAgentRuntimeRoutes(app, deps) {
           }
         }
         patch.personas = body.personas;
+      }
+      if (Array.isArray(body.llmOptions)) {
+        const cleaned = body.llmOptions
+          .map((entry) => llmOptions.normalizeOption(entry))
+          .filter(Boolean);
+        if (!cleaned.length) {
+          return res.status(400).json({
+            message: 'Cada modelo precisa de um identificador e do nome do modelo no fornecedor.',
+          });
+        }
+        if (!cleaned.some((option) => option.enabled)) {
+          return res.status(400).json({
+            message: 'Deixe pelo menos um modelo activo, senão nenhuma persona consegue correr.',
+          });
+        }
+        patch.llmOptions = cleaned;
       }
       const settings = await agentPlatformSettings.writeAgentPlatformSettings(
         dataDir,

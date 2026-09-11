@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const workItems = require('./work-items');
 const agentPersonas = require('./agent-personas');
+const llmOptions = require('./llm-options');
+const modelRouting = require('./model-routing');
 
 const FILE_NAME = 'agent-platform-settings.json';
 
@@ -64,12 +66,28 @@ function normalizePlatformSettings(raw = {}) {
     },
   });
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     executionDefaults,
     personas: agentPersonas.normalizePersonaOverrides(src.personas),
+    // The engines available to every persona, edited in Definições da plataforma.
+    llmOptions: llmOptions.normalizeOptions(src.llmOptions),
+    // What each persona × engine pairing has actually done. Bounded by construction:
+    // personas × options, so it is a map rather than a table.
+    personaModelStats: normalizeStats(src.personaModelStats),
     updatedAt: workItems.textOr(src.updatedAt),
     updatedBy: workItems.textOr(src.updatedBy),
   };
+}
+
+function normalizeStats(raw) {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  for (const key of Object.keys(src)) {
+    const [personaId, optionId] = String(key).split(':');
+    if (!personaId || !optionId) continue;
+    out[key] = modelRouting.statsFor(src, personaId, optionId);
+  }
+  return out;
 }
 
 async function readAgentPlatformSettings(dataDir) {
@@ -93,6 +111,11 @@ async function writeAgentPlatformSettings(dataDir, patch = {}, actorUserId = '')
     personas: patch.personas && typeof patch.personas === 'object'
       ? { ...current.personas, ...patch.personas }
       : current.personas,
+    // Replaced wholesale, not merged: removing an option has to be possible.
+    llmOptions: Array.isArray(patch.llmOptions) ? patch.llmOptions : current.llmOptions,
+    personaModelStats: patch.personaModelStats && typeof patch.personaModelStats === 'object'
+      ? patch.personaModelStats
+      : current.personaModelStats,
     updatedAt: new Date().toISOString(),
     updatedBy: actorUserId,
   });
@@ -127,10 +150,33 @@ function mergeWithPlatformDefaults(taskSettings, platformSettings, personaId = '
   return merged;
 }
 
+/**
+ * The routing decision for one persona, assembled from stored settings.
+ *
+ * Kept here so callers pass what they know (who, which camada, which attempt) and the
+ * settings supply the rest. `model-routing.route` stays pure and independently testable.
+ */
+function routeForPersona(platformSettings, { personaId = '', camada = null, attempt = 0 } = {}) {
+  const settings = normalizePlatformSettings(platformSettings);
+  const persona = agentPersonas.isPersonaId(personaId)
+    ? agentPersonas.resolvePersona(personaId, settings.personas)
+    : null;
+  return modelRouting.route({
+    personaId,
+    camada,
+    attempt,
+    stats: settings.personaModelStats,
+    options: settings.llmOptions,
+    personaProfileId: persona?.modelProfileId || '',
+    overrides: settings.routingOverrides || {},
+  });
+}
+
 module.exports = {
   DEFAULT_EXECUTION,
   normalizePlatformSettings,
   readAgentPlatformSettings,
   writeAgentPlatformSettings,
   mergeWithPlatformDefaults,
+  routeForPersona,
 };

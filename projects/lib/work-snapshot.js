@@ -59,9 +59,16 @@ function stageSources(project) {
       // The mockup is what Discovery exists to produce. Without it here, changing a
       // mockup would be invisible — and that is precisely the change the policy sends
       // back up into the idea.
+      //
+      // Only *approved* mockups count. A Camada 0 session iterates many times and is
+      // meant to be free to do so; if every turn moved this fingerprint, iterating on
+      // the next Epic would mark the current Execução's personas stale and halt it at
+      // STALE_RERUN_LIMIT. Approval is the one moment the rest of the chain should
+      // notice, and it is also exactly the ux_mockup → ux_mockup_approved transform the
+      // build policy already declares.
       mockups: ensureArray(project.diagramArtifacts)
-        .filter((row) => /mockup|wireframe|ecra|screen/i.test(String(row?.kind || row?.type || row?.title || '')))
-        .map((row) => ({ id: row.id, title: row.title, updatedAt: row.updatedAt }))
+        .filter((row) => String(row?.kind || '') === 'mockup' && row?.mockupIterationId)
+        .map((row) => ({ id: row.id, title: row.title, iterationId: row.mockupIterationId }))
         .sort((left, right) => String(left.id).localeCompare(String(right.id))),
     },
     requirements: {

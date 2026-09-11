@@ -119,6 +119,12 @@ function normalizeExecucao(raw = {}) {
       failureSignature: text(entry?.failureSignature),
       costUsd: Number(entry?.costUsd) || 0,
       seconds: Number(entry?.seconds) || 0,
+      // Which engine ran this. The persona is fixed and the model is not, so without
+      // these two a failure cannot be attributed to the model that produced it — and
+      // "this cheap model keeps failing at this job" is exactly the thing worth
+      // learning from a run.
+      modelProfileId: text(entry?.modelProfileId),
+      llmProvider: text(entry?.llmProvider),
       // What this run was built on. Dropping it here would silently disable staleness
       // detection on the next load, which is the whole point of recording it.
       inputFingerprint: text(entry?.inputFingerprint),
@@ -230,6 +236,10 @@ function pendingUnitsFor(project, persona) {
   const wanted = new Set(persona.taskTypes);
   return workItems.getWorkItems(project).filter((item) => (
     wanted.has(text(item.agentType))
+    // A coordination item is a container, not work. It carries the same agentType as
+    // its children, so without this it looks like a unit to dispatch and an agent gets
+    // handed the folder instead of the task inside it.
+    && text(item.taskRole) !== 'coordination'
     && !workItems.isTerminalStatus(text(item.status))
     && text(item.status) !== 'waiting_review'
   ));
@@ -550,6 +560,10 @@ function recordResult(project, result = {}, now = Date.now()) {
       : '',
     costUsd: Number(result.costUsd) || 0,
     seconds: Number(result.seconds) || 0,
+    // What ran it. Falls back to the persona's configured profile when the caller does
+    // not say, which is the profile that would have been sent.
+    modelProfileId: text(result.modelProfileId, persona?.modelProfileId || ''),
+    llmProvider: text(result.llmProvider),
     // What this run was built on. A later run compares against it to know whether
     // anything it depended on has moved since — by a person or by another agent.
     inputFingerprint: persona ? personaInputFingerprint(project, persona) : '',
