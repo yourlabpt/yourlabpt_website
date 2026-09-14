@@ -91,6 +91,7 @@ function summarizeProject(project) {
     awaitingReview,
     failed,
     attention: attention.slice(0, ATTENTION_LIMIT),
+    tasks: items.length,
     execucao: execucao ? {
       id: execucao.id,
       goal: textOr(execucao.goal),
@@ -111,6 +112,12 @@ function summarizeProject(project) {
         raisedAt: textOr(question.raisedAt),
       } : null,
       haltReason: textOr(stopped?.haltReason),
+      // What it has spent against its cap — enough for a bar; the full clock is on the home.
+      budget: {
+        spentUsd: Number(execucao.budget?.spentUsd) || 0,
+        maxCostUsd: Number(execucao.budget?.maxCostUsd) || 0,
+        currency: textOr(execucao.budget?.currency, 'USD'),
+      },
     } : null,
     lastActivityAt: latest(
       project.updatedAt,

@@ -143,3 +143,12 @@ test('carries what an open question is about', () => {
   assert.equal(summary.execucao.question.raisedAt, '2026-09-01T11:00:00.000Z');
   assert.equal(summary.execucao.question.personaLabel, 'UX Agent');
 });
+
+test('carries the task count and what the Execução has spent against its cap', () => {
+  const summary = resume.summarizeProject(project({
+    workItems: [workItem(), workItem(), workItem({ status: 'completed' })],
+    execucoes: [{ id: 'exec_1', status: 'running', goal: 'Construir', budget: { spentUsd: 3.4, maxCostUsd: 15, currency: 'EUR' } }],
+  }));
+  assert.equal(summary.tasks, 3);
+  assert.deepEqual(summary.execucao.budget, { spentUsd: 3.4, maxCostUsd: 15, currency: 'EUR' });
+});

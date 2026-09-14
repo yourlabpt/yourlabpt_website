@@ -1568,3 +1568,254 @@ select:focus {
     gap: 12px;
   }
 }
+
+/* ================================================================ icons, settings, account
+ *
+ * The mockup's icon stroke everywhere; the three kinds of settings told apart by a scope
+ * line above their title; Conta as an iOS form; and the phone's compact Execução.
+ */
+
+.ios-icon {
+  stroke-width: 1.8;
+}
+
+/* ---------------------------------------------------------------- sidebar account row */
+
+.nav-rail-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.nav-rail-account {
+  height: 44px;
+}
+
+/* ---------------------------------------------------------------- settings scope */
+
+.settings-scope-head {
+  max-width: 1180px;
+  margin-bottom: 20px;
+}
+
+.settings-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.settings-scope .ios-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------------------------------------------------------------- Conta */
+
+.account-page {
+  max-width: 760px;
+}
+
+.account-head {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+}
+
+.account-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--text-2);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.ios-field {
+  position: relative;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 16px;
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+
+.ios-field + .ios-field::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ios-field:focus-within {
+  background: var(--surface-2);
+}
+
+.ios-field-label {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.ios-field input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.ios-field input:not([type="checkbox"]):not([type="radio"]):focus {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.ios-footnote {
+  margin: 0;
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ios-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.ios-row.is-destructive .ios-row-title,
+.ios-row.is-destructive .ios-row-icon {
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------- Hoje: budget under a running row */
+
+.ios-row-budget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ios-row-budget .ios-meter-bar {
+  flex: 1;
+  height: 5px;
+}
+
+/* ---------------------------------------------------------------- the phone's compact Execução */
+
+.ios-exec-compact {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  /* A page with a large title and nowhere to go back to has no bar, as in the mockup. */
+  .mobile-bar-empty .topbar {
+    display: none;
+  }
+
+  .content {
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+
+  /* The account is the Definições tab on a phone, not a menu in the bar. */
+  .topbar-user-menu {
+    display: none;
+  }
+
+  .ios-desktop-only,
+  .ios-home .ios-page-actions,
+  .ios-home > .ios-home-aside,
+  .ios-exec-full {
+    display: none;
+  }
+
+  .ios-exec-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .ios-exec-compact-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ios-chain-dots {
+    display: flex;
+    gap: 4px;
+  }
+
+  .ios-chain-dots > span {
+    flex: 1;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--line);
+  }
+
+  .ios-chain-dots > .is-done { background: var(--muted-2); }
+  .ios-chain-dots > .is-current,
+  .ios-chain-dots > .is-waiting { background: var(--accent-gold); }
+  .ios-chain-dots > .is-failed { background: var(--danger); }
+
+  .ios-exec-sentence {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text-2);
+  }
+
+  .ios-exec-figures {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .ios-field {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .account-avatar {
+    width: 56px;
+    height: 56px;
+    font-size: 21px;
+  }
+
+  .settings-scope-head {
+    margin-bottom: 14px;
+  }
+}

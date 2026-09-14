@@ -8,26 +8,7 @@ const LAST_PROJECT_KEY = 'requirements_platform_last_project';
 const LAST_TAB_KEY = 'requirements_platform_last_tab';
 const LAST_STAGE_KEY = 'requirements_platform_last_stage';
 
-const PROJECTLESS_TABS = new Set(['projetos', 'definicoes', 'agentes', 'definicoesPlataforma']);
-
-const NAV_ICON_PATHS = {
-  folder: 'M8 4h8l1 2h3v14H4V6h3z',
-  timeline: 'M3 12h6l2-7 3 14 2-7h5',
-  list: 'M8 7h8M8 12h8M8 17h5',
-  file: 'M7 3h7l5 5v13H7zM14 3v5h5',
-  notes: 'M7 4h10v16H7zM9 8h6M9 12h4',
-  help: 'M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-.9.8-1.7 1.2-1.7 2.7M12 17h.01',
-  chart: 'M4 19V5M4 19h16M8 17V9M12 17V6M16 17v-4',
-  plan: 'M4 18h16M7 18V9M12 18V6M17 18v-4',
-  bolt: 'M13 3L4 14h6l-1 7 9-11h-6z',
-  clock: 'M12 6v6l4 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z',
-  checklist: 'M9 6h11M9 12h11M9 18h6M4 6h.01M4 12h.01M4 18h.01',
-  settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l.8-4h-7l.8 4a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.8 4h7l.8-4a8 8 0 0 0 1.7-1l2.4 1 2-3.5z',
-  more: 'M6 12h.01M12 12h.01M18 12h.01',
-  tray: 'M3 13h5l1.5 3h5l1.5-3h5M5.5 5h13l2.5 8v6H3v-6z',
-  branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
-  send: 'M21 3L10 14M21 3l-7 18-4-7-7-4z',
-};
+const PROJECTLESS_TABS = new Set(['hoje', 'projetos', 'definicoes', 'agentes', 'definicoesPlataforma', 'conta']);
 
 const NAV_GROUPS = [
   {
@@ -49,13 +30,13 @@ const NAV_GROUPS = [
     label: 'Trabalho',
     requiresProject: true,
     items: [
-      { id: 'projeto', label: 'Resumo', icon: 'chart' },
+      { id: 'projeto', label: 'Resumo', icon: 'gauge' },
       // Camada 0 comes first because it comes first: the intention is refined against
       // something you can look at before any of the rest has anything to work from.
       { id: 'camada0', label: 'Intenção', icon: 'bolt' },
       // Camadas 1-3 read as one plan getting smaller, so they share a screen.
       { id: 'plano', label: 'Plano', icon: 'plan' },
-      { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
+      { id: 'tarefas', label: 'Tarefas', icon: 'list' },
       // Carries a count when something has moved since this device last looked.
       { id: 'decisoes', label: 'Decisões', icon: 'branch' },
       { id: 'deliveryos', label: 'Entrega', icon: 'send' },
@@ -70,10 +51,10 @@ const NAV_GROUPS = [
       // Requisitos is the detail behind Plano — reached when you need a specific
       // requirement, not on the way past.
       { id: 'requisitos', label: 'Requisitos', icon: 'list' },
-      { id: 'documentos', label: 'Documentos', icon: 'file' },
+      { id: 'documentos', label: 'Documentos', icon: 'doc' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
-      { id: 'fases', label: 'Fases', icon: 'plan' },
-      { id: 'gerar', label: 'Gerar', icon: 'bolt' },
+      { id: 'fases', label: 'Fases', icon: 'layers' },
+      { id: 'gerar', label: 'Gerar', icon: 'sparkle' },
       { id: 'atas', label: 'Atas', icon: 'notes' },
       { id: 'atividade', label: 'Log', icon: 'clock' },
     ],
@@ -82,8 +63,10 @@ const NAV_GROUPS = [
     // Pinned to the foot of the sidebar; on a phone, behind the Definições tab.
     id: 'system',
     items: [
-      { id: 'definicoes', label: 'Definições do projecto', icon: 'settings', requiresSelectedProject: true },
-      { id: 'definicoesPlataforma', label: 'Definições da plataforma', icon: 'settings', superAdminOnly: true },
+      { id: 'definicoes', label: 'Definições do projecto', icon: 'gear', requiresSelectedProject: true },
+      { id: 'definicoesPlataforma', label: 'Definições da plataforma', icon: 'gear', superAdminOnly: true },
+      // The person signed in: drawn as their name, it opens their own account.
+      { id: 'conta', label: 'Conta', icon: 'person', account: true },
     ],
   },
 ];
@@ -1257,8 +1240,8 @@ function setUserMenuOpen(open) {
 }
 
 function navIconSvg(iconKey) {
-  const path = NAV_ICON_PATHS[iconKey] || NAV_ICON_PATHS.folder;
-  return `<svg class="nav-rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  // One icon set for the whole platform, drawn from the approved mockup (ios-icons.js).
+  return window.IosIcons?.svg(iconKey, { className: 'nav-rail-icon' }) || '';
 }
 
 // Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client's whole nav is Entrega.
@@ -1313,8 +1296,27 @@ function isNavPageRequiresProject(pageId) {
 // to say — a badge reading zero is noise, not information.
 const navBadges = {};
 
+/** The account row at the foot of the sidebar: who is signed in, and the way into Conta. */
+function renderAccountNavItem(item) {
+  const user = state.user;
+  if (!user) return '';
+  const active = state.activeTab === item.id;
+  return `
+    <button type="button"
+      class="nav-rail-item nav-rail-account ${active ? 'active' : ''}"
+      data-nav-tab="${escapeHtml(item.id)}"
+      title="Conta — ${escapeHtml(user.name)}"
+      aria-label="Conta de ${escapeHtml(user.name)}"
+      aria-current="${active ? 'page' : 'false'}">
+      <span class="nav-rail-avatar">${escapeHtml(window.IosKit?.initials?.(user.name) || '')}</span>
+      <span class="nav-rail-label">${escapeHtml(user.name)}</span>
+    </button>
+  `;
+}
+
 function renderNavItem(item, { compact = false } = {}) {
   if (!isNavItemVisible(item)) return '';
+  if (item.account) return renderAccountNavItem(item);
   const active = state.activeTab === item.id;
   const count = Number(navBadges[item.id]) || 0;
   return `
@@ -1481,10 +1483,9 @@ function initNavRail() {
     const button = event.target.closest('[data-mobile-tab]');
     if (!button) return;
     const tab = button.dataset.mobileTab;
+    // Definições opens the account, which leads on to the project's and the platform's.
     if (tab === 'definicoes') {
-      if (state.selectedProject) switchToTab('definicoes');
-      else if (isSuperAdmin()) switchToTab('definicoesPlataforma');
-      else showToast('Abra um projecto para ver as definições dele.', 'error');
+      switchToTab('conta');
       return;
     }
     switchToTab(tab);
@@ -1499,7 +1500,7 @@ function initNavRail() {
 }
 
 // Which phone tab a page lives under. A project's pages all live under Projetos.
-const MOBILE_TAB_FOR_PAGE = { hoje: 'hoje', projetos: 'projetos', agentes: 'agentes', definicoes: 'definicoes', definicoesPlataforma: 'definicoes' };
+const MOBILE_TAB_FOR_PAGE = { hoje: 'hoje', projetos: 'projetos', agentes: 'agentes', definicoes: 'definicoes', definicoesPlataforma: 'definicoes', conta: 'definicoes' };
 
 /**
  * The phone's chrome: which tab is lit, and what the bar above the page says.
@@ -1536,7 +1537,11 @@ function renderMobileChrome() {
   } else if (inProject) {
     backTo = 'projetos';
     backLabel = 'Projetos';
-  } else if (tab !== 'hoje' && tab !== 'projetos') {
+  } else if (tab === 'definicoes' || tab === 'definicoesPlataforma') {
+    // On a phone both settings pages are reached from Conta, so that is the way back.
+    backTo = 'conta';
+    backLabel = 'Definições';
+  } else if (tab !== 'hoje' && tab !== 'projetos' && tab !== 'conta') {
     title = findNavItem(tab)?.label || '';
   }
   // A client's whole project is Entrega; there is no Resumo to go back to.
@@ -1554,6 +1559,8 @@ function renderMobileChrome() {
   if (backText) backText.textContent = backLabel;
   const titleEl = document.getElementById('mobileNavTitle');
   if (titleEl) titleEl.textContent = title;
+  // A page with its own large title and nowhere to go back to needs no bar at all.
+  document.body.classList.toggle('mobile-bar-empty', !backTo && !title);
 }
 
 function renderActiveTab(project, tabId) {
@@ -1630,7 +1637,10 @@ function renderActiveTab(project, tabId) {
     case 'atividade':
       loadActivity().catch(() => {});
       break;
-    case 'definicoes':
+    case 'definicoes': {
+      const subtitle = document.getElementById('projectSettingsSubtitle');
+      if (subtitle) subtitle.textContent = `Só afecta ${project.name}: o que é, quem lhe acede, onde está o código.`;
+    }
       renderUsersPanel();
       renderMembers(project);
       window.ProjectRepositoryUI?.render?.(project);
@@ -1677,6 +1687,8 @@ function renderProjectDetails(options = {}) {
     if (state.activeTab === 'definicoesPlataforma') {
       window.PlatformSettingsUI?.render?.();
     }
+    if (state.activeTab === 'conta') window.AccountUI?.render?.();
+    if (state.activeTab === 'hoje') window.ResumeUI?.renderHoje?.();
     return;
   }
 
@@ -3110,6 +3122,9 @@ function switchToTab(tabId) {
 
   if (activeId === 'hoje') {
     window.ResumeUI?.renderHoje?.();
+  } else if (activeId === 'conta') {
+    // A person's own account is not about any project, open or not.
+    window.AccountUI?.render?.();
   } else if (activeId === 'projetos') {
     renderProjectsPage();
   } else if (state.selectedProject) {
@@ -3136,6 +3151,16 @@ window.renderPhaseContextBar = renderPhaseContextBar;
 window.isPartnerEditor = isPartnerEditor;
 window.getProjectNavGroups = getProjectNavGroups;
 window.navIconSvg = navIconSvg;
+window.logout = handleLogout;
+// Conta saves through this, so the sidebar, the menu and the users list agree at once.
+window.setCurrentUser = (user) => {
+  if (!user) return;
+  state.user = user;
+  state.users = state.users.map((entry) => (entry.id === user.id ? user : entry));
+  renderUserMenuInfo();
+  renderNavRail();
+  if (isSuperAdmin()) renderUsersPanel();
+};
 
 async function loadActivity() {
   const project = state.selectedProject;
@@ -4018,7 +4043,11 @@ function wireEvents() {
   });
   els.openSettingsBtn?.addEventListener('click', () => {
     setUserMenuOpen(false);
-    switchToTab('definicoes');
+    switchToTab(state.selectedProject ? 'definicoes' : 'conta');
+  });
+  document.getElementById('userMenuAccountBtn')?.addEventListener('click', () => {
+    setUserMenuOpen(false);
+    switchToTab('conta');
   });
   els.agentPairingForm?.addEventListener('submit', async (event) => {
     event.preventDefault();

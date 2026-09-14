@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
   <link rel="stylesheet" href="/projects/static/styles.css?v=105" />
-  <link rel="stylesheet" href="/projects/static/ios.css?v=2" />
+  <link rel="stylesheet" href="/projects/static/ios.css?v=3" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -53,8 +53,7 @@
         </div>
         <!-- Phone only: the way back, and the page's name when it has no large title. -->
         <div class="topbar-mobile">
-          <button type="button" class="ios-back" id="mobileBackBtn" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <button type="button" class="ios-back" id="mobileBackBtn" data-ios-icon="chevronLeft" data-ios-icon-size="26" hidden>
             <span id="mobileBackLabel"></span>
           </button>
           <span class="topbar-mobile-title" id="mobileNavTitle"></span>
@@ -67,18 +66,13 @@
           <button type="button" class="topbar-icon-btn topbar-icon-theme" id="themeToggleBtn" title="Alternar tema claro/escuro" aria-label="Alternar tema">
             <svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button type="button" class="topbar-icon-btn topbar-icon-settings" id="openSettingsBtn" title="Definições — utilizadores e projecto" aria-label="Definições">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l.8-4h-7l.8 4a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.8 4h7l.8-4a8 8 0 0 0 1.7-1l2.4 1 2-3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button type="button" class="topbar-icon-btn topbar-icon-help" id="platformHelpBtn" title="Ajuda da plataforma" aria-label="Ajuda da plataforma">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.3 1.8c0 1.8-2.8 2-2.8 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor"/></svg>
-          </button>
+          <button type="button" class="topbar-icon-btn topbar-icon-settings" id="openSettingsBtn" title="Definições — utilizadores e projecto" aria-label="Definições" data-ios-icon="gear"></button>
+          <button type="button" class="topbar-icon-btn topbar-icon-help" id="platformHelpBtn" title="Ajuda da plataforma" aria-label="Ajuda da plataforma" data-ios-icon="help"></button>
           <div class="topbar-user-menu">
-            <button type="button" class="topbar-icon-btn topbar-icon-user" id="userMenuBtn" title="Sessão do utilizador" aria-label="Sessão do utilizador" aria-expanded="false" aria-haspopup="true">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            </button>
+            <button type="button" class="topbar-icon-btn topbar-icon-user" id="userMenuBtn" title="Sessão do utilizador" aria-label="Sessão do utilizador" aria-expanded="false" aria-haspopup="true" data-ios-icon="person"></button>
             <div class="topbar-user-popover hidden" id="userMenuPopover" role="menu">
               <div class="topbar-user-info" id="userMenuInfo"></div>
+              <button type="button" class="btn ghost tiny topbar-logout-btn" id="userMenuAccountBtn" role="menuitem">A minha conta</button>
               <button type="button" class="btn ghost tiny topbar-logout-btn" id="logoutBtn" role="menuitem">Terminar sessão</button>
             </div>
           </div>
@@ -126,7 +120,7 @@
                     <p class="ios-subtitle" id="projectsSubtitle"></p>
                   </div>
                   <div class="ios-page-actions">
-                    <button type="button" class="btn ios-round" id="refreshProjectsBtn" title="Atualizar lista" aria-label="Atualizar lista"><svg class="ios-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg></button>
+                    <button type="button" class="btn ios-round" id="refreshProjectsBtn" title="Atualizar lista" aria-label="Atualizar lista" data-ios-icon="refresh" data-ios-icon-size="18"></button>
                     <button type="button" class="btn primary" id="newProjectToggleBtn" data-writes-only aria-controls="newProjectSection" aria-expanded="false">Novo projecto</button>
                   </div>
                 </header>
@@ -784,15 +778,21 @@
               </section>
             </div>
 
+            <!-- TAB: CONTA — a pessoa com sessão iniciada. Preenchido por account-ui.js. -->
+            <div class="tab-panel hidden" data-panel="conta">
+              <div id="accountPanel" class="ios-page account-page"></div>
+            </div>
+
             <!-- TAB: DEFINIÇÕES DA PLATAFORMA -->
             <div class="tab-panel hidden" data-panel="definicoesPlataforma">
-              <section class="panel section-panel" id="platformSettingsRoot">
-                <div class="panel-title-row">
-                  <div>
-                    <h3 class="panel-heading"><span class="section-badge badge-gray">PLATAFORMA</span> Definições da plataforma</h3>
-                    <p class="muted-text">Identidade e ligações da plataforma. O repositório de cada projecto configura-se no próprio projecto.</p>
-                  </div>
+              <header class="ios-page-head settings-scope-head">
+                <div>
+                  <span class="settings-scope" data-ios-icon="gear" data-ios-icon-size="14">Toda a plataforma</span>
+                  <h1 class="ios-large-title">Definições da plataforma</h1>
+                  <p class="ios-subtitle">Aplica-se a todos os projectos e a todas as pessoas: contas, GitHub, modelos e o Agent Runtime.</p>
                 </div>
+              </header>
+              <section class="panel section-panel" id="platformSettingsRoot">
                 <section class="settings-section mt-12">
                   <div class="panel-title-row">
                     <div>
@@ -831,21 +831,49 @@
                     <button type="button" class="btn primary" id="llmSaveBtn">Guardar modelos</button>
                   </div>
                 </section>
+                <section class="settings-section mt-12" id="platformUsersSection">
+                  <h4>Contas</h4>
+                  <p class="muted-text">Criar contas, mudar perfis e acessos, desactivar. Cada pessoa edita os seus próprios dados em Conta.</p>
+                  <div class="settings-grid mt-12"><article class="read-card settings-users-card" id="settingsUsersCard">
+                      <h4>Criar utilizador</h4>
+                      <form id="createUserForm" class="form-grid compact mt-8">
+                        <label>Nome<input id="newUserName" required /></label><label>Email<input id="newUserEmail" type="email" required /></label>
+                        <label>Perfil<select id="newUserRole"><option value="client">Cliente</option><option value="partner">Parceiro</option></select></label>
+                        <label class="checkline budget-access-field"><input id="newUserCanViewBudget" type="checkbox" /> Pode ver valores comerciais</label>
+                        <label>Password temporária<input id="newUserPassword" type="text" required /></label>
+                        <button class="btn primary" type="submit">Criar utilizador</button>
+                      </form><div id="usersList" class="simple-list mt-8"></div>
+                  </article></div>
+                </section>
+                <section class="settings-section mt-12">
+                  <h4>Agent Runtime</h4>
+                  <details class="settings-advanced-details" id="agentConnectorCard">
+                  <summary>Agent Runtime — ligação segura</summary>
+                  <div class="read-card mt-12">
+                    <p class="muted-text">O Agent Runtime liga-se à plataforma por HTTPS. A plataforma nunca abre uma ligação ao seu Mac.</p>
+                    <div id="agentConnectorList" class="simple-list mt-8"></div>
+                    <form id="agentPairingForm" class="form-grid compact mt-8">
+                      <label>Password actual
+                        <input id="agentPairingPassword" type="password" autocomplete="current-password" required />
+                      </label>
+                      <button class="btn primary" type="submit">Criar código de emparelhamento</button>
+                    </form>
+                    <div id="agentPairingResult" class="hidden mt-8"></div>
+                  </div>
+                </details>
+                </section>
               </section>
             </div>
 
             <!-- TAB: DEFINIÇÕES -->
             <div class="tab-panel hidden" data-panel="definicoes">
-              <section class="settings-welcome" aria-labelledby="settingsWelcomeTitle">
-                <span class="idea-eyebrow">DEFINIÇÕES DO PROJECTO</span>
-                <h2 id="settingsWelcomeTitle">Dê contexto às pessoas que vão trabalhar neste projecto</h2>
-                <p>Comece pela informação essencial. Os dados comerciais podem ficar vazios enquanto a ideia ainda está a ser explorada.</p>
-                <ol class="settings-steps" aria-label="Ordem recomendada">
-                  <li><strong>Identifique</strong><span>nome, descrição e estado</span></li>
-                  <li><strong>Prepare a proposta</strong><span>cliente, moeda e código — quando existirem</span></li>
-                  <li><strong>Dê acesso</strong><span>associe a equipa e o cliente</span></li>
-                </ol>
-              </section>
+              <header class="ios-page-head settings-scope-head">
+                <div>
+                  <span class="settings-scope" data-ios-icon="folder" data-ios-icon-size="14">Este projecto</span>
+                  <h1 class="ios-large-title">Definições do projecto</h1>
+                  <p class="ios-subtitle" id="projectSettingsSubtitle">Só afecta este projecto: o que é, quem lhe acede, onde está o código.</p>
+                </div>
+              </header>
 
               <section class="panel section-panel settings-section" id="settingsIdentitySection">
                 <div class="panel-title-row settings-section-heading">
@@ -946,40 +974,6 @@
                 <div id="projectRepositoryPanel"></div>
               </section>
 
-              <section class="panel section-panel settings-section">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-gray">ADMIN</span> Administração da plataforma</h3>
-                </div>
-                <p class="muted-text">Só precisa desta área para criar e gerir contas. Não faz parte da configuração normal de um projecto.</p>
-                <details class="settings-advanced-details" open>
-                  <summary>Utilizadores — criar e editar contas</summary>
-                  <div class="settings-grid mt-12"><article class="read-card settings-users-card" id="settingsUsersCard">
-                      <h4>Criar utilizador</h4>
-                      <form id="createUserForm" class="form-grid compact mt-8">
-                        <label>Nome<input id="newUserName" required /></label><label>Email<input id="newUserEmail" type="email" required /></label>
-                        <label>Perfil<select id="newUserRole"><option value="client">Cliente</option><option value="partner">Parceiro</option></select></label>
-                        <label class="checkline budget-access-field"><input id="newUserCanViewBudget" type="checkbox" /> Pode ver valores comerciais</label>
-                        <label>Password temporária<input id="newUserPassword" type="text" required /></label>
-                        <button class="btn primary" type="submit">Criar utilizador</button>
-                      </form><div id="usersList" class="simple-list mt-8"></div>
-                  </article></div>
-                </details>
-                <details class="settings-advanced-details" id="agentConnectorCard">
-                  <summary>Agent Runtime — ligação segura</summary>
-                  <div class="read-card mt-12">
-                    <p class="muted-text">O Agent Runtime liga-se à plataforma por HTTPS. A plataforma nunca abre uma ligação ao seu Mac.</p>
-                    <div id="agentConnectorList" class="simple-list mt-8"></div>
-                    <form id="agentPairingForm" class="form-grid compact mt-8">
-                      <label>Password actual
-                        <input id="agentPairingPassword" type="password" autocomplete="current-password" required />
-                      </label>
-                      <button class="btn primary" type="submit">Criar código de emparelhamento</button>
-                    </form>
-                    <div id="agentPairingResult" class="hidden mt-8"></div>
-                  </div>
-                </details>
-              </section>
-
               <section class="panel section-panel settings-section mt-12" id="settingsProjectSection">
                 <div class="panel-title-row">
                   <h3 class="panel-heading"><span class="section-badge badge-gray">AVANÇADO</span> Opções técnicas e comerciais</h3>
@@ -1024,10 +1018,10 @@
 
       <!-- Phone only: the tab bar. -->
       <nav class="ios-tab-bar" id="mobileTabBar" aria-label="Navegação">
-        <button type="button" data-mobile-tab="hoje"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h5l1.5 3h5l1.5-3h5"></path><path d="M5.5 5h13l2.5 8v6H3v-6z"></path></svg><span>Hoje</span></button>
-        <button type="button" data-mobile-tab="projetos"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"></path></svg><span>Projetos</span></button>
-        <button type="button" data-mobile-tab="agentes"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L4 14h6l-1 7 9-11h-6z"></path></svg><span>Agentes</span></button>
-        <button type="button" data-mobile-tab="definicoes"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.4 2.5h4l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5z"></path></svg><span>Definições</span></button>
+        <button type="button" data-mobile-tab="hoje" data-ios-icon="tray" data-ios-icon-size="25"><span>Hoje</span></button>
+        <button type="button" data-mobile-tab="projetos" data-ios-icon="folder" data-ios-icon-size="25"><span>Projetos</span></button>
+        <button type="button" data-mobile-tab="agentes" data-ios-icon="bolt" data-ios-icon-size="25"><span>Agentes</span></button>
+        <button type="button" data-mobile-tab="definicoes" data-ios-icon="gear" data-ios-icon-size="25"><span>Definições</span></button>
       </nav>
 
       <footer class="footer-note">
@@ -1466,7 +1460,8 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/app.js?v=55" defer></script>
+  <script src="/projects/static/ios-icons.js?v=1" defer></script>
+  <script src="/projects/static/app.js?v=56" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
   <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
@@ -1481,8 +1476,9 @@
   <script src="/projects/static/project-repository-ui.js?v=4" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=11" defer></script>
-  <script src="/projects/static/resume-ui.js?v=2" defer></script>
-  <script src="/projects/static/project-home-ui.js?v=1" defer></script>
+  <script src="/projects/static/resume-ui.js?v=3" defer></script>
+  <script src="/projects/static/project-home-ui.js?v=2" defer></script>
+  <script src="/projects/static/account-ui.js?v=1" defer></script>
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script src="/projects/static/camada0-ui.js?v=1" defer></script>
   <script src="/projects/static/plano-ui.js?v=1" defer></script>

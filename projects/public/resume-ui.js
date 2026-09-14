@@ -35,15 +35,6 @@
     operations: 'Operação',
   };
 
-  const ICONS = {
-    image: 'M4 5h16v14H4z|M4 16l5-5 4 4 3-3 4 4|M15 9h.01',
-    code: 'M8 7l-5 5 5 5|M16 7l5 5-5 5',
-    check: 'M5 12.5l4.5 4.5L19 7',
-    alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z|M12 8v5|M12 16h.01',
-    chevron: 'M9.5 6l6 6-6 6',
-    refresh: 'M20 11a8 8 0 1 0-2.3 5.7|M20 5v6h-6',
-  };
-
   function $(id) { return document.getElementById(id); }
 
   function escapeHtml(value) {
@@ -54,9 +45,17 @@
       .replace(/"/g, '&quot;');
   }
 
+  function money(value, currency) {
+    try {
+      return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: currency || 'USD' }).format(Number(value) || 0);
+    } catch {
+      return `${(Number(value) || 0).toFixed(2)} ${currency || ''}`.trim();
+    }
+  }
+
+  // One icon set for the platform (ios-icons.js); "chevron" is a row's disclosure arrow.
   function icon(name, size = 18, extraClass = '') {
-    const paths = (ICONS[name] || '').split('|').map((d) => `<path d="${d}"></path>`).join('');
-    return `<svg class="ios-icon ${extraClass}" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+    return window.IosIcons?.svg(name === 'chevron' ? 'chevronRight' : name, { size, className: extraClass }) || '';
   }
 
   function ago(iso) {
@@ -169,6 +168,16 @@
     return out.sort((a, b) => String(b.when).localeCompare(String(a.when)));
   }
 
+  /** The Execução's spend as a thin bar and a figure, the way the phone's Hoje row shows it. */
+  function budgetLine(budget) {
+    if (!budget) return '';
+    const spent = Number(budget.spentUsd) || 0;
+    const cap = Number(budget.maxCostUsd) || 0;
+    const pct = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
+    const figure = `${money(spent, budget.currency)}${cap ? ` de ${money(cap, budget.currency)}` : ''}`;
+    return `<span class="ios-row-budget"><span class="ios-meter-bar"><span class="${pct >= 80 ? 'is-high' : ''}" style="width: ${pct}%"></span></span><span class="ios-row-meta">${escapeHtml(figure)}</span></span>`;
+  }
+
   function runningItems() {
     return entries()
       .filter((entry) => entry.execucao?.status === 'running')
@@ -178,6 +187,7 @@
         title: entry.name,
         sub: [entry.execucao.currentPersonaLabel || 'A preparar o próximo passo', entry.execucao.goal].filter(Boolean).join(' · '),
         tab: 'projeto',
+        extra: budgetLine(entry.execucao.budget),
       }));
   }
 
@@ -203,13 +213,14 @@
 
   /* ------------------------------------------------------------ drawing */
 
-  function row({ lead = '', title, sub = '', meta = '', projectId, tab }) {
+  function row({ lead = '', title, sub = '', meta = '', extra = '', projectId, tab }) {
     return `
       <button type="button" class="ios-row" data-open-project="${escapeHtml(projectId)}" data-open-tab="${escapeHtml(tab)}">
         ${lead}
         <span class="ios-row-main">
           <span class="ios-row-title">${escapeHtml(title)}</span>
           ${sub ? `<span class="ios-row-sub">${escapeHtml(sub)}</span>` : ''}
+          ${extra}
         </span>
         ${meta ? `<span class="ios-row-meta">${escapeHtml(meta)}</span>` : ''}
         ${icon('chevron', 14, 'ios-chevron')}
@@ -392,7 +403,7 @@
   });
 
   window.IosKit = {
-    icon, escapeHtml, ago, initials, stageLabel, stageBar, stageText, badge, projectStatusBadge, describeQuestion,
+    icon, escapeHtml, ago, initials, stageLabel, stageBar, stageText, badge, projectStatusBadge, describeQuestion, money,
   };
 
   window.ResumeUI = {

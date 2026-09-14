@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { execFileSync } = require('child_process');
 const multer = require('multer');
+const userProfile = require('./lib/user-profile');
 const deliveryOs = require('./lib/delivery-os');
 const deliveryOsPlatform = require('./lib/delivery-os-platform');
 const projectAccess = require('./lib/project-access');
@@ -880,6 +881,10 @@ function registerRequirementsPlatform(app, options) {
       role: user.role,
       canViewBudget: canViewBudget(user),
       isActive: user.isActive !== false,
+      // What a person adds about themselves in Conta. Empty until they do.
+      phone: user.phone || '',
+      company: user.company || '',
+      jobTitle: user.jobTitle || '',
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -1165,6 +1170,42 @@ function registerRequirementsPlatform(app, options) {
     return res.json({
       user: sanitizeUser(req.auth.user),
     });
+  });
+
+  /**
+   * A person's own account: what describes them, and their password. Role, access and
+   * whether the account is active stay with the administrator's editor below.
+   */
+  app.patch('/api/projects/auth/me', authMiddleware, async (req, res) => {
+    try {
+      const userId = req.auth.user.id;
+      let changed = [];
+      await updateStore(async (store) => {
+        const user = store.users.find((entry) => entry.id === userId);
+        if (!user) throw new Error('Conta não encontrada.');
+        ({ changed } = userProfile.applyOwnProfile(user, req.body || {}, {
+          users: store.users,
+          verifyPassword,
+          hashPassword,
+          now: nowIso(),
+        }));
+        if (changed.length) {
+          appendActivity(store, { actorUserId: userId, action: 'own_account_updated', details: { fields: changed } });
+        }
+      });
+
+      // A new email or password ends every other session — the one that made the change stays.
+      if (changed.some((field) => field === 'email' || field === 'password')) {
+        for (const [token, session] of sessions.entries()) {
+          if (session.userId === userId && token !== req.auth.token) sessions.delete(token);
+        }
+      }
+
+      const store = await readStore();
+      return res.json({ user: sanitizeUser(store.users.find((entry) => entry.id === userId)), changed });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
   });
 
   app.get('/api/projects/users', authMiddleware, requireRole('super_admin'), async (req, res) => {

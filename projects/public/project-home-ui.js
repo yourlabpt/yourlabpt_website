@@ -32,11 +32,7 @@
   }
 
   function money(value, currency) {
-    try {
-      return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: currency || 'USD' }).format(value);
-    } catch {
-      return `${value.toFixed(2)} ${currency || ''}`.trim();
-    }
+    return kit().money(value, currency);
   }
 
   function duration(seconds) {
@@ -57,8 +53,8 @@
       <header class="ios-page-head">
         <div>
           <h1 class="ios-large-title">${k.escapeHtml(project.name)}</h1>
-          ${subtitle ? `<p class="ios-subtitle">${k.escapeHtml(subtitle)}</p>` : ''}
-          ${stage ? `<p class="ios-subtitle ios-mobile-only">${k.escapeHtml(stage)}</p>` : ''}
+          ${subtitle ? `<p class="ios-subtitle ios-desktop-only">${k.escapeHtml(subtitle)}</p>` : ''}
+          <p class="ios-subtitle ios-mobile-only">${k.escapeHtml([project.clientName, stage].filter(Boolean).join(' · '))}</p>
         </div>
         <div class="ios-page-actions">${k.projectStatusBadge(project, entry)}</div>
       </header>`;
@@ -108,22 +104,20 @@
     const lastRun = (personaId) => [...history].reverse().find((run) => run.personaId === personaId) || null;
     const waitingId = execucao.status === 'waiting_human' ? execucao.question?.personaId : '';
 
+    // Where each persona stands. Drawn twice: as a list on a wide screen, and as a
+    // segmented bar with one sentence on a phone.
     const steps = (data.chain || []).map((persona) => {
       const run = lastRun(persona.id);
-      let status = 'next';
-      let sub = '';
-      if (persona.id === execucao.currentPersonaId) {
-        status = 'current';
-      } else if (persona.id === waitingId) {
-        status = 'waiting';
-        sub = execucao.question?.text || '';
-      } else if (run?.outcome === 'failed' && execucao.status === 'halted') {
-        status = 'failed';
-        sub = execucao.haltReason || run.summary || 'Falhou';
-      } else if (run?.outcome === 'completed') {
-        status = 'done';
-        sub = run.summary || 'Concluído';
+      if (persona.id === execucao.currentPersonaId) return { persona, status: 'current', sub: '' };
+      if (persona.id === waitingId) return { persona, status: 'waiting', sub: execucao.question?.text || '' };
+      if (run?.outcome === 'failed' && execucao.status === 'halted') {
+        return { persona, status: 'failed', sub: execucao.haltReason || run.summary || 'Falhou' };
       }
+      if (run?.outcome === 'completed') return { persona, status: 'done', sub: run.summary || 'Concluído' };
+      return { persona, status: 'next', sub: '' };
+    });
+
+    const stepList = steps.map(({ persona, status, sub }) => {
       const trailing = status === 'current'
         ? k.badge('green', 'A correr')
         : status === 'waiting' ? k.badge('amber', 'À espera de si') : '';
@@ -143,35 +137,54 @@
     const costCap = Number(budget.maxCostUsd) || 0;
     const seconds = Number(budget.elapsedSeconds) || 0;
     const hoursCap = Number(budget.maxHours) || 0;
+    const costText = money(spent, budget.currency);
+    const costCapText = costCap ? money(costCap, budget.currency) : 'sem limite';
+    const timeText = duration(seconds);
+    const timeCapText = hoursCap ? `${hoursCap} h` : 'sem limite';
     const meter = (label, value, cap, pct) => `
       <div class="ios-meter">
         <div class="ios-meter-head"><span>${label}</span><span><strong>${k.escapeHtml(value)}</strong> de ${k.escapeHtml(cap)}</span></div>
         <div class="ios-meter-bar"><span class="${pct >= 80 ? 'is-high' : ''}" style="width: ${Math.min(100, Math.round(pct))}%"></span></div>
       </div>`;
 
-    let action = '';
-    if (execucao.status === 'waiting_human' && execucao.question) {
-      action = `<button type="button" class="btn primary" data-nav-go="${k.describeQuestion(execucao.question).tab}">Responder</button>`;
-    } else if (execucao.status === 'halted') {
-      action = k.badge('red', 'Parada');
-    } else if (execucao.status === 'paused_budget') {
-      action = k.badge('amber', 'Sem orçamento');
-    }
+    const statusBadge = {
+      running: k.badge('green', 'A correr'),
+      waiting_human: k.badge('amber', 'À espera de si'),
+      halted: k.badge('red', 'Parada'),
+      paused_budget: k.badge('amber', 'Sem orçamento'),
+    }[execucao.status] || '';
 
+    const answer = execucao.status === 'waiting_human' && execucao.question
+      ? `<button type="button" class="btn primary" data-nav-go="${k.describeQuestion(execucao.question).tab}">Responder</button>`
+      : '';
+    const headAction = answer || (execucao.status === 'halted' || execucao.status === 'paused_budget' ? statusBadge : '');
+
+    const active = steps.find((step) => step.status !== 'done' && step.status !== 'next');
+    const sentence = [active?.persona.label, execucao.goal].filter(Boolean).join(' · ');
     const started = execucao.startedAt ? `Começou ${k.ago(execucao.startedAt)}` : '';
+
     return `
       <section class="ios-card ios-exec">
-        <div class="ios-exec-head">
-          <span class="ios-row-main">
-            <span class="ios-exec-title">Execução · ${k.escapeHtml(KIND_LABELS[execucao.kind] || 'Construção')}</span>
-            <span class="ios-row-sub">${k.escapeHtml([started, execucao.goal].filter(Boolean).join(' · '))}</span>
-          </span>
-          ${action}
+        <div class="ios-exec-full">
+          <div class="ios-exec-head">
+            <span class="ios-row-main">
+              <span class="ios-exec-title">Execução · ${k.escapeHtml(KIND_LABELS[execucao.kind] || 'Construção')}</span>
+              <span class="ios-row-sub">${k.escapeHtml([started, execucao.goal].filter(Boolean).join(' · '))}</span>
+            </span>
+            ${headAction}
+          </div>
+          ${stepList ? `<ol class="ios-steps">${stepList}</ol>` : ''}
+          <div class="ios-meters">
+            ${meter('Custo', costText, costCapText, costCap ? (spent / costCap) * 100 : 0)}
+            ${meter('Tempo', timeText, timeCapText, hoursCap ? (seconds / (hoursCap * 3600)) * 100 : 0)}
+          </div>
         </div>
-        ${steps ? `<ol class="ios-steps">${steps}</ol>` : ''}
-        <div class="ios-meters">
-          ${meter('Custo', money(spent, budget.currency), costCap ? money(costCap, budget.currency) : 'sem limite', costCap ? (spent / costCap) * 100 : 0)}
-          ${meter('Tempo', duration(seconds), hoursCap ? `${hoursCap} h` : 'sem limite', hoursCap ? (seconds / (hoursCap * 3600)) * 100 : 0)}
+        <div class="ios-exec-compact">
+          <div class="ios-exec-compact-head"><span class="ios-card-title">Execução</span>${statusBadge}</div>
+          ${steps.length ? `<div class="ios-chain-dots" aria-hidden="true">${steps.map((step) => `<span class="is-${step.status}"></span>`).join('')}</div>` : ''}
+          ${sentence ? `<p class="ios-exec-sentence">${k.escapeHtml(sentence)}</p>` : ''}
+          <div class="ios-exec-figures"><span>${k.escapeHtml(costText)} de ${k.escapeHtml(costCapText)}</span><span>${k.escapeHtml(timeText)} de ${k.escapeHtml(timeCapText)}</span></div>
+          ${answer}
         </div>
       </section>`;
   }
@@ -224,9 +237,15 @@
   }
 
   /** On a phone there is no sidebar, so the project's sections are listed on its home. */
-  function sections() {
+  function sections(project, entry) {
     const k = kit();
     const groups = window.getProjectNavGroups?.() || [];
+    const phaseCount = Array.isArray(project.phases) ? project.phases.length : 0;
+    // A count where one says something at a glance, as the mockup's rows do.
+    const trailing = {
+      plano: phaseCount ? `${phaseCount} fase${phaseCount === 1 ? '' : 's'}` : '',
+      tarefas: entry?.tasks ? String(entry.tasks) : '',
+    };
     return groups.map((group) => {
       const items = group.items.filter((item) => item.id !== 'projeto');
       if (!items.length) return '';
@@ -238,6 +257,7 @@
               <button type="button" class="ios-row" data-nav-go="${k.escapeHtml(item.id)}">
                 <span class="ios-row-icon">${window.navIconSvg?.(item.icon) || ''}</span>
                 <span class="ios-row-main"><span class="ios-row-title">${k.escapeHtml(item.label)}</span></span>
+                ${trailing[item.id] ? `<span class="ios-row-meta">${k.escapeHtml(trailing[item.id])}</span>` : ''}
                 ${k.icon('chevron', 14, 'ios-chevron')}
               </button>`).join('')}
           </div>
@@ -255,7 +275,7 @@
       ${stageTrack(project, entry)}
       ${executionCard()}
       <div class="ios-home-aside">${attention(entry)}${phases(project)}</div>
-      <div class="ios-home-sections">${sections()}</div>`;
+      <div class="ios-home-sections">${sections(project, entry)}</div>`;
   }
 
   async function loadOrchestration(projectId) {
