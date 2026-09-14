@@ -231,7 +231,7 @@
 
   function openPlatformHelp() {
     openHelpDrawer({
-      eyebrow: 'YourLab · Projects Platform',
+      eyebrow: 'YourLab',
       title: 'Ajuda da plataforma',
       html: renderPlatformHelp(),
     });

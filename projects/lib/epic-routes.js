@@ -9,6 +9,7 @@ const epics = require('./epics');
 const workItems = require('./work-items');
 const mockupSessions = require('./mockup-sessions');
 const camadas = require('./camadas');
+const decisionsLog = require('./decisions-log');
 
 /**
  * A Feature with the state a person needs to decide whether it is ready to run: how many
@@ -111,6 +112,22 @@ function registerEpicRoutes(app, deps) {
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
+  });
+
+  /**
+   * The decisions log: everything ruled on, and everything still waiting.
+   *
+   * `since` is the caller's own last-seen timestamp. It is kept by the client rather
+   * than the server: this is a nudge to look when something moved, not an audit trail,
+   * and per-device is the honest weight for that.
+   */
+  app.get('/api/projects/:projectId/decisions-log', authMiddleware, loadProjectForUser, async (req, res) => {
+    const project = req.loadedProject;
+    const entries = decisionsLog.collect(project);
+    return res.json({
+      entries,
+      ...decisionsLog.summarise(entries, String(req.query?.since || '')),
+    });
   });
 
   app.post('/api/projects/:projectId/epics', authMiddleware, loadProjectForUser, requireProjectEditor, async (req, res) => {

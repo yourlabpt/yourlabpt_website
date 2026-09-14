@@ -9,6 +9,7 @@
  * and produces, and which runtime agent may serve it.
  */
 const workItems = require('./work-items');
+const skills = require('./skills');
 const agentTools = require('./agent-tools');
 const { stringList } = require('./agent-connector-contract');
 
@@ -217,6 +218,23 @@ function runtimeTierFor(modelProfileId) {
  * A persona's knowledge pack. Short entries with a title, because an agent given one
  * long undifferentiated blob weighs all of it equally.
  */
+/**
+ * The methods this persona actually works from.
+ *
+ * An explicit list on the persona wins; otherwise the catalogue's own binding applies.
+ * An empty override therefore means "the usual ones for this role", not "none" — which
+ * is the reading an operator expects from leaving a field alone.
+ */
+function effectiveSkills(persona, camada = null) {
+  const chosen = Array.isArray(persona?.skills) ? persona.skills : [];
+  if (chosen.length) return chosen.map((id) => skills.describeSkill(id));
+  return skills.skillsFor(persona?.id, camada);
+}
+
+function normalizeStringList(raw) {
+  return [...new Set((Array.isArray(raw) ? raw : []).map((entry) => textOr(entry)).filter(Boolean))];
+}
+
 function normalizeKnowledge(raw) {
   const seen = new Set();
   return (Array.isArray(raw) ? raw : []).map((entry, index) => {
@@ -255,6 +273,10 @@ function normalizePersonaOverride(personaId, raw = {}) {
     // convention learned the hard way. Data, so the platform gets better at its job by
     // being told things rather than by being redeployed.
     knowledge: normalizeKnowledge(src.knowledge),
+    // Which methods this persona works from. Separate from knowledge on purpose:
+    // knowledge is what it knows, a skill is how it works. An empty list means "use the
+    // defaults for this persona" rather than "no methods".
+    skills: normalizeStringList(src.skills),
   };
 }
 
@@ -354,6 +376,10 @@ function personaReadiness(capabilities = {}, overrides = {}, { runtimeOnline = t
       tools: agentTools.describeTools(persona.allowedTools),
       taskTypes: persona.taskTypes,
       knowledge: persona.knowledge,
+      // How this persona works, as opposed to what it knows. Never gates readiness: a
+      // skill is content the platform ships, so there is nothing for the runtime to be
+      // missing.
+      skills: effectiveSkills(persona),
       // The persona's own id is the agent identity sent to the runtime.
       agentId: persona.id,
       runtimeOnline: Boolean(runtimeOnline),
@@ -424,6 +450,7 @@ module.exports = {
   normalizeKnowledge,
   personaReadiness,
   personaDefinition,
+  effectiveSkills,
   personaExecutionSettings,
   personaViolations,
   resolvePersona,

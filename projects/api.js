@@ -37,6 +37,7 @@ const { registerSurveyRoutes } = require('./lib/survey-routes');
 const { registerIntakeRoutes } = require('./lib/intake-routes');
 const { registerMockupRoutes } = require('./lib/mockup-routes');
 const { registerEpicRoutes } = require('./lib/epic-routes');
+const ears = require('./lib/ears');
 const { createMockupRunner } = require('./lib/mockup-runner');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
@@ -1094,6 +1095,10 @@ function registerRequirementsPlatform(app, options) {
       tabStageAffinity: deliveryOs.TAB_STAGE_AFFINITY,
       meetingImpactScopes: deliveryOs.MEETING_IMPACT_SCOPES,
       traceNodeTypes: deliveryOs.TRACE_NODE_TYPES,
+      // The five EARS shapes and which layer each belongs to. Served rather than
+      // mirrored in the front end, so there is one definition of the rule.
+      earsPatterns: ears.PATTERNS,
+      earsByCamada: require('./lib/build-policies').policyFor('web_app').EARS_BY_CAMADA,
       agentModelProfiles: require('./lib/execution-plans').MODEL_PROFILES,
       agentRoleRouting: require('./lib/execution-plans').ROLE_MODEL_PROFILES,
       defaultAdminEmail: process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local',
@@ -4356,6 +4361,12 @@ function normalizeRequirementRecord(entry) {
     shall,
     condition,
     measure,
+    // How this requirement is written: always / where-included / when / while / if.
+    // Recovered from the prose when nobody set it, so requirements pulled from a
+    // repository or typed by hand still declare their shape.
+    earsPattern: ears.PATTERN_IDS.includes(textOr(raw.earsPattern))
+      ? textOr(raw.earsPattern)
+      : ears.detectPattern(shall) || ears.detectPattern(raw.statement),
     rationale,
     verification,
     assumption,

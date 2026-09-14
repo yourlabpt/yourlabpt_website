@@ -256,7 +256,7 @@
             Ligações
           </label>
         </div>
-        <p class="req-map-dnd-hint muted-text">Camadas V-cycle: L0 STK → L1 FR → L2 RNF → L3 TC. Use «+ Adicionar» em cada coluna ou arraste órfãos entre camadas.</p>
+        <p class="req-map-dnd-hint muted-text">Níveis V: L0 STK → L1 FR → L2 RNF → L3 TC. Use «+ Adicionar» em cada coluna ou arraste órfãos entre níveis.</p>
       </div>
     `;
   }
@@ -296,11 +296,11 @@
       return `
         <div class="req-map-column req-map-column--${escapeHtml(col.type)}" data-v-column="${escapeHtml(col.type)}">
           <div class="req-map-column-head">
-            <span class="req-map-layer-badge" title="Camada V-cycle ${col.layer}">L${col.layer}</span>
+            <span class="req-map-layer-badge" title="Nível V ${col.layer}">L${col.layer}</span>
             <span class="req-map-level-badge">${escapeHtml(col.short)}</span>
             <strong>${escapeHtml(col.label)}</strong>
             ${canEditMap() ? `
-              <button type="button" class="req-map-add-layer btn tiny ghost" data-add-layer="${escapeHtml(col.type)}" title="Adicionar requisito na camada L${col.layer}">
+              <button type="button" class="req-map-add-layer btn tiny ghost" data-add-layer="${escapeHtml(col.type)}" title="Adicionar requisito no nível L${col.layer}">
                 + Adicionar
               </button>
             ` : ''}
@@ -678,7 +678,7 @@
         const col = V_COLUMNS.find((c) => c.type === layerType);
         if (!col) return;
         if (layerType !== 'stakeholder' && !mapState.focusStakeholderId) {
-          showToast('Seleccione um STK (L0) antes de adicionar a esta camada.', 'error');
+          showToast('Seleccione um STK (L0) antes de adicionar a este nível.', 'error');
           return;
         }
         const defaultTitle = `${col.label} novo`;
@@ -689,7 +689,7 @@
           if (layerType === 'stakeholder' && res.requirement?.id) {
             mapState.focusStakeholderId = res.requirement.id;
           }
-          showToast(`Criado ${res.requirement?.id || 'requisito'} na camada L${col.layer}.`, 'ok');
+          showToast(`Criado ${res.requirement?.id || 'requisito'} no nível L${col.layer}.`, 'ok');
           await renderRequirementsMap(state.selectedProject, mode);
           if (typeof refreshHierarchyKpis === 'function') refreshHierarchyKpis(state.selectedProject);
         } catch (err) {

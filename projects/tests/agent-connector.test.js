@@ -440,7 +440,12 @@ describe('secure outbound agent connector', () => {
         platformRunId: 'research-run',
         agentJobId: 'research-job',
         agentId: 'research-agent',
-        requiredSkills: ['web_research'],
+        // A missing *tool* is what makes work genuinely unclaimable. A missing skill
+        // used to sit here and no longer blocks anything: a skill is a written method
+        // the platform ships inside the package, so there is nothing for a runtime to
+        // be lacking.
+        requiredSkills: ['source-driven-development'],
+        allowedTools: ['browser.drive'],
       }),
     });
     const compatible = enqueue(store, {
@@ -452,36 +457,47 @@ describe('secure outbound agent connector', () => {
         platformRunId: 'implementation-run',
         agentJobId: 'implementation-job',
         agentId: 'implementation-agent',
-        requiredSkills: ['software_delivery'],
+        requiredSkills: ['incremental-implementation'],
         allowedTools: ['repo.write', 'tests.run'],
       }),
     });
     const claim = store.claim(connector.id);
     assert.equal(claim.id, compatible.id);
     assert.equal(store.getDispatch(incompatible.id).status, 'queued');
-    assert.equal(store.compatibility(incompatible.id, connector.id).compatible, false);
+    const queuedRefusal = store.compatibility(incompatible.id, connector.id);
+    assert.equal(queuedRefusal.compatible, false);
+    // And refused for the right reason: the tool it cannot provide, never the method.
+    assert.deepEqual(queuedRefusal.reasons, ['tool:browser.drive']);
     assert.equal(assessCompatibility({
       contract: { id: CONTRACT_ID, version: 1 },
       agentType: 'implementation_tasks',
-      requiredSkills: ['software_delivery'],
+      requiredSkills: ['incremental-implementation'],
       allowedMcpTools: ['repo.write'],
     }, connector.capabilities).compatible, true);
     // A name the runtime never registered is not a refusal: the persona definition
-    // travels with the package, so what decides is skills and tools, not bookkeeping.
+    // travels with the package, so what decides is tools, not bookkeeping.
     assert.equal(assessCompatibility({
       contract: { id: CONTRACT_ID, version: 1 },
       agentId: 'missing-agent',
       agentType: 'implementation_tasks',
     }, connector.capabilities).compatible, true);
-    // Capability itself still gates: a skill the runtime does not have is refused.
+    // Nor is a method the runtime never declared: a skill is written procedure shipped
+    // inside the package, so there is nothing for the runtime to be missing.
+    assert.equal(assessCompatibility({
+      contract: { id: CONTRACT_ID, version: 1 },
+      agentId: 'missing-agent',
+      agentType: 'implementation_tasks',
+      requiredSkills: ['nunca-ouvida'],
+    }, connector.capabilities).compatible, true);
+    // Capability itself still gates: a tool the runtime does not have is refused.
     const refused = assessCompatibility({
       contract: { id: CONTRACT_ID, version: 1 },
       agentId: 'missing-agent',
       agentType: 'implementation_tasks',
-      requiredSkills: ['web_research'],
+      allowedMcpTools: ['browser.drive'],
     }, connector.capabilities);
     assert.equal(refused.compatible, false);
-    assert.ok(refused.reasons.includes('skill:web_research'));
+    assert.ok(refused.reasons.includes('tool:browser.drive'));
     db.close();
   });
 

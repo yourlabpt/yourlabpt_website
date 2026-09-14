@@ -146,6 +146,8 @@
     type: 'Classificação do requisito (stakeholder, funcional, etc.).',
     title: 'Título curto e descritivo do requisito.',
     shall: 'Enunciado «shall» — o que o sistema deve fazer.',
+    earsPattern: 'A forma da frase. Cada camada tem a sua: a visão diz o que é sempre verdade, uma tarefa diz o que acontece quando algo corre mal.',
+    condition: 'O gatilho, o estado ou a falha de que esta regra depende. Só aparece nas formas que precisam de um.',
     need: 'Necessidade do stakeholder (formato «As a… I need…»).',
     module: 'Área principal da arquitetura responsável por implementar este requisito.',
     phase: 'Momento da Linha de Entrega em que este requisito será tratado.',
@@ -456,6 +458,62 @@
     updateMeta(project, filtered);
     populateAddRequirementPhase(project);
   }
+
+  function earsCatalogue() {
+    return window.state?.config?.earsPatterns || {};
+  }
+
+  function earsOptions(selected) {
+    const patterns = earsCatalogue();
+    // The templates contain <resposta> and <gatilho>, which the browser would parse as
+    // tags and drop, leaving "O sistema deve sempre ." on screen.
+    const rows = Object.values(patterns).map((pattern) => (
+      `<option value="${pattern.id}"${pattern.id === selected ? ' selected' : ''}>${
+        escapeHtml(`${pattern.label} — ${pattern.template}`)}</option>`
+    ));
+    return `<option value=""${selected ? '' : ' selected'}>Texto livre (sem forma declarada)</option>${rows.join('')}`;
+  }
+
+  /**
+   * The sentence as it will be written, updated as the fields change.
+   *
+   * A preview rather than a rule: seeing the finished sentence is what tells you the
+   * shape is wrong, faster than any message could.
+   */
+  function paintEarsPreview() {
+    const host = document.getElementById('modalReqEarsPreview');
+    if (!host) return;
+    const patternId = document.getElementById('modalReqEars')?.value || '';
+    const pattern = earsCatalogue()[patternId];
+    const response = (document.getElementById('modalReqShall')?.value || '').trim().replace(/[.;,]+$/, '');
+    const trigger = (document.getElementById('modalReqCondition')?.value || '').trim().replace(/[.;,]+$/, '');
+
+    const row = document.getElementById('modalReqConditionRow');
+    if (row) row.hidden = !pattern?.needsTrigger;
+
+    if (!response) { host.textContent = ''; return; }
+    if (!pattern) { host.textContent = `${response}.`; return; }
+    if (pattern.needsTrigger && !trigger) {
+      host.textContent = `Falta ${pattern.triggerLabel}.`;
+      host.classList.add('is-incomplete');
+      return;
+    }
+    host.classList.remove('is-incomplete');
+    host.textContent = {
+      ubiquitous: `O sistema deve sempre ${response}.`,
+      optional: `Onde ${trigger} estiver incluída, o sistema deve ${response}.`,
+      event: `Quando ${trigger}, o sistema deve ${response}.`,
+      state: `Enquanto ${trigger}, o sistema deve ${response}.`,
+      unwanted: `Se ${trigger}, então o sistema deve ${response}.`,
+    }[pattern.id] || `${response}.`;
+  }
+
+  document.addEventListener('input', (event) => {
+    if (['modalReqShall', 'modalReqCondition'].includes(event.target?.id)) paintEarsPreview();
+  });
+  document.addEventListener('change', (event) => {
+    if (event.target?.id === 'modalReqEars') paintEarsPreview();
+  });
 
   function renderReqCard(req, project) {
     const summary = shortText(req.shall || req.need || req.description || req.title, 100);
@@ -804,7 +862,14 @@
       <label>${helperLabel('Submódulo', 'submodule')}<input id="modalReqSubmodule" list="submoduleSuggestions" /></label>
       <label class="full">${helperLabel('Título', 'title')}<input id="modalReqTitle" /></label>
       <label class="full">${helperLabel('Need', 'need')}<textarea id="modalReqNeed" rows="2"></textarea></label>
+      <label class="full">${helperLabel('Como está escrito', 'earsPattern')}
+        <select id="modalReqEars">${earsOptions(req.earsPattern)}</select>
+      </label>
+      <label class="full" id="modalReqConditionRow">${helperLabel('O gatilho', 'condition')}
+        <input id="modalReqCondition" placeholder="ex.: a recepção confirma uma reserva" />
+      </label>
       <label class="full">${helperLabel('Shall / Descrição', 'shall')}<textarea id="modalReqShall" rows="3"></textarea></label>
+      <p class="req-ears-preview" id="modalReqEarsPreview"></p>
       <label class="full">${helperLabel('Critérios de aceitação (Measure)', 'measure')}<textarea id="modalReqMeasure" rows="2"></textarea></label>
       <label class="full">${helperLabel('Dependências / IDs relacionados', 'related')}<textarea id="modalReqRelatedIds" rows="2"></textarea></label>
       <label class="full">${helperLabel('Notas', 'notes')}<textarea id="modalReqNotes" rows="2"></textarea></label>
@@ -819,6 +884,8 @@
     $('modalReqTitle').value = req.title || '';
     $('modalReqNeed').value = req.need || '';
     $('modalReqShall').value = req.shall || req.description || '';
+    if ($('modalReqCondition')) $('modalReqCondition').value = req.condition || '';
+    paintEarsPreview();
     $('modalReqMeasure').value = req.measure || '';
     $('modalReqRelatedIds').value = joinRequirementIds(req.relatedRequirementIds);
     $('modalReqNotes').value = req.notes || '';
@@ -865,6 +932,8 @@
       title: $('modalReqTitle')?.value,
       need: $('modalReqNeed')?.value,
       shall: $('modalReqShall')?.value,
+      earsPattern: $('modalReqEars')?.value || '',
+      condition: $('modalReqCondition')?.value || '',
       measure: $('modalReqMeasure')?.value,
       relatedRequirementIds: splitRequirementIds($('modalReqRelatedIds')?.value),
       notes: $('modalReqNotes')?.value,

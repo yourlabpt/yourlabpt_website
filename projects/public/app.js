@@ -32,18 +32,25 @@ const NAV_GROUPS = [
     items: [{ id: 'projetos', label: 'Projetos', icon: 'folder' }],
   },
   {
+    // The work, in the order it actually happens: refine the intention, plan it, cut it
+    // into tasks, review what came back, see what changed, show the client. Everything
+    // else is real but occasional, and lives behind «Mais».
     id: 'work',
     label: 'Trabalho',
     requiresProject: true,
     items: [
+      // Resumo is the project's home: where it stands, what is running, what failed.
+      // It opens the project, so it heads the list rather than hiding behind «Mais».
+      { id: 'projeto', label: 'Resumo', icon: 'chart' },
       // Camada 0 comes first because it comes first: the intention is refined against
       // something you can look at before any of the rest has anything to work from.
       { id: 'camada0', label: 'Intenção', icon: 'bolt' },
       // Camadas 1-3 read as one plan getting smaller, so they share a screen.
       { id: 'plano', label: 'Plano', icon: 'plan' },
-      { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
-      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
+      // Carries a count when something has moved since this device last looked.
+      { id: 'decisoes', label: 'Decisões', icon: 'notes' },
+      { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
     ],
   },
   {
@@ -52,7 +59,9 @@ const NAV_GROUPS = [
     requiresProject: true,
     collapsible: true,
     items: [
-      { id: 'projeto', label: 'Visão', icon: 'chart' },
+      // Requisitos is the detail behind Plano — reached when you need a specific
+      // requirement, not on the way past.
+      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'documentos', label: 'Documentos', icon: 'file' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
       { id: 'fases', label: 'Fases', icon: 'plan' },
@@ -1074,17 +1083,6 @@ function setReadonlyByRole() {
 
 function applyClientTabVisibility() {
   const clientTabs = new Set(['projetos', 'deliveryos', 'requisitos', 'fases', 'atas', 'documentos']);
-  const partnerExtraTabs = new Set(['atividade', 'perguntas']);
-  document.querySelectorAll('#sectionTabs .tab-btn').forEach((btn) => {
-    const tab = btn.dataset.tab;
-    if (isClientUser()) {
-      btn.classList.toggle('hidden', !clientTabs.has(tab));
-    } else if (isPartnerEditor() && !isSuperAdmin()) {
-      btn.classList.toggle('hidden', tab === 'definicoes' || tab === 'gerar');
-    } else {
-      btn.classList.remove('hidden');
-    }
-  });
   if (isClientUser() && state.activeTab && !clientTabs.has(state.activeTab)) {
     switchToTab('deliveryos');
   }
@@ -1316,23 +1314,48 @@ function isNavPageRequiresProject(pageId) {
   return Boolean(group?.requiresProject);
 }
 
+// Counts to show beside a nav item, keyed by page id. Only set when there is something
+// to say — a badge reading zero is noise, not information.
+const navBadges = {};
+
 function renderNavItem(item, { compact = false } = {}) {
   if (!isNavItemVisible(item)) return '';
   const active = state.activeTab === item.id;
+  const count = Number(navBadges[item.id]) || 0;
   return `
     <button type="button"
       class="nav-rail-item ${active ? 'active' : ''}"
       data-nav-tab="${escapeHtml(item.id)}"
-      title="${escapeHtml(item.label)}"
-      aria-label="${escapeHtml(item.label)}"
+      title="${escapeHtml(item.label)}${count ? ` — ${count} desde a última vez` : ''}"
+      aria-label="${escapeHtml(item.label)}${count ? `, ${count} novas` : ''}"
       aria-current="${active ? 'page' : 'false'}">
       ${navIconSvg(item.icon)}
       <span class="nav-rail-label">${escapeHtml(item.label)}</span>
+      ${count ? `<span class="nav-rail-badge">${count > 9 ? '9+' : count}</span>` : ''}
     </button>
   `;
 }
 
-const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'plano', 'deliveryos', 'requisitos', 'definicoes'];
+/**
+ * Refreshes the counts that sit on nav items.
+ *
+ * Only the decisions log has one today. It is a read, not a subscription: called when a
+ * project opens and after anything that could rule on a decision.
+ */
+async function refreshNavBadges() {
+  const projectId = state.selectedProject?.id;
+  if (!projectId) { navBadges.decisoes = 0; return; }
+  const unread = await window.DecisionsUI?.unreadCount?.(projectId);
+  const next = Number(unread) || 0;
+  if (next === navBadges.decisoes) return;
+  navBadges.decisoes = next;
+  renderNavRail();
+}
+window.refreshNavBadges = refreshNavBadges;
+
+// The collapsed rail carries exactly the work sequence, nothing else. Adding a seventh
+// icon here is how a quick nav stops being quick.
+const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'plano', 'tarefas', 'decisoes', 'deliveryos'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1361,7 +1384,7 @@ function renderNavRail() {
       html += renderNavItem(item);
     }
     if (state.selectedProject) {
-      const moreActive = activeInMore || ['projeto', 'documentos', 'atas', 'perguntas', 'fases', 'gerar', 'atividade'].includes(active);
+      const moreActive = activeInMore || !COLLAPSED_QUICK_NAV.includes(active);
       html += `
         <button type="button" class="nav-rail-item nav-rail-more ${moreActive ? 'active' : ''}" data-nav-more-toggle title="Mais páginas" aria-label="Mais páginas">
           ${navIconSvg('more')}
@@ -1418,7 +1441,7 @@ function applyNavRailLayout() {
 
 function initNavRail() {
   if (localStorage.getItem(NAV_RAIL_EXPANDED_KEY) === null) {
-    localStorage.setItem(NAV_RAIL_EXPANDED_KEY, 'false');
+    localStorage.setItem(NAV_RAIL_EXPANDED_KEY, 'true');
   }
   localStorage.setItem(NAV_RAIL_DOCKED_KEY, 'true');
 
@@ -1506,6 +1529,10 @@ function renderActiveTab(project, tabId) {
     case 'plano':
       window.PlanoUI?.render?.(project.id);
       break;
+    case 'decisoes':
+      // Reading the log clears its own badge.
+      window.DecisionsUI?.render?.(project.id).then(() => refreshNavBadges());
+      break;
     case 'fases':
       renderImplementationPlan(project);
       break;
@@ -1545,6 +1572,9 @@ function renderActiveTab(project, tabId) {
 function renderProjectDetails(options = {}) {
   renderSettingsAvailability();
   renderNavRail();
+  // Fire and forget: the badge appears a moment after the page, which is fine — it is a
+  // nudge, and blocking the render on a fetch to earn it would be the wrong trade.
+  refreshNavBadges().catch(() => {});
   renderTopbarProject();
   const project = state.selectedProject;
 
@@ -2987,10 +3017,6 @@ function switchToTab(tabId) {
   }
 
   const activeId = state.activeTab;
-  const tabs = document.getElementById('sectionTabs');
-  tabs?.querySelectorAll('.tab-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.tab === activeId);
-  });
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.classList.toggle('hidden', p.dataset.panel !== activeId);
   });
@@ -3864,7 +3890,7 @@ function applyTheme(theme) {
 }
 
 function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
   applyTheme(current === 'dark' ? 'light' : 'dark');
 }
 
@@ -4057,7 +4083,7 @@ function wireEvents() {
 
 async function bootstrap() {
   // Restore saved theme before anything renders
-  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+  applyTheme(localStorage.getItem(THEME_KEY) || 'light');
 
   wireEvents();
 

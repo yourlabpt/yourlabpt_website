@@ -1,0 +1,635 @@
+/*
+ * iOS layer — loaded after styles.css, so it wins at equal specificity.
+ *
+ * Light grouped surfaces, system type, and colour spent only where it means something:
+ * grey by default; gold for the primary action, the selection and what is current; amber
+ * when a person is needed; red when something failed. Approved mockups: docs/mockups/ios/.
+ *
+ * Order: tokens (light, then dark), then the shell (topbar, sidebar, content), then the
+ * shared components. Feature screens keep their own rules in styles.css and follow the
+ * tokens; the literal colours still inside them are the next thing to sweep.
+ */
+
+/* ---------------------------------------------------------------- tokens: light */
+
+:root,
+[data-theme="light"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+  --radius-card: 12px;
+  --radius-control: 10px;
+
+  --bg: #f2f2f7;
+  --bg-2: #ebebf0;
+  --surface: #ffffff;
+  --surface-2: #f7f7fa;
+  --surface-3: #efeff4;
+  --line: #e5e5ea;
+  --line-2: #d1d1d6;
+  --text: #1c1c1e;
+  --text-2: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-2: #8e8e93;
+  --heading: #000000;
+
+  --accent: #9a7412;
+  --accent-2: #7a5b0c;
+  --accent-gold: #d4af37;
+  --accent-gold-2: #c49f2c;
+  --accent-ink: #4a3606;
+  --accent-soft: #f4ebcd;
+  --ok: #248a3d;
+  --warn: #a34a00;
+  --warn-bg: #fff0d9;
+  --danger: #d70015;
+
+  --sidebar-bg: #f7f7fa;
+  --sidebar-selected: var(--accent-soft);
+
+  --input-bg: #ffffff;
+  --input-border: #d1d1d6;
+  --btn-bg: #e9e9ee;
+  --btn-text: #1c1c1e;
+  --btn-primary-text: #1c1c1e;
+  --btn-border: transparent;
+  --btn-hover: #dedee3;
+  --topbar-bg: rgba(247, 247, 250, 0.86);
+  --chip-bg: #efeff4;
+  --chip-border: transparent;
+  --chip-text: #3a3a3c;
+  --project-bg: #ffffff;
+  --project-border: #e5e5ea;
+  --table-th-bg: #f7f7fa;
+  --table-th-text: #6e6e73;
+  --table-td-border: #e5e5ea;
+  --simple-item-bg: #ffffff;
+  --simple-item-border: #e5e5ea;
+  --read-card-bg: #ffffff;
+  --read-card-border: #e5e5ea;
+  --read-card-text: #3a3a3c;
+  --panel: #ffffff;
+  --panel-2: #f7f7fa;
+  --collapsible-bg: #ffffff;
+  --minute-raw-bg: #f7f7fa;
+  --kpi-bg: #ffffff;
+  --kpi-border: #e5e5ea;
+  --toast-bg: #ffffff;
+  --footer-bg: transparent;
+  --page-bg-radial1: transparent;
+  --page-bg-radial2: transparent;
+  --page-bg-linear: #f2f2f7;
+  --status-ok-text: #1f7a36;
+  --status-ok-bg: #e2f4e6;
+  --status-ok-border: transparent;
+  --status-err-text: #c20014;
+  --status-err-bg: #ffe4e6;
+  --status-err-border: transparent;
+  --logo-bg: #ffffff;
+  --logo-border: #e5e5ea;
+  --module-chip-bg: #efeff4;
+  --module-chip-border: transparent;
+  --module-chip-text: #3a3a3c;
+  --mini-kpi-bg: #ffffff;
+  --mini-kpi-border: #e5e5ea;
+  --impl-wrap-bg: #f7f7fa;
+  --impl-wrap-border: #e5e5ea;
+  --empty-border: #d1d1d6;
+  --empty-heading: #1c1c1e;
+  --selected-row-bg: #f4ebcd;
+  --req-quick-text: #1c1c1e;
+  --req-summary-text: #1c1c1e;
+  --brand-border-img: transparent;
+}
+
+/* ---------------------------------------------------------------- tokens: dark */
+
+[data-theme="dark"] {
+  --bg: #111113;
+  --bg-2: #161618;
+  --surface: #1c1c1e;
+  --surface-2: #232325;
+  --surface-3: #2c2c2e;
+  --line: #2f2f32;
+  --line-2: #3a3a3c;
+  --text: #f2f2f7;
+  --text-2: #d1d1d6;
+  --muted: #98989d;
+  --muted-2: #8e8e93;
+  --heading: #ffffff;
+
+  --accent: #d4af37;
+  --accent-2: #e2c25a;
+  --accent-gold: #d4af37;
+  --accent-gold-2: #c49f2c;
+  --accent-ink: #f1dd9a;
+  --accent-soft: rgba(212, 175, 55, 0.18);
+  --ok: #30d158;
+  --warn: #ffb340;
+  --warn-bg: rgba(255, 159, 10, 0.18);
+  --danger: #ff453a;
+
+  --sidebar-bg: #161618;
+  --sidebar-selected: rgba(212, 175, 55, 0.16);
+
+  --input-bg: #1c1c1e;
+  --input-border: #3a3a3c;
+  --btn-bg: #2c2c2e;
+  --btn-text: #f2f2f7;
+  --btn-primary-text: #1c1c1e;
+  --btn-border: transparent;
+  --btn-hover: #3a3a3c;
+  --topbar-bg: rgba(22, 22, 24, 0.86);
+  --chip-bg: #2c2c2e;
+  --chip-border: transparent;
+  --chip-text: #d1d1d6;
+  --project-bg: #1c1c1e;
+  --project-border: #2f2f32;
+  --table-th-bg: #232325;
+  --table-th-text: #98989d;
+  --table-td-border: #2f2f32;
+  --simple-item-bg: #1c1c1e;
+  --simple-item-border: #2f2f32;
+  --read-card-bg: #1c1c1e;
+  --read-card-border: #2f2f32;
+  --read-card-text: #d1d1d6;
+  --panel: #1c1c1e;
+  --panel-2: #232325;
+  --collapsible-bg: #1c1c1e;
+  --minute-raw-bg: #161618;
+  --kpi-bg: #1c1c1e;
+  --kpi-border: #2f2f32;
+  --toast-bg: #2c2c2e;
+  --footer-bg: transparent;
+  --page-bg-radial1: transparent;
+  --page-bg-radial2: transparent;
+  --page-bg-linear: #111113;
+  --status-ok-text: #30d158;
+  --status-ok-bg: rgba(48, 209, 88, 0.14);
+  --status-ok-border: transparent;
+  --status-err-text: #ff6961;
+  --status-err-bg: rgba(255, 69, 58, 0.16);
+  --status-err-border: transparent;
+  --logo-bg: #1c1c1e;
+  --logo-border: #2f2f32;
+  --module-chip-bg: #2c2c2e;
+  --module-chip-border: transparent;
+  --module-chip-text: #d1d1d6;
+  --mini-kpi-bg: #1c1c1e;
+  --mini-kpi-border: #2f2f32;
+  --impl-wrap-bg: #232325;
+  --impl-wrap-border: #2f2f32;
+  --empty-border: #3a3a3c;
+  --empty-heading: #f2f2f7;
+  --selected-row-bg: rgba(212, 175, 55, 0.14);
+  --req-quick-text: #f2f2f7;
+  --req-summary-text: #f2f2f7;
+  --brand-border-img: transparent;
+}
+
+/* ---------------------------------------------------------------- base */
+
+html,
+body {
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+  background: var(--bg);
+}
+
+.page-bg {
+  background: var(--bg);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* The shell runs edge to edge: sidebar flush left, bar flush top. */
+.app,
+.app:has(#workspace:not(.hidden)) {
+  max-width: none;
+  padding: 0;
+}
+
+.workspace {
+  gap: 0;
+}
+
+.footer-note {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- topbar */
+
+.topbar {
+  min-height: 52px;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--topbar-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.topbar-brand img {
+  height: 28px;
+}
+
+.topbar-brand-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.topbar-project-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
+.topbar-project-name.has-project {
+  color: var(--text);
+  text-shadow: none;
+}
+
+.topbar-project-switch {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--btn-bg);
+  color: var(--text-2);
+}
+
+.topbar-project-switch:hover {
+  background: var(--btn-hover);
+}
+
+.topbar-icon-btn {
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.topbar-icon-btn:hover,
+.topbar-icon-settings:hover,
+.topbar-icon-help:hover {
+  border-color: transparent;
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.topbar-user-popover {
+  border: 0;
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------------------------------------------------------------- layout + sidebar */
+
+.layout {
+  gap: 0;
+}
+
+.layout.is-docked.is-expanded {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.layout.is-docked.is-collapsed {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+
+.content {
+  padding: 24px 32px 48px;
+  gap: 16px;
+}
+
+.nav-rail {
+  gap: 4px;
+  padding: 12px 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--sidebar-bg);
+}
+
+.nav-rail-toolbar {
+  padding: 0 0 4px;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.nav-rail-icon-btn {
+  border-radius: 16px;
+  color: var(--muted);
+}
+
+.nav-rail-icon-btn:hover {
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.nav-rail-item {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.nav-rail-item .nav-rail-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.nav-rail-item:hover {
+  background: var(--surface-3);
+}
+
+.nav-rail-item.active {
+  background: var(--sidebar-selected);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nav-rail-item.active .nav-rail-icon {
+  color: var(--accent);
+}
+
+.nav-rail-group-label,
+.nav-rail-group-summary {
+  padding: 16px 10px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.nav-rail-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-rail-group-summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-right: 1.8px solid currentColor;
+  border-bottom: 1.8px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.nav-rail-group[open] > .nav-rail-group-summary::after {
+  transform: rotate(45deg);
+}
+
+/* In the open sidebar a count sits at the row's end, the way iOS lists do. */
+.nav-rail-badge {
+  position: static;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-gold);
+  color: #1c1c1e;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.layout.is-collapsed .nav-rail-item {
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+.layout.is-collapsed .nav-rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+.panel,
+.content .panel {
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.section-panel,
+.req-detail-panel {
+  border-top: 0;
+}
+
+.panel h3 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.panel-title-row,
+.content .panel-title-row {
+  padding-bottom: 0;
+  margin-bottom: 12px;
+  border-bottom: 0;
+}
+
+.project-item,
+.simple-item,
+.read-card,
+.kpi-box,
+.collapsible {
+  border-radius: var(--radius-card);
+}
+
+.project-item.active {
+  border-color: var(--accent-gold);
+  background: var(--accent-soft);
+}
+
+.empty-state {
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.login-card {
+  max-width: 420px;
+  margin: 12vh auto 0;
+  padding: 28px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.login-card h1 {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  font-size: 15px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-gold) 25%, transparent);
+}
+
+.btn {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+
+.btn:hover {
+  background: var(--btn-hover);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn.primary {
+  border-color: transparent;
+  background: var(--accent-gold);
+  color: var(--btn-primary-text);
+}
+
+.btn.primary:hover {
+  background: var(--accent-gold-2);
+}
+
+.btn.ghost,
+[data-theme] .btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.btn.ghost:hover,
+[data-theme] .btn.ghost:hover {
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.btn.tiny {
+  padding: 5px 11px;
+  font-size: 13px;
+}
+
+.btn.danger {
+  border-color: transparent;
+  background: var(--status-err-bg);
+  color: var(--danger);
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/* ---------------------------------------------------------------- state */
+
+.chip {
+  border-color: transparent;
+  background: var(--chip-bg);
+  color: var(--chip-text);
+}
+
+.chip.accent,
+[data-theme] .chip.accent {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/*
+ * Badges follow UI-RULES §3, with less paint: calm states (healthy, inert) are a dot and
+ * grey text; only "waiting for a person" and "failed" get a fill, because those are the
+ * two a reader has to act on. Blue, teal and orange carried no meaning of their own.
+ */
+.badge-blue,
+.badge-teal,
+.badge-orange,
+.badge-green,
+.badge-gray,
+.badge-amber,
+.badge-red {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+[data-theme] .badge-blue,
+[data-theme] .badge-teal,
+[data-theme] .badge-orange,
+[data-theme] .badge-gray {
+  background: var(--chip-bg);
+  color: var(--muted);
+}
+
+[data-theme] .badge-green {
+  background: transparent;
+  color: var(--muted);
+}
+
+[data-theme] .badge-green::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+[data-theme] .badge-amber {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+[data-theme] .badge-red {
+  background: var(--status-err-bg);
+  color: var(--danger);
+}

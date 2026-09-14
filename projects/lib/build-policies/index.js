@@ -7,6 +7,7 @@
  * produced by nobody.
  */
 const agentPersonas = require('../agent-personas');
+const ears = require('../ears');
 const webApp = require('./web-app');
 const webAppIntake = require('../intake/web-app');
 
@@ -30,6 +31,11 @@ function intakeFor(productType) {
 
 function stageRule(productType, stageId) {
   return policyFor(productType).STAGES.find((entry) => entry.stage === String(stageId || '')) || null;
+}
+
+/** Which EARS patterns a requirement at this layer may use. */
+function earsPatternsForCamada(productType, camada) {
+  return (policyFor(productType).EARS_BY_CAMADA || {})[camada] || [];
 }
 
 /**
@@ -66,6 +72,25 @@ function validatePolicy(productType = DEFAULT_PRODUCT_TYPE) {
   const personaIds = new Set(agentPersonas.listPersonas().map((persona) => persona.id));
   const producible = producibleArtifacts(policy);
   const questionIds = new Set(intake.QUESTIONS.map((entry) => entry.id));
+
+  // Every layer a stage claims must be a layer requirements can be written for, and
+  // every pattern named must be one that exists. A typo here would otherwise surface as
+  // a requirement silently accepted in the wrong shape.
+  const camadasInUse = new Set(policy.STAGES.map((stage) => stage.camada).filter(Number.isInteger));
+  for (const [camada, patterns] of Object.entries(policy.EARS_BY_CAMADA || {})) {
+    for (const pattern of patterns) {
+      if (!ears.PATTERN_IDS.includes(pattern)) {
+        problems.push(`camada ${camada}: padrao EARS desconhecido "${pattern}"`);
+      }
+    }
+  }
+  for (const camada of camadasInUse) {
+    // Camada 0 is a throwaway mockup loop, which produces no requirements at all.
+    if (camada === 0) continue;
+    if (!(policy.EARS_BY_CAMADA || {})[camada]?.length) {
+      problems.push(`camada ${camada}: nenhuma forma de requisito declarada`);
+    }
+  }
 
   for (const stage of policy.STAGES) {
     if (!personaIds.has(stage.owner)) {
@@ -147,6 +172,7 @@ function unansweredRequired(productType, answers = []) {
 module.exports = {
   DEFAULT_PRODUCT_TYPE,
   camadaForStage,
+  earsPatternsForCamada,
   intakeFor,
   normalizeProductType,
   policyFor,

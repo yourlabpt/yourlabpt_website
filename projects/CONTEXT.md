@@ -275,3 +275,90 @@ Unrelated to the nine delivery stages despite the name collision — a chronolog
 plan (weeks, objectives) that becomes the headline of the commercial proposal
 generated in Gerar. Full requirements detail moves to an appendix of that proposal,
 not its centerpiece.
+
+## Camada (planning layer)
+
+The *size* of what is being decided, as opposed to `Fase`, which is the *kind* of work.
+Zero refines an intention against a mockup and is throwaway; one is the vision; two an
+Epic; three a Feature; four a task an agent can finish in one run. An Epic runs its own
+pass through the nine `Fases`.
+
+There is deliberately no `camada` field on anything — each layer is already a distinct
+record, and a field repeating that would be a fifth vocabulary to keep in step with the
+other four. `lib/camadas.js` reads the layer off what something already is.
+
+## Epic
+
+A coherent slice of the `Visão`, weeks wide. **An Epic is not an `Execução`**: an Epic is
+a scope, an Execução is a budgeted run against part of one, and a medium-to-large Epic is
+built by several runs over weeks. The run therefore carries an `epicId` rather than being
+the Epic.
+
+## Feature
+
+Camada 3: a coordination `Tarefa` carrying an `epicId`. Not its own record, which is what
+keeps the work-item tree two levels deep — `Epic → Feature → Tarefa` where only the last
+two are work items.
+
+## Constituição (constitution)
+
+The rules that must stay true whatever gets built — `O sistema deve sempre …`. Distinct
+from `Visão`, which says what this is *for*: a vision is a direction, a constitution is an
+invariant. Declared as an artifact so a spec change can be sent back up to it as a
+recorded decision rather than a silent contradiction.
+
+## Skill (método) vs Knowledge (conhecimento)
+
+Two different things on a `Persona`, deliberately kept apart:
+
+- **knowledge** — what this persona *knows*. Reference material, house rules.
+- **skill** — how this persona *works*. A procedure with steps, red flags and a
+  verification section.
+
+A skill is **content the platform ships inside the task package**, never a capability the
+runtime must advertise. A skill therefore cannot block a dispatch; only a missing
+`Ferramenta MCP` can, because a tool either exists in the runtime or it does not.
+
+Skills are bound per persona *and* per camada, so a persona cutting work into tasks is not
+also handed the launch checklist. The bundle is budgeted against the model profile the run
+will use — the index of every matched method always travels, and only the bodies are
+capped, so a truncated bundle says what was left out instead of quietly shrinking.
+
+Vendored under `skills/`, from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)
+(MIT, Copyright Addy Osmani — see `skills/LICENSE`). Adding one of your own is a folder
+plus an entry in `lib/skills.js`.
+
+## Registo de decisões (decisions log)
+
+Every decision the project has taken, newest first. **Not a store** — a reader over the
+two that already exist, because they are different things and each is already owned by
+something:
+
+- `workItem.updates[].decision` — a change put something else in doubt: the proposal, the
+  rationale, and the ruling on it.
+- `project.decisions` — a decision taken in a phase, often promoted from an `Ata`.
+
+Read when something moved, not out of habit: the count on the nav item is the point. It is
+kept per device in `localStorage`, which is the honest weight for a nudge rather than an
+audit trail.
+
+## Um salto de artefacto (one artifact hop)
+
+`reconcilePlan` covers what a change touches **directly** and stops there. It does not
+follow `intention` on to everything built on `intention` — that bound is the difference
+between revising the affected layer and revising the project.
+
+The second hop has to be **earned**: `nextHop` opens what was built on the reconciled
+artifact only once somebody *accepts* the decision. A proposal nobody has ruled on has
+changed nothing yet, and a rejected one changed nothing by definition.
+
+## Ficheiros gerados no repositório
+
+`openspec/vision.md`, `constitution.md` and `decisions.md` are **renderings of platform
+state**, never a second copy of it. They exist so an agent with `repo.read` and a person
+reading the repository see what the platform holds. Each carries a comment saying it is
+generated and will be replaced on the next sync — a generated file that does not announce
+itself gets edited by hand and then silently overwritten.
+
+`design.md` (the Camada-3 plan) is named in `openspec-format.js` and still not written:
+nothing reads it yet, and a document with no reader is a file to keep in step for no one.

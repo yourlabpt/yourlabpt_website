@@ -11,10 +11,25 @@ function textOr(value, fallback = '') { const v = value == null ? '' : String(va
 const { contextSnapshot, fingerprint, hash, promptDiff } = require('./work-snapshot');
 function transitionKey(fromStageId, toStageId, direction = 'forward') { return `${textOr(fromStageId)}->${textOr(toStageId)}:${textOr(direction, 'forward')}`; }
 
+/**
+ * The methods a transition into each stage should be worked from.
+ *
+ * These were nine abstract tags — `product_discovery`, `solution_architecture` — that
+ * nothing implemented and nothing read except a compatibility check that has since been
+ * removed. They are now real skill ids from `lib/skills.js`, so the name on a task and
+ * the procedure the persona receives are the same thing rather than two vocabularies
+ * that happen to rhyme.
+ */
 const SKILLS_BY_STAGE = {
-  idea: ['product_discovery'], discovery: ['research', 'product_discovery'], requirements: ['requirements_engineering'],
-  architecture: ['solution_architecture'], roadmap: ['delivery_planning'], implementation: ['software_delivery'],
-  validation: ['quality_assurance'], delivery: ['release_management'], operations: ['operations'],
+  idea: ['interview-me', 'idea-refine'],
+  discovery: ['idea-refine', 'frontend-ui-engineering'],
+  requirements: ['spec-driven-development', 'constraint-driven-development'],
+  architecture: ['api-and-interface-design', 'source-driven-development'],
+  roadmap: ['planning-and-task-breakdown'],
+  implementation: ['incremental-implementation', 'test-driven-development'],
+  validation: ['code-review-and-quality', 'debugging-and-error-recovery'],
+  delivery: ['shipping-and-launch', 'ci-cd-and-automation'],
+  operations: ['observability-and-instrumentation', 'deprecation-and-migration'],
 };
 const TOOLS_BY_STAGE = {
   discovery: ['project.read', 'web.search'], requirements: ['project.read', 'requirements.read'],

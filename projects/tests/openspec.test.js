@@ -134,13 +134,37 @@ describe('forward: platform to openspec', () => {
     assert.equal(specs[0].requirements[1].scenarios.length, 0);
   });
 
-  it('produces project.md plus one spec.md per capability', () => {
+  it('produces the project documents plus one spec.md per capability', () => {
     const { files } = sync.buildRepositoryFiles(PROJECT, PLATFORM_REQUIREMENTS);
     assert.deepEqual(files.map((file) => file.path), [
       'openspec/project.md',
+      // Camadas 1 and the decisions log, rendered so the repository and the platform
+      // say the same thing.
+      'openspec/vision.md',
+      'openspec/constitution.md',
+      'openspec/decisions.md',
       'openspec/specs/reservas/spec.md',
     ]);
     assert.match(files[0].content, /Reservas Augusta/);
+  });
+
+  it('says in every generated document that it is generated', () => {
+    const { files } = sync.buildRepositoryFiles(PROJECT, PLATFORM_REQUIREMENTS);
+    for (const file of files.filter((entry) => /vision|constitution|decisions/.test(entry.path))) {
+      // A generated file that does not announce itself gets edited by hand and then
+      // silently overwritten on the next sync.
+      assert.match(file.content, /Gerado pela plataforma/, file.path);
+      assert.match(file.content, /Edite na plataforma/, file.path);
+    }
+  });
+
+  it('writes the documents even when empty, because empty and absent mean different things', () => {
+    const bare = sync.buildRepositoryFiles({ id: 'p', name: 'Vazio' }, []);
+    const paths = bare.files.map((file) => file.path);
+    assert.ok(paths.includes('openspec/vision.md'));
+    assert.ok(paths.includes('openspec/constitution.md'));
+    const constitution = bare.files.find((file) => file.path.endsWith('constitution.md'));
+    assert.match(constitution.content, /Nenhuma regra definida/);
   });
 
   it('keeps a scenario whose parent requirement is missing', () => {

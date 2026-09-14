@@ -1,0 +1,64 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Projetos",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Project.dc.html",
+      "title": "Projecto · City Pass",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Tasks.dc.html",
+      "title": "Tarefas",
+      "x": 3080,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "PhoneToday.dc.html",
+      "title": "iPhone · Hoje",
+      "x": 0,
+      "y": 1040,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "PhoneProject.dc.html",
+      "title": "iPhone · Projecto",
+      "x": 490,
+      "y": 1040,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "PhoneApprove.dc.html",
+      "title": "iPhone · Aprovar mockup",
+      "x": 980,
+      "y": 1040,
+      "w": 390,
+      "h": 844
+    }
+  ],
+  "annotations": [
+    {
+      "id": "restructure",
+      "x": 1540,
+      "y": 1040,
+      "w": 520,
+      "text": "What changed from the current app\n\n1. Hoje first: the two standing human questions (mockup approval, review before commit) plus failures. It is the only thing that stops the chain, so it opens the app.\n2. Projetos → Projecto → six sections. Resumo moves out of «Mais» and becomes the project home: stage, running Execução, what failed, the plan.\n3. «Mais» (Requisitos, Documentos, Perguntas, Fases, Gerar, Atas, Log) sits behind one row.\n4. Light, grouped iOS surfaces instead of dark panels. Colour is spent, not sprinkled: everything is grey by default; gold marks only the primary action, the selection, the current stage and the running step; amber means waiting for you; red means failed. Calm states (em curso, em pausa) are a small dot.\n5. Same sidebar → list → detail on desktop; tab bar + push navigation on iPhone.\n\nSample values (not from data): costs, times, the two waiting items, Black Adam / Gestão Financeira stages, mockup screens."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

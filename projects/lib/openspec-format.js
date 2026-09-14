@@ -19,7 +19,14 @@
  * without a stable id every pull would look like "delete everything, add everything".
  */
 
+const ears = require('./ears');
+
 const SPEC_ROOT = 'openspec';
+
+const GENERATED_NOTE = '<!-- Gerado pela plataforma a partir do estado do projecto. '
+  + 'Edite na plataforma, nao aqui: uma alteracao feita neste ficheiro e substituida na '
+  + 'proxima sincronizacao. -->';
+
 const DELTA_SECTIONS = ['ADDED', 'MODIFIED', 'REMOVED', 'RENAMED'];
 
 function text(value, fallback = '') {
@@ -116,9 +123,14 @@ function serializeRequirement(requirement) {
     type: requirement.type,
     priority: requirement.priority,
     module: requirement.module,
+    // The shape it is written in, so a pull recovers it exactly rather than guessing
+    // from the prose. Guessing is the fallback, not the mechanism.
+    ears: requirement.earsPattern,
   });
   if (meta) lines.push(meta);
-  const statement = text(requirement.shall);
+  // The EARS sentence when the requirement declares a shape, the bare statement
+  // otherwise — a requirement half-written should still read as something.
+  const statement = ears.toSentence(requirement) || text(requirement.shall);
   if (statement) lines.push('', statement);
   if (text(requirement.rationale)) lines.push('', `_Porque:_ ${text(requirement.rationale)}`);
   for (const scenario of requirement.scenarios || []) {
@@ -175,7 +187,22 @@ function parseSpec(markdown, { capability = '' } = {}) {
     if (!requirement) return;
     const body = bodyLines.join('\n').trim();
     const rationaleMatch = body.match(/_Porque:_\s*(.+)/);
-    requirement.shall = body.replace(/_Porque:_\s*.+/, '').trim();
+    const statementText = body.replace(/_Porque:_\s*.+/, '').trim();
+    // Split the sentence back into trigger and response, so the structured fields
+    // survive a pull rather than only the prose. A sentence that is not in an EARS
+    // shape is kept exactly as written — that is a requirement too, just not one the
+    // layer rules can check.
+    const parsed = ears.parseSentence(statementText);
+    if (parsed) {
+      requirement.shall = parsed.shall;
+      requirement.condition = parsed.condition;
+      requirement.earsPattern = requirement.earsPattern || parsed.earsPattern;
+    } else {
+      requirement.shall = statementText;
+      // Always present, even when empty: a caller checking the shape should not have to
+      // distinguish "no shape" from "field absent".
+      requirement.earsPattern = requirement.earsPattern || '';
+    }
     requirement.rationale = rationaleMatch ? text(rationaleMatch[1]) : '';
     spec.requirements.push(requirement);
     requirement = null;
@@ -270,6 +297,97 @@ function parseDelta(markdown) {
   return result;
 }
 
+/**
+ * `openspec/vision.md` — Camada 1, as the repository sees it.
+ *
+ * A rendering of platform state, never a second copy of it: the platform is where this
+ * is edited, and the file exists so an agent with `repo.read` and a person reading the
+ * repo see the same thing. It says so in the file, because a generated document that
+ * does not announce itself gets edited by hand and then silently overwritten.
+ */
+function serializeVisionDoc(project) {
+  const vision = project?.vision && typeof project.vision === 'object' ? project.vision : {};
+  const lines = [
+    `# ${text(project?.name, 'Projecto')} — Visao`,
+    '',
+    GENERATED_NOTE,
+    '',
+    '## Para que serve isto',
+    '',
+    text(vision.mainIdeaMarkdown, 'Por definir.'),
+  ];
+  if (text(vision.problemMarkdown)) {
+    lines.push('', '## O problema', '', text(vision.problemMarkdown));
+  }
+  const users = Array.isArray(vision.targetUsers) ? vision.targetUsers.filter(Boolean) : [];
+  if (users.length) {
+    lines.push('', '## Quem usa', '', ...users.map((entry) => `- ${text(entry)}`));
+  }
+  if (text(vision.valuePropositionMarkdown)) {
+    lines.push('', '## O que muda para quem usa', '', text(vision.valuePropositionMarkdown));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * `openspec/constitution.md` — the rules that hold whatever gets built.
+ *
+ * Separate from the vision on purpose: a vision is a direction, a constitution is an
+ * invariant. Written one per line so a requirement can be checked against it.
+ */
+function serializeConstitutionDoc(project) {
+  const rules = String(project?.constitution || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return [
+    `# ${text(project?.name, 'Projecto')} — Constituicao`,
+    '',
+    GENERATED_NOTE,
+    '',
+    'Regras que valem para tudo o que for construido. Um requisito que viole uma delas',
+    'ou nao se faz, ou a regra nunca foi mesmo uma regra — e as duas coisas sao decisoes.',
+    '',
+    ...(rules.length ? rules.map((rule) => `- ${rule}`) : ['_Nenhuma regra definida._']),
+    '',
+  ].join('\n');
+}
+
+/**
+ * `openspec/decisions.md` — what changed, and what it put in doubt.
+ *
+ * A serializer over decisions that already live on tasks and phases. Ordered newest
+ * first, and open decisions come with their own heading: a reader of the repository
+ * should see what is still unresolved without cross-referencing the platform.
+ */
+function serializeDecisionsDoc(project, entries) {
+  const rows = Array.isArray(entries) ? entries : [];
+  const pending = rows.filter((entry) => entry.status === 'proposed');
+  const ruled = rows.filter((entry) => entry.status !== 'proposed');
+
+  const render = (entry) => {
+    const when = text(entry.decidedAt || entry.raisedAt).slice(0, 10);
+    const head = [when, entry.artifact ? `\`${entry.artifact}\`` : '', Number.isInteger(entry.camada) ? `Camada ${entry.camada}` : '']
+      .filter(Boolean)
+      .join(' · ');
+    const out = [`### ${text(entry.proposal, 'Sem proposta')}`, '', head];
+    if ((entry.affects || []).length) {
+      out.push('', `Poe em causa: ${entry.affects.map((a) => `\`${a}\``).join(', ')}`);
+    }
+    if (text(entry.rationale)) out.push('', text(entry.rationale));
+    if (text(entry.decidedBy)) out.push('', `_Decidida por ${text(entry.decidedBy)}._`);
+    return out.join('\n');
+  };
+
+  const lines = [`# ${text(project?.name, 'Projecto')} — Decisoes`, '', GENERATED_NOTE, ''];
+  if (pending.length) {
+    lines.push('## Por decidir', '', ...pending.map(render).flatMap((block) => [block, '']));
+  }
+  lines.push('## Decididas', '');
+  lines.push(...(ruled.length ? ruled.map(render).flatMap((block) => [block, '']) : ['_Nenhuma ainda._', '']));
+  return lines.join('\n');
+}
+
 function serializeProjectDoc(project) {
   return [
     `# ${text(project.name, 'Projecto')}`,
@@ -355,7 +473,10 @@ module.exports = {
   parseTasks,
   serializeDelta,
   serializeMeta,
+  serializeConstitutionDoc,
+  serializeDecisionsDoc,
   serializeProjectDoc,
+  serializeVisionDoc,
   serializeProposal,
   serializeRequirement,
   serializeSpec,

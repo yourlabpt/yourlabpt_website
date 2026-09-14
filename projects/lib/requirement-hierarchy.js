@@ -877,7 +877,7 @@ function unlinkRequirementFromHierarchy(requirement, project) {
 function createRequirementInLayer(project, options = {}) {
   const layerType = normalizeRequirementType(options.layerType);
   if (!layerType || !['stakeholder', 'functional', 'non_functional', 'test_case'].includes(layerType)) {
-    throw new Error('Camada inválida.');
+    throw new Error('Nível V inválido.');
   }
 
   const focusStakeholderId = normalizeRequirementIdToken(options.focusStakeholderId);
@@ -893,7 +893,7 @@ function createRequirementInLayer(project, options = {}) {
       parentId = stk.id;
     }
   } else if (layerType !== 'stakeholder') {
-    if (!focusStakeholderId) throw new Error('Seleccione um STK em foco para adicionar a esta camada.');
+    if (!focusStakeholderId) throw new Error('Seleccione um STK em foco para adicionar a este nível.');
     parentId = layerType === 'test_case'
       ? ensureFunctionalParentForChain(requirements, focusStakeholderId, project)
       : (findDefaultParentForZone({ requirements }, layerType, focusStakeholderId)

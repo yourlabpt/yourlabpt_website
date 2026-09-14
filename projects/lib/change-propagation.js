@@ -20,6 +20,8 @@ const buildPolicies = require('./build-policies');
 
 function ensureArray(value) { return Array.isArray(value) ? value : []; }
 
+function text(value) { return typeof value === 'string' ? value.trim() : ''; }
+
 /**
  * The names one artifact travels under. Approving a mockup produces
  * `ux_mockup_approved`, and the personas downstream consume that name, not the original
@@ -93,6 +95,12 @@ function impactOf(productType, artifact) {
  * before rebuilding: correcting the idea and then building on the corrected idea is the
  * point, and doing it the other way round rebuilds on something already known to be
  * wrong. Within each group, the pipeline's own order.
+ *
+ * **Exactly one artifact hop.** The plan covers what this change touches directly and
+ * stops there — it does not follow `intention` on to everything built on `intention`.
+ * That bound is the difference between "revise the affected layer" and "revise the
+ * project", and it is not incidental: the next hop has to be *earned* by someone ruling
+ * on this one. See `nextHop`.
  */
 function reconcilePlan(productType, artifact) {
   const impact = impactOf(productType, artifact);
@@ -121,6 +129,35 @@ function reconcilePlan(productType, artifact) {
 }
 
 /**
+ * What becomes reconcilable once a decision is accepted.
+ *
+ * Accepting "the idea now includes the mesas screen" is itself a change to `intention`,
+ * so whatever was built on `intention` is now in doubt too. That second hop is offered
+ * only here, and only on an acceptance — a proposal nobody has ruled on has not changed
+ * anything yet, and a rejected one changed nothing by definition.
+ *
+ * Returns the steps, plus the sentence explaining why they appeared, so the offer can be
+ * shown rather than silently queued.
+ */
+function nextHop(productType, decision) {
+  if (!decision || decision.status !== 'accepted') return { steps: [], because: '' };
+  const reconciled = text(decision.artifact && decision.affects?.[0]) || text(decision.artifact);
+  if (!reconciled) return { steps: [], because: '' };
+
+  const steps = reconcilePlan(productType, reconciled)
+    // The producer of the reconciled artifact has just made this change by accepting it.
+    .filter((step) => step.direction !== 'produces')
+    .map((step) => ({ ...step, hop: 2, becauseOf: decision.artifact }));
+
+  return {
+    steps,
+    because: steps.length
+      ? `Aceitar isto altera ${reconciled}. O que foi construído sobre ${reconciled} pode já não servir.`
+      : '',
+  };
+}
+
+/**
  * Is this artifact part of a stage a human already signed off?
  *
  * That is the one case where reconciliation stops and asks, instead of recording and
@@ -138,6 +175,7 @@ module.exports = {
   formsOf,
   impactOf,
   isArtifactApproved,
+  nextHop,
   producerOf,
   reconcilePlan,
   stageProducing,

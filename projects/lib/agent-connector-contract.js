@@ -109,7 +109,7 @@ function assessCompatibility(packageValue, capabilitiesValue) {
 
   // The persona travels with the package as a complete definition, so the runtime is
   // not required to have pre-registered an agent under that name. Whether it *can* do
-  // the work is answered by protocol, skills and tools below — never by a name lookup.
+  // the work is answered by protocol and tools below — never by a name lookup.
   // A missing name used to block dispatch and surfaced as "no compatible agent",
   // which described the platform's bookkeeping rather than anything the operator
   // could fix.
@@ -120,17 +120,21 @@ function assessCompatibility(packageValue, capabilitiesValue) {
   );
 
   // When the manifest identifies the agent that will run this, judge that agent on its
-  // own skills and tools — otherwise picking between two advertised agents would be
-  // meaningless, since every one of them would look equally capable. With no agent
-  // identified, judge the runtime as a whole: it is the runtime that receives the
-  // package, and the persona definition travels inside it.
-  const scopedSkills = agent ? (agent.skills || []) : capabilities.agents.flatMap((e) => e.skills || []);
+  // own tools — otherwise picking between two advertised agents would be meaningless,
+  // since every one of them would look equally capable. With no agent identified, judge
+  // the runtime as a whole: it is the runtime that receives the package, and the persona
+  // definition travels inside it.
   const scopedTools = agent ? (agent.tools || []) : capabilities.agents.flatMap((e) => e.tools || []);
-  const availableSkills = [...capabilities.skills, ...scopedSkills];
   const availableTools = [...capabilities.tools, ...scopedTools];
-  for (const skill of missingCapabilities(stringList(taskPackage.requirements?.skills || taskPackage.requiredSkills), availableSkills)) {
-    reasons.push(`skill:${skill}`);
-  }
+
+  // Skills are deliberately NOT checked here. A skill is a method — a written procedure
+  // the platform ships inside the package — so there is nothing for the runtime to
+  // have, and a name it happens not to declare must never block a dispatch. That is the
+  // same failure the agent-name lookup produced above: bookkeeping described as an
+  // incompatibility, with nothing the operator could do about it.
+  //
+  // Tools are a different question and still block. A tool either exists in the runtime
+  // or it does not, and "this agent cannot read the repository" is real and fixable.
   for (const tool of missingCapabilities(stringList(taskPackage.requirements?.tools || taskPackage.allowedMcpTools), availableTools)) {
     reasons.push(`tool:${tool}`);
   }

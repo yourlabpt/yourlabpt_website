@@ -14,12 +14,6 @@ function textOr(value, fallback = '') {
   return v || fallback;
 }
 
-function isAutoSyncEnabled() {
-  // Tasks are the canonical work record. Keep the helper for compatibility,
-  // but the bridge is no longer optional.
-  return true;
-}
-
 function complexityFromPlanTask(task) {
   const tokens = Number(task?.estimatedInputTokens) || 0;
   if (tokens >= 12000) return 'high';
@@ -331,50 +325,7 @@ function onAgentRunFailed(project, context = {}) {
   return onAgentRunComplete(project, { ...context, failed: true });
 }
 
-const executionPlanAdapter = {
-  source: 'execution_plan',
-  canSync(project, context) {
-    return Boolean(context?.plan?.id && ensureArray(context.plan.tasks).length);
-  },
-  toWorkItems(project, context) {
-    const { workItems: items } = syncWorkItemsFromExecutionPlan(project, context.plan);
-    return items.filter((item) => item.origin === 'agent'
-      && item.executionPlanId === context.plan.id);
-  },
-  fromWorkItemUpdate() {
-    // future: push status back to plan task
-  },
-};
-
-const agentRuntimeAdapter = {
-  source: 'agent_runtime',
-  canSync() {
-    return isAutoSyncEnabled();
-  },
-  toWorkItems() {
-    return [];
-  },
-  fromWorkItemUpdate(workItem, context) {
-    if (!isAutoSyncEnabled()) return;
-    if (context.phase === 'start') onAgentRunStart(context.project, context);
-    if (context.phase === 'complete') onAgentRunComplete(context.project, context);
-    if (context.phase === 'failed') onAgentRunFailed(context.project, context);
-  },
-};
-
-const implementationAdapter = {
-  source: 'implementation',
-  canSync() {
-    return false;
-  },
-  toWorkItems() {
-    return [];
-  },
-  fromWorkItemUpdate() {},
-};
-
 module.exports = {
-  isAutoSyncEnabled,
   syncWorkItemsFromExecutionPlan,
   buildWorkItemFromExecutionPlanTask,
   onAgentRunStart,
@@ -382,7 +333,4 @@ module.exports = {
   onAgentRunFailed,
   syncDomainTasks,
   syncImplementationTasks,
-  executionPlanAdapter,
-  agentRuntimeAdapter,
-  implementationAdapter,
 };

@@ -13,6 +13,7 @@
  *   test_case  <->  #### Scenario (verifies its parent requirement)
  */
 const openspecFormat = require('./openspec-format');
+const decisionsLog = require('./decisions-log');
 
 const SPEC_TYPES = new Set(['functional', 'non_functional']);
 
@@ -126,6 +127,18 @@ function buildRepositoryFiles(project, requirements) {
   const files = [{
     path: `${openspecFormat.SPEC_ROOT}/project.md`,
     content: openspecFormat.serializeProjectDoc(project),
+  }, {
+    // Camada 1, rendered so the repository and the platform say the same thing. Written
+    // even when empty: a missing file reads as "nobody thought about this", where an
+    // empty one reads as "not decided yet", and only one of those is true.
+    path: `${openspecFormat.SPEC_ROOT}/vision.md`,
+    content: openspecFormat.serializeVisionDoc(project),
+  }, {
+    path: `${openspecFormat.SPEC_ROOT}/constitution.md`,
+    content: openspecFormat.serializeConstitutionDoc(project),
+  }, {
+    path: `${openspecFormat.SPEC_ROOT}/decisions.md`,
+    content: openspecFormat.serializeDecisionsDoc(project, decisionsLog.collect(project)),
   }];
   for (const spec of specs) {
     files.push({

@@ -177,6 +177,24 @@
             <label>Limite tokens<input type="number" min="0" data-persona-field="maxTokens" value="${Number(persona.maxTokens) || 0}" /></label>
             <label>Tempo máximo (min)<input type="number" min="0" data-persona-field="maxWallClockMinutes" value="${Number(persona.maxWallClockMinutes) || 0}" /></label>
           </div>
+          <details class="agent-skills mt-8">
+            <summary>Como este agente trabalha
+              <span class="muted-text">${(persona.skills || []).length} método(s)</span>
+            </summary>
+            <p class="muted-text mt-8">
+              Métodos: passos, sinais de alarme e como se verifica que ficou feito. São
+              diferentes do que o agente sabe — isto é como trabalha. Vão com a tarefa,
+              escolhidos pela camada em que está a trabalhar, por isso nem todos seguem
+              de cada vez.
+            </p>
+            <div class="agent-skill-list mt-8">${(persona.skills || []).map((skill) => `
+              <div class="agent-skill-row">
+                <strong>${escapeHtml(skill.title || skill.id)}</strong>
+                <span class="muted-text">${escapeHtml(skill.why || '')}</span>
+                <span class="agent-skill-meta">${(skill.camadas || []).map((c) => `C${c}`).join(' ') || ''}${
+  skill.known ? '' : ' <span class="badge-amber">não instalado</span>'}</span>
+              </div>`).join('') || '<p class="muted-text">Nenhum método atribuído.</p>'}</div>
+          </details>
           <details class="agent-knowledge mt-8">
             <summary>O que este agente já sabe
               <span class="muted-text">${persona.knowledge.length

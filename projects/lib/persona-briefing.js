@@ -13,6 +13,8 @@
  */
 const buildPolicies = require('./build-policies');
 const changePropagation = require('./change-propagation');
+const skills = require('./skills');
+const { MODEL_PROFILES } = require('./execution-plans');
 
 function ensureArray(value) { return Array.isArray(value) ? value : []; }
 function textOr(value, fallback = '') {
@@ -29,6 +31,7 @@ function buildBriefing(project, persona, { stageId = '', reconcile = null } = {}
   const productType = buildPolicies.normalizeProductType(project?.productType);
   const stage = textOr(stageId, persona.deliveryStages[0]);
   const rule = buildPolicies.stageRule(productType, stage);
+  const promptBudget = skills.budgetForProfile(MODEL_PROFILES[persona.modelProfileId]);
 
   // What happens if this persona changes what it is here to produce. Telling it up
   // front is what turns "I changed the mockup" into "I changed the mockup, and the idea
@@ -65,6 +68,18 @@ function buildBriefing(project, persona, { stageId = '', reconcile = null } = {}
       }
       : null,
     knowledge: ensureArray(persona.knowledge),
+    // How to do this, not just what to produce. Scoped to the layer the stage sits at,
+    // so a persona cutting work into tasks is not also handed the launch checklist.
+    // Method and checklists share one budget, because they share one prompt. Methods
+    // take the larger share — a checklist you can open is less lost than a method you
+    // never knew to use — and both say what did not fit.
+    skills: skills.skillBundle(
+      persona.id,
+      buildPolicies.camadaForStage(productType, stage),
+      Math.round(promptBudget * 0.7),
+    ),
+    // Checklists that make this stage's exit test checkable rather than interpretable.
+    references: skills.referenceBundle(stage, Math.round(promptBudget * 0.3)),
   };
 }
 
@@ -110,6 +125,17 @@ function briefingToMarkdown(briefing) {
       lines.push(`- Mexer em \`${entry.ifYouChange}\` obriga a reconsiderar \`${entry.thenReconsider}\` (${entry.owner}).`);
       lines.push(`  ${entry.rule}`);
     }
+    lines.push('');
+  }
+
+  if (briefing.skills?.markdown) {
+    lines.push(briefing.skills.markdown);
+    lines.push('');
+  }
+
+  if (briefing.references.markdown) {
+    lines.push('## Como se reconhece que esta feito');
+    lines.push(briefing.references.markdown);
     lines.push('');
   }
 

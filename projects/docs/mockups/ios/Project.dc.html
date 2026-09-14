@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; color: #1C1C1E; -webkit-font-smoothing: antialiased; }
+    a { color: #9A7412; text-decoration: none; } a:hover { color: #7A5B0C; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 900px; background: #F2F2F7; overflow: hidden; position: relative; display: flex; letter-spacing: -0.01em">
+
+  <aside style="width: 280px; flex-shrink: 0; height: 100%; box-sizing: border-box; background: #F7F7FA; border-right: 1px solid #E5E5EA; display: flex; flex-direction: column; gap: 18px; padding: 22px 12px 16px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 10px">
+      <div style="width: 30px; height: 30px; border-radius: 8px; background: #1C1C1E; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #D4AF37; font-size: 12px; font-weight: 700; letter-spacing: 0">YL</div>
+      <span style="font-size: 17px; font-weight: 600">YourLab</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 2px; padding: 0 10px; border-radius: 10px; background: #E4E4E9; color: #8E8E93; font-size: 15px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z"></path><path d="M20 20l-4-4"></path></svg><span>Procurar</span></div>
+    <div style="display: flex; flex-direction: column; gap: 2px"><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M3 13h5l1.5 3h5l1.5-3h5"></path><path d="M5.5 5h13l2.5 8v6H3v-6z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Hoje</span><span style="min-width: 22px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #D4AF37; color: #1C1C1E; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">2</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Projetos</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M13 3L4 14h6l-1 7 9-11h-6z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Agentes</span></div></div>
+    
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 4px 10px 8px"><div style="width: 28px; height: 28px; border-radius: 7px; background: #E9E9EE; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #3A3A3C; font-size: 11px; font-weight: 700; letter-spacing: 0">CP</div><div style="display: flex; flex-direction: column; min-width: 0"><span style="font-size: 15px; font-weight: 600">City Pass</span><span style="font-size: 12px; color: #6E6E73">Impakta</span></div></div>
+      <div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: #F4EBCD; font-size: 15px; font-weight: 600; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A7412" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="M8 16v-5"></path><path d="M12 16V8"></path><path d="M16 16v-3"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Resumo</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M13 3L4 14h6l-1 7 9-11h-6z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Intenção</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M4 19h16"></path><path d="M7 19V10"></path><path d="M12 19V5"></path><path d="M17 19v-6"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Plano</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9 6h11"></path><path d="M9 12h11"></path><path d="M9 18h11"></path><path d="M4.5 6h.01"></path><path d="M4.5 12h.01"></path><path d="M4.5 18h.01"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tarefas</span><span style="font-size: 14px; color: #AEAEB2">25</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M6 3v12"></path><path d="M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Decisões</span></div><div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M21 3L10 14"></path><path d="M21 3l-7 18-4-7-7-4z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Entrega</span></div>
+      <div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M6 12h.01"></path><path d="M12 12h.01"></path><path d="M18 12h.01"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #6E6E73">Mais</span></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; background: transparent; font-size: 15px; font-weight: 400; color: #1C1C1E"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.4 2.5h4l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5z"></path></svg><span style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Definições do projecto</span></div>
+      <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px"><div style="width: 28px; height: 28px; border-radius: 14px; background: #8E8E93; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 0">TS</div><span style="font-size: 15px">Túlio Soares</span></div>
+    </div>
+  </aside>
+  <main style="flex-grow: 1; display: flex; flex-direction: column; padding: 18px 44px 0; box-sizing: border-box; min-width: 0">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px"><div style="display: flex; align-items: center; gap: 2px; font-size: 17px; color: #9A7412"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9A7412" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M15 5l-7 7 7 7"></path></svg>Projetos</div><div style="display: flex; align-items: center; gap: 12px"><div style="width: 36px; height: 36px; border-radius: 18px; background: #E9E9EE; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A7412" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M6 12h.01"></path><path d="M12 12h.01"></path><path d="M18 12h.01"></path></svg></div><div style="display: flex; align-items: center; justify-content: center; height: 36px; padding: 0 18px; border-radius: 18px; background: #D4AF37; color: #1C1C1E; font-size: 15px; font-weight: 600; white-space: nowrap">Nova execução</div></div></div>
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-top: 6px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.025em">City Pass</h1>
+        <span style="font-size: 15px; color: #6E6E73">Impakta · Ideia · Aplicação mobile com cupões QR para restaurantes</span>
+      </div>
+      <span style="display: inline-flex; align-items: center; gap: 7px; height: 24px; color: #6E6E73; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 4px; background: #34C759"></span>Em curso</span>
+    </div>
+    <div style="margin-top: 22px"><div style="background: #FFFFFF; border-radius: 14px; "><div style="display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; padding: 16px 18px">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #8E8E93"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #1C1C1E; white-space: nowrap">Ideia</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #8E8E93"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #1C1C1E; white-space: nowrap">Descoberta</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #D4AF37"></div>
+        <span style="font-size: 12px; font-weight: 700; color: #1C1C1E; white-space: nowrap">Requisitos</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Arquitectura</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Roadmap</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Implementação</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Validação</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Entrega</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"></div>
+        <span style="font-size: 12px; font-weight: 500; color: #6E6E73; white-space: nowrap">Operação</span>
+      </div></div></div></div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; align-items: start">
+      <div style="background: #FFFFFF; border-radius: 14px; ">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 10px">
+        <div style="display: flex; flex-direction: column"><span style="font-size: 20px; font-weight: 700; letter-spacing: -0.02em">Execução · Construção</span><span style="font-size: 13px; color: #6E6E73">Começou há 40 min · pára só para perguntas a si</span></div>
+        <div style="display: flex; align-items: center; justify-content: center; height: 32px; padding: 0 18px; border-radius: 16px; background: #E9E9EE; color: #9A7412; font-size: 15px; font-weight: 600; white-space: nowrap">Pausar</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; background: #E9E9EE; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M5 12.5l4.5 4.5L19 7"></path></svg></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #1C1C1E">Product Owner</span><span style="font-size: 13px; color: #6E6E73">Proposta</span></div>
+        
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; background: #E9E9EE; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M5 12.5l4.5 4.5L19 7"></path></svg></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #1C1C1E">UX Agent</span><span style="font-size: 13px; color: #6E6E73">Mockup aprovado</span></div>
+        
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; box-sizing: border-box; border: 3px solid #D4AF37; border-right-color: #F1E3B0; display: flex"></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 600; color: #1C1C1E">Product Owner</span><span style="font-size: 13px; color: #6E6E73">Requisitos a partir do mockup</span></div>
+        <span style="display: inline-flex; align-items: center; gap: 7px; height: 24px; color: #6E6E73; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 4px; background: #34C759"></span>A correr</span>
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; box-sizing: border-box; border: 1.5px solid #D1D1D6"></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #6E6E73">Module Architect</span><span style="font-size: 13px; color: #6E6E73">Mapa de módulos</span></div>
+        
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; box-sizing: border-box; border: 1.5px solid #D1D1D6"></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #6E6E73">Orchestrator</span><span style="font-size: 13px; color: #6E6E73">Contratos de interface</span></div>
+        
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; box-sizing: border-box; border: 1.5px solid #D1D1D6"></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #6E6E73">Developer Agent</span><span style="font-size: 13px; color: #6E6E73">Código · revisão antes do commit</span></div>
+        
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 56px"></div><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px">
+        <div style="width: 26px; height: 26px; border-radius: 13px; box-sizing: border-box; border: 1.5px solid #D1D1D6"></div>
+        <div style="display: flex; flex-direction: column; flex-grow: 1"><span style="font-size: 15px; font-weight: 400; color: #6E6E73">Tester Agent</span><span style="font-size: 13px; color: #6E6E73">Testes</span></div>
+        
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 14px 18px 18px; border-top: 1px solid #E5E5EA">
+        
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="color: #6E6E73">Custo</span><span><strong style="font-weight: 600">€3,40</strong> <span style="color: #6E6E73">de €15</span></span></div>
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"><div style="width: 23%; height: 6px; border-radius: 3px; background: #8E8E93"></div></div>
+      </div>
+        
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="color: #6E6E73">Tempo</span><span><strong style="font-weight: 600">2 h 10</strong> <span style="color: #6E6E73">de 8 h</span></span></div>
+        <div style="height: 6px; border-radius: 3px; background: #E5E5EA"><div style="width: 27%; height: 6px; border-radius: 3px; background: #8E8E93"></div></div>
+      </div>
+      </div></div>
+      <div style="display: flex; flex-direction: column; gap: 20px">
+        <div style="background: #FFFFFF; border-radius: 14px; ">
+      <div style="display: flex; gap: 12px; padding: 16px 18px">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: #FFE4E6; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D70015" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"></path><path d="M12 8v5"></path><path d="M12 16h.01"></path></svg></div>
+        <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1">
+          <span style="font-size: 15px; font-weight: 600">Arquitectura a partir dos requisitos falhou</span>
+          <span style="font-size: 13px; line-height: 18px; color: #6E6E73; text-wrap: pretty">A execução anterior parou antes do mapa de módulos. Volta a correr quando os requisitos estiverem agrupados.</span>
+          <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 15px; font-weight: 600"><a href="#">Ver registo</a></div>
+        </div>
+      </div></div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 4px"><span style="font-size: 20px; font-weight: 700; letter-spacing: -0.02em">Plano</span><a href="#" style="font-size: 15px">Ver tudo</a></div>
+          <div style="background: #FFFFFF; border-radius: 14px; "><div style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 18px">
+        <span style="width: 22px; font-size: 15px; font-weight: 600; color: #AEAEB2">1</span>
+        <span style="flex-grow: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">MVP, Fundação, Identidade Visual e Experiência Base</span>
+        <span style="font-size: 13px; color: #6E6E73; white-space: nowrap">0 de 3</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 52px"></div><div style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 18px">
+        <span style="width: 22px; font-size: 15px; font-weight: 600; color: #AEAEB2">2</span>
+        <span style="flex-grow: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Mapa, Roteiros e Experiência Turística</span>
+        <span style="font-size: 13px; color: #6E6E73; white-space: nowrap">0 de 3</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 52px"></div><div style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 18px">
+        <span style="width: 22px; font-size: 15px; font-weight: 600; color: #AEAEB2">3</span>
+        <span style="flex-grow: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Dashboard administrativo completo</span>
+        <span style="font-size: 13px; color: #6E6E73; white-space: nowrap">0 de 3</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 52px"></div><div style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 18px">
+        <span style="width: 22px; font-size: 15px; font-weight: 600; color: #AEAEB2">4</span>
+        <span style="flex-grow: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Integrações: Google Pay, Apple Pay, MBway</span>
+        <span style="font-size: 13px; color: #6E6E73; white-space: nowrap">0 de 3</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </div><div style="height: 1px; background: #E5E5EA; margin-left: 52px"></div><div style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 18px">
+        <span style="width: 22px; font-size: 15px; font-weight: 600; color: #AEAEB2">5</span>
+        <span style="flex-grow: 1; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Plataforma do parceiro com histórico</span>
+        <span style="font-size: 13px; color: #6E6E73; white-space: nowrap">0 de 3</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; display: block"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+</body>
+</html>

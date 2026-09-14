@@ -5283,10 +5283,7 @@ function registerDeliveryOsRoutes(app, deps) {
         p.executionPlans.unshift(plan);
         p.executionPlans = p.executionPlans.slice(0, 20);
         try {
-          const workItemsSync = require('./work-items-sync');
-          if (workItemsSync.isAutoSyncEnabled()) {
-            workItemsSync.syncWorkItemsFromExecutionPlan(p, plan);
-          }
+          require('./work-items-sync').syncWorkItemsFromExecutionPlan(p, plan);
         } catch {
           // optional bridge
         }

@@ -23,6 +23,20 @@ const PRODUCT_TYPE = 'web_app';
 const ROOT_ARTIFACTS = ['intention', 'project_context', 'visual_reference'];
 
 /**
+ * How a requirement is written at each layer.
+ *
+ * Data, not code, for the same reason the rest of the policy is: a second product type
+ * changes this table rather than a code path. `validatePolicy` checks every id here
+ * against the EARS catalogue, so a typo fails a test instead of reaching a person.
+ */
+const EARS_BY_CAMADA = {
+  1: ['ubiquitous'],
+  2: ['optional', 'ubiquitous'],
+  3: ['event', 'state'],
+  4: ['event', 'state', 'unwanted'],
+};
+
+/**
  * `camada` is the planning layer a stage belongs to: 0 refining intention against
  * something you can look at, 1 the vision, 2 an epic, 3 a feature, 4 a task an agent can
  * finish in one pass. It is the *size* of what is being decided, where `stage` is the
@@ -168,4 +182,4 @@ const PROPAGATION = [
   },
 ];
 
-module.exports = { PRODUCT_TYPE, PROPAGATION, ROOT_ARTIFACTS, STAGES };
+module.exports = { EARS_BY_CAMADA, PRODUCT_TYPE, PROPAGATION, ROOT_ARTIFACTS, STAGES };

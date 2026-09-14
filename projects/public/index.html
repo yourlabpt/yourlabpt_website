@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
   <link rel="stylesheet" href="/projects/static/styles.css?v=105" />
+  <link rel="stylesheet" href="/projects/static/ios.css?v=1" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -22,7 +23,7 @@
           alt="YourLab"
         />
         <div>
-          <h1>Projects Platform</h1>
+          <h1>YourLab</h1>
           <p>Portal central de requisitos, progresso e documentação técnica.</p>
         </div>
       </div>
@@ -48,7 +49,6 @@
           />
           <div class="topbar-brand-text">
             <span class="topbar-brand-name">YourLab</span>
-            <span class="topbar-brand-tag">Projects Platform</span>
           </div>
         </div>
         <div class="topbar-center">
@@ -101,19 +101,6 @@
 
           <div id="projectWorkspace">
 
-            <nav class="section-tabs section-tabs-compact hidden" id="sectionTabs" aria-hidden="true">
-              <button class="tab-btn" data-tab="projetos"><span>Projetos</span></button>
-              <button class="tab-btn active" data-tab="projeto"><span>Projeto</span></button>
-              <button class="tab-btn" data-tab="documentos"><span>Documentos</span></button>
-              <button class="tab-btn" data-tab="perguntas"><span>Perguntas</span></button>
-              <button class="tab-btn" data-tab="requisitos"><span>Requisitos</span></button>
-              <button class="tab-btn" data-tab="fases"><span>Fases</span></button>
-              <button class="tab-btn" data-tab="gerar"><span>Gerar</span></button>
-              <button class="tab-btn" data-tab="atas"><span>Atas</span></button>
-              <button class="tab-btn" data-tab="deliveryos"><span>Entrega</span></button>
-              <button class="tab-btn" data-tab="atividade"><span>Atividade</span></button>
-              <button class="tab-btn" data-tab="definicoes"><span>Definições</span></button>
-            </nav>
 
             <div id="phaseContextBar" class="phase-context-bar hidden" aria-live="polite"></div>
 
@@ -153,7 +140,7 @@
             <div class="tab-panel hidden" data-panel="projeto">
               <section class="panel section-panel">
                 <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-blue">KPIs</span> Visão do Projeto</h3>
+                  <h3 class="panel-heading"><span class="section-badge badge-blue">KPIs</span> Resumo do Projeto</h3>
                 </div>
                 <div id="projectKpis" class="kpi-strip"></div>
                 <div id="projectReadability" class="readability-grid mt-8"></div>
@@ -495,6 +482,19 @@
                   </div>
                   <div id="workItemEditor" class="ado-editor hidden" aria-label="Editor de tarefa"></div>
                 </div>
+              </section>
+            </div>
+
+            <!-- TAB: DECISÕES -->
+            <div class="tab-panel hidden" data-panel="decisoes">
+              <section class="panel section-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <h3 class="panel-heading"><span class="section-badge badge-gray">DECISÕES</span> O que mudou, e o que isso pôs em causa</h3>
+                    <p class="muted-text">Não é para ler sempre — é para ler quando alguma coisa se mexeu. O contador no menu diz quando.</p>
+                  </div>
+                </div>
+                <div id="decisionsPanel" class="mt-12"></div>
               </section>
             </div>
 
@@ -997,7 +997,7 @@
       </main>
 
       <footer class="footer-note">
-        <span>Projects Platform · YourLab</span>
+        <span>YourLab</span>
         <span>Requisitos · Progresso · Propostas</span>
       </footer>
     </section>
@@ -1451,18 +1451,6 @@
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script src="/projects/static/camada0-ui.js?v=1" defer></script>
   <script src="/projects/static/plano-ui.js?v=1" defer></script>
-  <script>
-    (function () {
-      var tabs = document.getElementById('sectionTabs');
-      if (!tabs) return;
-      tabs.addEventListener('click', function (e) {
-        var btn = e.target.closest('.tab-btn');
-        if (!btn) return;
-        if (window.switchToTab) {
-          window.switchToTab(btn.dataset.tab);
-        }
-      });
-    })();
-  </script>
+  <script src="/projects/static/decisions-ui.js?v=1" defer></script>
 </body>
 </html>

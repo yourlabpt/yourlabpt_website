@@ -1,5 +1,6 @@
 /** Tasks — canonical project work model. */
 const crypto = require('crypto');
+const { ROLE_MODEL_PROFILES } = require('./execution-plans');
 
 const WORK_ITEMS_SCHEMA_VERSION = 5;
 const UNCLASSIFIED_STAGE_ID = 'unclassified';
@@ -269,17 +270,12 @@ function normalizeExecutionSettings(raw) {
       maxNoProgressIterations: Math.max(1, Math.min(20, Number(src.goalPolicy?.maxNoProgressIterations) || 3)),
       stopWhenAcceptanceSatisfied: src.goalPolicy?.stopWhenAcceptanceSatisfied !== false,
     },
+    // The same table as `ROLE_MODEL_PROFILES`, and it used to be written out again
+    // here — two copies of one mapping, free to drift apart. Imported now, so routing
+    // and the dispatch payload can only ever say the same thing.
     providerRouting: src.providerRouting && typeof src.providerRouting === 'object'
       ? src.providerRouting
-      : {
-        classifier: 'small',
-        goalSetter: 'medium',
-        planner: 'medium',
-        requirements: 'medium',
-        researcher: 'high',
-        coder: 'high',
-        reviewer: 'max',
-      },
+      : { ...ROLE_MODEL_PROFILES },
     planningWaveSize,
     maxTotalSteps: Math.max(0, Number(src.maxTotalSteps) || 0),
     goalCheckInterval: Math.max(1, Math.min(10, Number(src.goalCheckInterval) || 3)),
