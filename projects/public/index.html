@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
   <link rel="stylesheet" href="/projects/static/styles.css?v=105" />
-  <link rel="stylesheet" href="/projects/static/ios.css?v=1" />
+  <link rel="stylesheet" href="/projects/static/ios.css?v=2" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -50,6 +50,14 @@
           <div class="topbar-brand-text">
             <span class="topbar-brand-name">YourLab</span>
           </div>
+        </div>
+        <!-- Phone only: the way back, and the page's name when it has no large title. -->
+        <div class="topbar-mobile">
+          <button type="button" class="ios-back" id="mobileBackBtn" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="mobileBackLabel"></span>
+          </button>
+          <span class="topbar-mobile-title" id="mobileNavTitle"></span>
         </div>
         <div class="topbar-center">
           <h1 class="topbar-project-name hidden" id="currentProjectTitle"></h1>
@@ -104,23 +112,39 @@
 
             <div id="phaseContextBar" class="phase-context-bar hidden" aria-live="polite"></div>
 
-            <!-- TAB: PROJETOS (lista + criar) -->
+            <!-- TAB: HOJE — o que espera por si, em todos os projectos. Preenchido por resume-ui.js. -->
+            <div class="tab-panel hidden" data-panel="hoje">
+              <div id="hojePanel" class="ios-page"></div>
+            </div>
+
+            <!-- TAB: PROJETOS -->
             <div class="tab-panel" data-panel="projetos">
-              <!-- O que aconteceu enquanto esteve fora. Preenchido por resume-ui.js. -->
-              <section class="panel section-panel resume-panel" id="resumePanel" hidden></section>
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-blue">PROJ</span> Os seus projectos</h3>
-                  <button class="btn tiny" id="refreshProjectsBtn" title="Atualizar lista">↺</button>
-                </div>
-                <div id="projectsPageGrid" class="projects-page-grid mt-12"></div>
-                <div id="projectList" class="hidden" aria-hidden="true"></div>
-              </section>
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-green">+</span> Novo projecto</h3>
-                </div>
-                <form id="createProjectForm" class="form-grid compact projects-create-form">
+              <div class="ios-page">
+                <header class="ios-page-head">
+                  <div>
+                    <h1 class="ios-large-title">Projetos</h1>
+                    <p class="ios-subtitle" id="projectsSubtitle"></p>
+                  </div>
+                  <div class="ios-page-actions">
+                    <button type="button" class="btn ios-round" id="refreshProjectsBtn" title="Atualizar lista" aria-label="Atualizar lista"><svg class="ios-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg></button>
+                    <button type="button" class="btn primary" id="newProjectToggleBtn" data-writes-only aria-controls="newProjectSection" aria-expanded="false">Novo projecto</button>
+                  </div>
+                </header>
+                <!-- O que espera por si, como cartões. Preenchido por resume-ui.js. -->
+                <section class="ios-section" id="resumePanel" hidden></section>
+                <section class="ios-section">
+                  <div class="ios-section-head">
+                    <h2 class="ios-section-title">Todos os projectos</h2>
+                    <div id="projectsFilter" class="ios-segmented" role="tablist" aria-label="Filtrar projectos"></div>
+                  </div>
+                  <div id="projectsPageGrid" class="ios-list"></div>
+                  <div id="projectList" class="hidden" aria-hidden="true"></div>
+                </section>
+                <section class="panel section-panel" id="newProjectSection" hidden>
+                  <div class="panel-title-row">
+                    <h3 class="panel-heading">Novo projecto</h3>
+                  </div>
+                  <form id="createProjectForm" class="form-grid compact projects-create-form">
                   <label class="full">Nome do projecto<input id="newProjectName" required placeholder="Como quer chamar a esta ideia?" /></label>
                   <label class="full">A sua ideia
                     <textarea id="newProjectInitialIdea" rows="6" placeholder="Conte-nos o que tem em mente, mesmo que ainda esteja incompleto. Pode escrever livremente — ajudamos a organizar depois."></textarea>
@@ -133,20 +157,22 @@
                   </details>
                   <button class="btn primary" type="submit">Criar projecto</button>
                 </form>
-              </section>
+                </section>
+              </div>
             </div>
 
-            <!-- TAB: PROJETO (visão do projecto seleccionado) -->
+            <!-- TAB: PROJETO — Resumo, a casa do projecto. Preenchido por project-home-ui.js. -->
             <div class="tab-panel hidden" data-panel="projeto">
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-blue">KPIs</span> Resumo do Projeto</h3>
-                </div>
-                <div id="projectKpis" class="kpi-strip"></div>
-                <div id="projectReadability" class="readability-grid mt-8"></div>
-                <div id="projectAgentCockpit" class="project-agent-cockpit hidden" aria-live="polite"></div>
-                <div id="projectOverview" class="project-overview mt-12"></div>
-              </section>
+              <div id="projectHome" class="ios-page ios-home"></div>
+              <details class="ios-disclosure">
+                <summary>Indicadores e riscos do projecto</summary>
+                <section class="panel section-panel">
+                  <div id="projectKpis" class="kpi-strip"></div>
+                  <div id="projectReadability" class="readability-grid mt-8"></div>
+                  <div id="projectAgentCockpit" class="project-agent-cockpit hidden" aria-live="polite"></div>
+                  <div id="projectOverview" class="project-overview mt-12"></div>
+                </section>
+              </details>
             </div>
 
             <!-- TAB: DOCUMENTOS -->
@@ -996,6 +1022,14 @@
         </section><!-- /content -->
       </main>
 
+      <!-- Phone only: the tab bar. -->
+      <nav class="ios-tab-bar" id="mobileTabBar" aria-label="Navegação">
+        <button type="button" data-mobile-tab="hoje"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h5l1.5 3h5l1.5-3h5"></path><path d="M5.5 5h13l2.5 8v6H3v-6z"></path></svg><span>Hoje</span></button>
+        <button type="button" data-mobile-tab="projetos"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"></path></svg><span>Projetos</span></button>
+        <button type="button" data-mobile-tab="agentes"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L4 14h6l-1 7 9-11h-6z"></path></svg><span>Agentes</span></button>
+        <button type="button" data-mobile-tab="definicoes"><svg class="ios-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.4 2.5h4l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5z"></path></svg><span>Definições</span></button>
+      </nav>
+
       <footer class="footer-note">
         <span>YourLab</span>
         <span>Requisitos · Progresso · Propostas</span>
@@ -1432,7 +1466,7 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/app.js?v=54" defer></script>
+  <script src="/projects/static/app.js?v=55" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
   <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
@@ -1441,13 +1475,14 @@
   <script src="/projects/static/delivery-os-ui.js?v=78" defer></script>
   <script src="/projects/static/engineering-state-ui.js?v=3" defer></script>
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
-  <script src="/projects/static/work-items-ui.js?v=34" defer></script>
+  <script src="/projects/static/work-items-ui.js?v=35" defer></script>
   <script src="/projects/static/agents-admin-ui.js?v=7" defer></script>
   <script src="/projects/static/platform-settings-ui.js?v=2" defer></script>
   <script src="/projects/static/project-repository-ui.js?v=4" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=11" defer></script>
-  <script src="/projects/static/resume-ui.js?v=1" defer></script>
+  <script src="/projects/static/resume-ui.js?v=2" defer></script>
+  <script src="/projects/static/project-home-ui.js?v=1" defer></script>
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script src="/projects/static/camada0-ui.js?v=1" defer></script>
   <script src="/projects/static/plano-ui.js?v=1" defer></script>

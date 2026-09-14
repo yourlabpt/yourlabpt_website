@@ -1,12 +1,48 @@
 /**
- * The entry screen. Opening the platform should answer one question before any other:
- * what did the agents do while I was away, and what is waiting on me?
+ * The entry screens: Hoje, and the top of Projetos.
  *
- * So this leads the Projetos page — counts first, then the projects that are actually
- * asking for something, with a single way through to the work.
+ * Opening the platform should answer one question before any other: what did the agents
+ * do while I was away, and what is waiting on me? Hoje is that answer on a page of its
+ * own. Projetos leads with the same waiting items as cards and marks every project row
+ * from the same read, so the two screens can never disagree.
+ *
+ * Also defines `window.IosKit`: the few drawing helpers the iOS screens share (icons,
+ * initials, stage names, the project status badge), so each is defined once.
  */
 (function initResumeUi() {
-  const state = { data: null, loading: false, loadedOnce: false };
+  const state = {
+    data: null,
+    loading: false,
+    loadedAt: 0,
+    filter: 'all',
+    later: new Set(),
+    projects: [],
+    selectedId: null,
+  };
+
+  // A read younger than this is reused when a screen opens; the refresh button forces one.
+  const FRESH_FOR_MS = 60 * 1000;
+
+  const STAGE_LABELS = {
+    idea: 'Ideia',
+    discovery: 'Descoberta',
+    requirements: 'Requisitos',
+    architecture: 'Arquitectura',
+    roadmap: 'Roadmap',
+    implementation: 'Implementação',
+    validation: 'Validação',
+    delivery: 'Entrega',
+    operations: 'Operação',
+  };
+
+  const ICONS = {
+    image: 'M4 5h16v14H4z|M4 16l5-5 4 4 3-3 4 4|M15 9h.01',
+    code: 'M8 7l-5 5 5 5|M16 7l5 5-5 5',
+    check: 'M5 12.5l4.5 4.5L19 7',
+    alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z|M12 8v5|M12 16h.01',
+    chevron: 'M9.5 6l6 6-6 6',
+    refresh: 'M20 11a8 8 0 1 0-2.3 5.7|M20 5v6h-6',
+  };
 
   function $(id) { return document.getElementById(id); }
 
@@ -18,8 +54,9 @@
       .replace(/"/g, '&quot;');
   }
 
-  function isPartnerOrAdmin() {
-    return window.isSuperAdmin?.() === true || window.isPartnerEditor?.() === true;
+  function icon(name, size = 18, extraClass = '') {
+    const paths = (ICONS[name] || '').split('|').map((d) => `<path d="${d}"></path>`).join('');
+    return `<svg class="ios-icon ${extraClass}" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
   }
 
   function ago(iso) {
@@ -30,130 +67,345 @@
     if (minutes < 1) return 'agora mesmo';
     if (minutes < 60) return `há ${minutes} min`;
     const hours = Math.round(minutes / 60);
-    if (hours < 24) return `há ${hours}h`;
+    if (hours < 24) return `há ${hours} h`;
     const days = Math.round(hours / 24);
     return `há ${days} dia${days === 1 ? '' : 's'}`;
   }
 
-  /** The headline numbers. A zero is still worth showing: it means "nothing pending". */
-  function renderTotals(totals) {
-    const tiles = [
-      ['awaitingReview', 'A aguardar a sua revisão', 'tone-review'],
-      ['running', 'A correr agora', 'tone-running'],
-      ['failed', 'Parado ou falhado', 'tone-failed'],
-    ];
-    return `<div class="resume-totals">${tiles.map(([key, label, tone]) => `
-      <div class="resume-tile ${tone}${totals[key] ? '' : ' is-zero'}">
-        <span class="resume-tile-count">${totals[key] || 0}</span>
-        <span class="resume-tile-label">${label}</span>
-      </div>`).join('')}</div>`;
+  function initials(name) {
+    const words = String(name || '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+    return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || '·';
   }
 
-  /** One line per project, saying what it wants — not what it is. */
-  function renderProjectRow(entry) {
-    const chips = [];
-    if (entry.awaitingReview) chips.push(`<span class="section-badge badge-amber">${entry.awaitingReview} a rever</span>`);
-    if (entry.running) chips.push('<span class="section-badge badge-green">a correr</span>');
-    if (entry.failed) chips.push(`<span class="section-badge badge-red">${entry.failed} parado</span>`);
-    if (!entry.hasRepository) chips.push('<span class="section-badge badge-gray">sem repositório</span>');
+  function stageLabel(stageId) {
+    return STAGE_LABELS[stageId] || stageId || '';
+  }
 
-    // The most useful sentence is whatever the project is currently stuck on.
-    let detail = '';
-    if (entry.execucao?.question) {
-      detail = `Pergunta de <code>${escapeHtml(entry.execucao.question.personaId)}</code>: ${escapeHtml(entry.execucao.question.text)}`;
-    } else if (entry.execucao?.haltReason) {
-      detail = escapeHtml(entry.execucao.haltReason);
-    } else if (entry.execucao?.goal) {
-      detail = `${escapeHtml(entry.execucao.goal)}${entry.execucao.currentPersonaId ? ` — <code>${escapeHtml(entry.execucao.currentPersonaId)}</code>` : ''}`;
-    } else if (!entry.hasRepository) {
-      detail = 'Sem repositório ligado, não pode executar.';
+  function stageBar(stage) {
+    if (!stage || stage.index < 0 || !stage.total) return '';
+    const segments = Array.from({ length: stage.total }, (_, index) => {
+      const cls = index < stage.index ? 'is-done' : index === stage.index ? 'is-current' : '';
+      return `<span class="${cls}"></span>`;
+    }).join('');
+    return `<span class="ios-stagebar" aria-hidden="true">${segments}</span>`;
+  }
+
+  function stageText(stage) {
+    if (!stage || stage.index < 0) return '';
+    return `${stageLabel(stage.id)} · ${stage.index + 1} de ${stage.total}`;
+  }
+
+  function badge(tone, text) {
+    return `<span class="ios-badge badge-${tone}">${escapeHtml(text)}</span>`;
+  }
+
+  /** What a project row says about itself — the action it needs, or that it needs none. */
+  function projectStatusBadge(project, entry) {
+    if (project?.status === 'on_hold') return badge('gray', 'Em pausa');
+    if (!entry) return '';
+    if (entry.awaitingReview) return badge('amber', 'À espera de si');
+    if (entry.failed) return badge('red', 'Falhou');
+    if (entry.running) return badge('green', 'Em curso');
+    return badge('gray', 'Sem execução');
+  }
+
+  /** A question is named by what answering it does, and opens where it is answered. */
+  function describeQuestion(question) {
+    const about = `${question?.artifact || ''}`;
+    if (question?.personaId === 'ux' || /mockup/i.test(about)) {
+      return { title: 'Aprovar mockup', action: 'Ver mockup', icon: 'image', tab: 'camada0' };
     }
-
-    return `
-      <li class="resume-row">
-        <div class="resume-row-main">
-          <button type="button" class="btn link resume-open" data-project-id="${escapeHtml(entry.projectId)}">${escapeHtml(entry.name)}</button>
-          <span class="muted-text">${escapeHtml(entry.clientName || '—')}${entry.lastActivityAt ? ` · ${escapeHtml(ago(entry.lastActivityAt))}` : ''}</span>
-          ${detail ? `<p class="muted-text resume-row-detail">${detail}</p>` : ''}
-        </div>
-        <div class="resume-row-chips">${chips.join(' ')}</div>
-      </li>`;
+    if (question?.personaId === 'developer' || /code|commit/i.test(about)) {
+      return { title: 'Rever antes do commit', action: 'Ver alterações', icon: 'code', tab: 'tarefas' };
+    }
+    return { title: 'Responder a uma pergunta', action: 'Responder', icon: 'check', tab: 'tarefas' };
   }
 
-  function paint() {
-    const host = $('resumePanel');
+  function canSee() {
+    return window.isSuperAdmin?.() === true || window.isPartnerEditor?.() === true;
+  }
+
+  function entries() {
+    return state.data?.projects || [];
+  }
+
+  function entryFor(projectId) {
+    return entries().find((entry) => entry.projectId === projectId) || null;
+  }
+
+  /* ------------------------------------------------------------ what the screens list */
+
+  function waitingItems() {
+    const out = [];
+    for (const entry of entries()) {
+      const question = entry.execucao?.question;
+      if (question) {
+        out.push({
+          key: `q:${entry.execucao.id}`,
+          projectId: entry.projectId,
+          projectName: entry.name,
+          who: question.personaLabel || question.personaId,
+          when: question.raisedAt,
+          body: question.text,
+          ...describeQuestion(question),
+        });
+      }
+      for (const item of entry.attention || []) {
+        if (item.tone !== 'review') continue;
+        out.push({
+          key: `t:${item.id}`,
+          projectId: entry.projectId,
+          projectName: entry.name,
+          title: 'Rever resultado',
+          action: 'Ver resultado',
+          icon: 'check',
+          tab: 'tarefas',
+          who: item.label,
+          when: item.updatedAt,
+          body: item.title,
+        });
+      }
+    }
+    return out.sort((a, b) => String(b.when).localeCompare(String(a.when)));
+  }
+
+  function runningItems() {
+    return entries()
+      .filter((entry) => entry.execucao?.status === 'running')
+      .map((entry) => ({
+        projectId: entry.projectId,
+        lead: `<span class="ios-tile">${escapeHtml(initials(entry.name))}</span>`,
+        title: entry.name,
+        sub: [entry.execucao.currentPersonaLabel || 'A preparar o próximo passo', entry.execucao.goal].filter(Boolean).join(' · '),
+        tab: 'projeto',
+      }));
+  }
+
+  function failedItems() {
+    const out = [];
+    for (const entry of entries()) {
+      const execucao = entry.execucao;
+      if (execucao && (execucao.status === 'halted' || execucao.status === 'paused_budget')) {
+        out.push({
+          projectId: entry.projectId,
+          title: execucao.status === 'paused_budget' ? 'Execução sem orçamento' : 'Execução parada',
+          sub: [entry.name, execucao.haltReason].filter(Boolean).join(' · '),
+          tab: 'projeto',
+        });
+      }
+      for (const item of entry.attention || []) {
+        if (item.tone !== 'failed') continue;
+        out.push({ projectId: entry.projectId, title: item.title, sub: `${entry.name} · ${item.label}`, meta: ago(item.updatedAt), tab: 'tarefas' });
+      }
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------ drawing */
+
+  function row({ lead = '', title, sub = '', meta = '', projectId, tab }) {
+    return `
+      <button type="button" class="ios-row" data-open-project="${escapeHtml(projectId)}" data-open-tab="${escapeHtml(tab)}">
+        ${lead}
+        <span class="ios-row-main">
+          <span class="ios-row-title">${escapeHtml(title)}</span>
+          ${sub ? `<span class="ios-row-sub">${escapeHtml(sub)}</span>` : ''}
+        </span>
+        ${meta ? `<span class="ios-row-meta">${escapeHtml(meta)}</span>` : ''}
+        ${icon('chevron', 14, 'ios-chevron')}
+      </button>`;
+  }
+
+  function staticRow(text) {
+    return `<div class="ios-row is-static"><span class="ios-row-main"><span class="ios-row-sub">${escapeHtml(text)}</span></span></div>`;
+  }
+
+  function group(label, inner) {
+    return `<section class="ios-section"><h2 class="ios-group-label">${escapeHtml(label)}</h2><div class="ios-list">${inner}</div></section>`;
+  }
+
+  function paintHoje() {
+    const host = $('hojePanel');
     if (!host) return;
 
-    // Clients get the project list as before; this screen is about agent work.
-    if (!isPartnerOrAdmin()) { host.hidden = true; return; }
-    host.hidden = false;
+    const observed = state.data ? `${state.data.totals.projects} projecto(s) · lido ${ago(state.data.observedAt) || 'agora mesmo'}` : '';
+    const head = `
+      <header class="ios-page-head">
+        <div>
+          <h1 class="ios-large-title">Hoje</h1>
+          ${observed ? `<p class="ios-subtitle">${escapeHtml(observed)}</p>` : ''}
+        </div>
+        <div class="ios-page-actions">
+          <button type="button" class="btn ios-round" data-resume-refresh title="Voltar a ler" aria-label="Voltar a ler">${icon('refresh')}</button>
+        </div>
+      </header>`;
 
-    if (state.loading && !state.data) {
-      host.innerHTML = '<p class="muted-text">A ver o que aconteceu…</p>';
+    if (!canSee()) {
+      host.innerHTML = `${head}${group('À espera de si', staticRow('Esta página é para quem acompanha as execuções. Os seus projectos estão em Projetos.'))}`;
       return;
     }
     if (!state.data) {
-      host.innerHTML = '<p class="muted-text">Não foi possível ler o resumo.</p>';
+      host.innerHTML = `${head}${group('À espera de si', staticRow(state.loading ? 'A ver o que aconteceu…' : 'Não foi possível ler o que aconteceu. Tente de novo com o botão acima.'))}`;
       return;
     }
 
-    const { totals, projects } = state.data;
-    const needsYou = projects.filter((entry) => entry.awaitingReview || entry.failed || entry.running);
+    const waiting = waitingItems();
+    const running = runningItems();
+    const failed = failedItems();
+
+    const waitingRows = waiting.map((item) => row({
+      lead: `<span class="ios-tile">${icon(item.icon)}</span>`,
+      title: item.title,
+      sub: `${item.projectName} · ${item.body || item.who || ''}`,
+      meta: ago(item.when),
+      projectId: item.projectId,
+      tab: item.tab,
+    })).join('');
 
     host.innerHTML = `
-      <div class="panel-title-row">
-        <div>
-          <h3 class="panel-heading">Enquanto esteve fora</h3>
-          <p class="muted-text">${totals.projects} projecto(s) · lido ${escapeHtml(ago(state.data.observedAt) || 'agora mesmo')}</p>
+      ${head}
+      ${group('À espera de si', waitingRows || staticRow('Nada à espera de si.'))}
+      ${running.length ? group('Em curso', running.map(row).join('')) : ''}
+      ${failed.length ? group('Falhou', failed.map((item) => row({
+        ...item,
+        lead: `<span class="ios-tile is-danger">${icon('alert')}</span>`,
+      })).join('')) : ''}`;
+  }
+
+  function paintProjects() {
+    const list = Array.isArray(state.projects) ? state.projects : [];
+
+    const subtitle = $('projectsSubtitle');
+    if (subtitle) {
+      const paused = list.filter((project) => project.status === 'on_hold').length;
+      const active = list.length - paused;
+      subtitle.textContent = list.length
+        ? `${active} activo${active === 1 ? '' : 's'}${paused ? ` · ${paused} em pausa` : ''}`
+        : '';
+    }
+
+    const panel = $('resumePanel');
+    if (panel) {
+      const cards = canSee() ? waitingItems().filter((item) => !state.later.has(item.key)).slice(0, 4) : [];
+      panel.hidden = !cards.length;
+      panel.innerHTML = cards.length ? `
+        <div class="ios-section-head">
+          <h2 class="ios-section-title">À espera de si <span class="ios-count">${cards.length}</span></h2>
         </div>
-        <button type="button" class="btn tiny ghost" id="resumeRefreshBtn" title="Voltar a ler">↺</button>
-      </div>
-      ${renderTotals(totals)}
-      ${needsYou.length
-        ? `<ul class="resume-list mt-12">${needsYou.map(renderProjectRow).join('')}</ul>
-           ${totals.awaitingReview
-             ? '<div class="resume-cta mt-12"><button type="button" class="btn primary" id="resumeReviewBtn">Rever o que está à espera</button></div>'
-             : ''}`
-        : '<p class="muted-text mt-12">Nada à espera de si. Nenhuma execução a correr.</p>'}`;
+        <div class="ios-cards">${cards.map((item) => `
+          <article class="ios-card">
+            <div class="ios-card-head">
+              <span class="ios-tile is-large">${icon(item.icon, 20)}</span>
+              <span class="ios-row-main">
+                <span class="ios-card-title">${escapeHtml(item.title)}</span>
+                <span class="ios-row-sub">${escapeHtml([item.projectName, item.who].filter(Boolean).join(' · '))}</span>
+              </span>
+              <span class="ios-row-meta">${escapeHtml(ago(item.when))}</span>
+            </div>
+            ${item.body ? `<p class="ios-card-body">${escapeHtml(item.body)}</p>` : ''}
+            <div class="ios-card-actions">
+              <button type="button" class="btn primary" data-open-project="${escapeHtml(item.projectId)}" data-open-tab="${escapeHtml(item.tab)}">${escapeHtml(item.action)}</button>
+              <button type="button" class="btn" data-resume-later="${escapeHtml(item.key)}">Mais tarde</button>
+            </div>
+          </article>`).join('')}
+        </div>` : '';
+    }
+
+    const filter = $('projectsFilter');
+    if (filter) {
+      const options = [['all', 'Todos'], ['active', 'Activos'], ['paused', 'Em pausa']];
+      filter.innerHTML = options.map(([id, label]) => `
+        <button type="button" role="tab" class="ios-segment ${state.filter === id ? 'is-active' : ''}" aria-selected="${state.filter === id}" data-projects-filter="${id}">${label}</button>`).join('');
+    }
+
+    const grid = $('projectsPageGrid');
+    if (!grid) return;
+    if (!list.length) {
+      grid.innerHTML = staticRow('Ainda não há projectos. Use «Novo projecto» para criar o primeiro.');
+      return;
+    }
+    const shown = list.filter((project) => {
+      if (state.filter === 'paused') return project.status === 'on_hold';
+      if (state.filter === 'active') return project.status !== 'on_hold';
+      return true;
+    });
+    grid.innerHTML = shown.map((project) => {
+      const entry = entryFor(project.id);
+      const stage = entry?.stage;
+      return `
+        <button type="button" class="ios-row ios-project-row ${state.selectedId === project.id ? 'is-selected' : ''}" data-project-id="${escapeHtml(project.id)}">
+          <span class="ios-tile is-large">${escapeHtml(initials(project.name))}</span>
+          <span class="ios-row-main">
+            <span class="ios-row-title">${escapeHtml(project.name)}</span>
+            <span class="ios-row-sub">${escapeHtml(project.clientName || '—')}</span>
+            ${stageText(stage) ? `<span class="ios-row-sub ios-mobile-only">${escapeHtml(stageText(stage))}</span>` : ''}
+          </span>
+          <span class="ios-project-stage">${stageBar(stage)}${stageText(stage) ? `<span class="ios-row-sub">${escapeHtml(stageText(stage))}</span>` : ''}</span>
+          <span class="ios-project-status">${projectStatusBadge(project, entry)}</span>
+          ${icon('chevron', 14, 'ios-chevron')}
+        </button>`;
+    }).join('') || staticRow('Nenhum projecto neste filtro.');
+  }
+
+  function paintAll() {
+    paintHoje();
+    paintProjects();
   }
 
   async function load({ force = false } = {}) {
-    if (!isPartnerOrAdmin()) { paint(); return; }
+    if (!canSee()) { paintAll(); return; }
     if (state.loading) return;
-    if (state.loadedOnce && !force) { paint(); return; }
+    if (state.data && !force && Date.now() - state.loadedAt < FRESH_FOR_MS) { paintAll(); return; }
     state.loading = true;
-    paint();
+    paintAll();
     try {
       state.data = await window.apiRequest('/resume');
-      state.loadedOnce = true;
+      state.loadedAt = Date.now();
     } catch (error) {
-      state.data = null;
       window.showToast?.(error.message, 'error');
     } finally {
       state.loading = false;
-      paint();
+      paintAll();
+      window.ProjectHomeUI?.refreshAttention?.();
     }
   }
 
-  /**
-   * The point of the screen is to get to the work. Opening the project and landing on
-   * Tarefas is the whole path — one click, no intermediate stop.
-   */
   function openProject(projectId, tab) {
+    if (!projectId) return;
+    if (window.state?.selectedProject?.id === projectId) {
+      window.switchToTab?.(tab);
+      return;
+    }
     window.loadProjectById?.(projectId, { tab })
       ?.catch?.((error) => window.showToast?.(error.message, 'error'));
   }
 
   document.addEventListener('click', (event) => {
-    const open = event.target?.closest?.('.resume-open');
-    if (open) { openProject(open.dataset.projectId, 'deliveryos'); return; }
-    const id = event.target?.id;
-    if (id === 'resumeRefreshBtn') load({ force: true });
-    else if (id === 'resumeReviewBtn') {
-      const first = (state.data?.projects || []).find((entry) => entry.awaitingReview);
-      if (first) openProject(first.projectId, 'tarefas');
-    }
+    const target = event.target;
+    const open = target?.closest?.('[data-open-project]');
+    if (open) { openProject(open.dataset.openProject, open.dataset.openTab || 'projeto'); return; }
+    if (target?.closest?.('[data-resume-refresh]')) { load({ force: true }); return; }
+    const later = target?.closest?.('[data-resume-later]');
+    if (later) { state.later.add(later.dataset.resumeLater); paintProjects(); return; }
+    const filter = target?.closest?.('[data-projects-filter]');
+    if (filter) { state.filter = filter.dataset.projectsFilter; paintProjects(); }
   });
 
-  window.ResumeUI = { render: () => load(), refresh: () => load({ force: true }) };
+  window.IosKit = {
+    icon, escapeHtml, ago, initials, stageLabel, stageBar, stageText, badge, projectStatusBadge, describeQuestion,
+  };
+
+  window.ResumeUI = {
+    render: () => load(),
+    refresh: () => load({ force: true }),
+    load,
+    entryFor,
+    renderHoje: () => { paintHoje(); load(); },
+    renderProjects: (projects, selectedId) => {
+      state.projects = projects || [];
+      state.selectedId = selectedId || null;
+      paintProjects();
+      load();
+    },
+  };
 })();

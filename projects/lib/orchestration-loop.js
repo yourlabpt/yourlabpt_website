@@ -251,6 +251,28 @@ function pendingUnitsFor(project, persona) {
 }
 
 /**
+ * The personas an Execução runs, in order.
+ *
+ * A levantamento runs a shorter chain in a declared order. A refinamento's order is not
+ * declared at all: it is derived from what the change actually touches, so only the
+ * personas that must reconcile come up — the rest never enter the list.
+ *
+ * Shared by the decision below and by the screen that draws the chain, so what a person
+ * sees as the next steps is exactly what will run.
+ */
+function personaSequence(project, execucao, overrides = {}) {
+  const enabled = agentPersonas.listPersonas(overrides).filter((persona) => persona.enabled);
+  const plan = execucao?.kind === 'refinamento'
+    ? changePropagation.reconcilePlan(project?.productType, execucao.targetArtifact)
+    : null;
+  const sequence = plan ? plan.map((step) => step.personaId) : PERSONA_SEQUENCE_BY_KIND[execucao?.kind];
+  const personas = sequence
+    ? sequence.map((id) => enabled.find((persona) => persona.id === id)).filter(Boolean)
+    : enabled;
+  return { plan, personas };
+}
+
+/**
  * Decides the next move for a project's active Execução.
  *
  * Returns one of:
@@ -265,20 +287,10 @@ function decideNext(project, options = {}) {
   const now = options.now ?? Date.now();
   const execucao = activeExecucao(project);
   const overrides = options.personaOverrides || {};
-  const enabled = agentPersonas.listPersonas(overrides).filter((persona) => persona.enabled);
 
   if (!execucao) return { action: 'idle', execucao: null };
 
-  // A levantamento runs a shorter chain in a declared order. A refinamento's order is
-  // not declared at all: it is derived from what the change actually touches, so only
-  // the personas that must reconcile come up — the rest never enter the list.
-  const plan = execucao.kind === 'refinamento'
-    ? changePropagation.reconcilePlan(project?.productType, execucao.targetArtifact)
-    : null;
-  const sequence = plan ? plan.map((step) => step.personaId) : PERSONA_SEQUENCE_BY_KIND[execucao.kind];
-  const personas = sequence
-    ? sequence.map((id) => enabled.find((persona) => persona.id === id)).filter(Boolean)
-    : enabled;
+  const { plan, personas } = personaSequence(project, execucao, overrides);
 
   if (plan && !plan.length) {
     return {
@@ -621,6 +633,7 @@ function stopChain(project, status = 'abandoned', now = Date.now()) {
 }
 
 module.exports = {
+  personaSequence,
   EXECUCAO_KINDS,
   STALE_RERUN_LIMIT,
   personaInputFingerprint,

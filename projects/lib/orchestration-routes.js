@@ -136,6 +136,11 @@ function publicState(project, decision, now = Date.now(), platformSettings = nul
       remainingUnits: decision.remainingUnits || 0,
     } : null,
     launch: launchPreview(project, decision, platformSettings),
+    // The personas this Execução runs, in order — drawn as steps on the project's home.
+    chain: execucao
+      ? loop.personaSequence(project, execucao, platformSettings?.personas || {}).personas
+        .map((persona) => ({ id: persona.id, label: persona.label }))
+      : [],
   };
 }
 

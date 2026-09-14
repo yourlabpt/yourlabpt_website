@@ -24,23 +24,31 @@ const NAV_ICON_PATHS = {
   checklist: 'M9 6h11M9 12h11M9 18h6M4 6h.01M4 12h.01M4 18h.01',
   settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1l.8-4h-7l.8 4a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a1.7 1.7 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.8 4h7l.8-4a8 8 0 0 0 1.7-1l2.4 1 2-3.5z',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
+  tray: 'M3 13h5l1.5 3h5l1.5-3h5M5.5 5h13l2.5 8v6H3v-6z',
+  branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
+  send: 'M21 3L10 14M21 3l-7 18-4-7-7-4z',
 };
 
 const NAV_GROUPS = [
   {
+    // What is not about one project: what waits on you everywhere, every project, and
+    // the agents that do the work.
     id: 'main',
-    items: [{ id: 'projetos', label: 'Projetos', icon: 'folder' }],
+    items: [
+      { id: 'hoje', label: 'Hoje', icon: 'tray', partnerOnly: true },
+      { id: 'projetos', label: 'Projetos', icon: 'folder' },
+      { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
+    ],
   },
   {
-    // The work, in the order it actually happens: refine the intention, plan it, cut it
-    // into tasks, review what came back, see what changed, show the client. Everything
-    // else is real but occasional, and lives behind «Mais».
+    // One project's work, in the order it actually happens. Resumo opens the project:
+    // where it stands, what is running, what failed. Then refine the intention, plan it,
+    // cut it into tasks, review what came back, show the client. Everything else is real
+    // but occasional, and lives behind «Mais».
     id: 'work',
     label: 'Trabalho',
     requiresProject: true,
     items: [
-      // Resumo is the project's home: where it stands, what is running, what failed.
-      // It opens the project, so it heads the list rather than hiding behind «Mais».
       { id: 'projeto', label: 'Resumo', icon: 'chart' },
       // Camada 0 comes first because it comes first: the intention is refined against
       // something you can look at before any of the rest has anything to work from.
@@ -49,8 +57,8 @@ const NAV_GROUPS = [
       { id: 'plano', label: 'Plano', icon: 'plan' },
       { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
       // Carries a count when something has moved since this device last looked.
-      { id: 'decisoes', label: 'Decisões', icon: 'notes' },
-      { id: 'deliveryos', label: 'Entrega', icon: 'timeline' },
+      { id: 'decisoes', label: 'Decisões', icon: 'branch' },
+      { id: 'deliveryos', label: 'Entrega', icon: 'send' },
     ],
   },
   {
@@ -71,11 +79,11 @@ const NAV_GROUPS = [
     ],
   },
   {
+    // Pinned to the foot of the sidebar; on a phone, behind the Definições tab.
     id: 'system',
     items: [
-      { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
+      { id: 'definicoes', label: 'Definições do projecto', icon: 'settings', requiresSelectedProject: true },
       { id: 'definicoesPlataforma', label: 'Definições da plataforma', icon: 'settings', superAdminOnly: true },
-      { id: 'definicoes', label: 'Definições do projecto', icon: 'settings' },
     ],
   },
 ];
@@ -103,7 +111,7 @@ function readInitialNavigationState() {
   }
   const params = new URLSearchParams(window.location.search);
   const taskPath = readTaskPath();
-  const requestedTab = taskPath ? 'tarefas' : (params.get('tab') || localStorage.getItem(LAST_TAB_KEY) || saved.tab || 'projetos');
+  const requestedTab = taskPath ? 'tarefas' : (params.get('tab') || localStorage.getItem(LAST_TAB_KEY) || saved.tab || 'hoje');
   return {
     projectId: taskPath?.projectId || params.get('project') || params.get('projectId') || localStorage.getItem(LAST_PROJECT_KEY) || saved.projectId || null,
     tab: VALID_NAV_TABS.has(requestedTab) ? requestedTab : 'projetos',
@@ -1209,41 +1217,9 @@ function renderProjects() {
 }
 
 function renderProjectsPage() {
-  const grid = els.projectsPageGrid;
-  if (!grid) return;
-  // The resume leads this page, so it renders from the same entry point rather than
-  // depending on which route happened to bring the user here.
-  window.ResumeUI?.render?.();
-  const selected = state.selectedProjectId;
-
-  if (!state.projects.length) {
-    grid.innerHTML = `
-      <div class="projects-empty read-card">
-        <h4>Ainda não há projectos</h4>
-        <p class="muted-text">Use o formulário abaixo para criar o primeiro projecto.</p>
-      </div>
-    `;
-    return;
-  }
-
-  grid.innerHTML = state.projects.map((project) => {
-    const active = selected === project.id ? 'is-active' : '';
-    const reqCount = Array.isArray(project.requirements) ? project.requirements.length : (project.requirementCount || 0);
-    return `
-      <article class="project-card ${active}" data-project-id="${escapeHtml(project.id)}">
-        <div class="project-card-head">
-          <h4>${escapeHtml(project.name)}</h4>
-          <span class="project-card-status">${escapeHtml(project.status || 'active')}</span>
-        </div>
-        <p class="project-card-client">${escapeHtml(project.clientName || '—')}</p>
-        <div class="project-card-meta">
-          <span>${reqCount} requisitos</span>
-          <span>${escapeHtml(project.proposalCode || project.id)}</span>
-        </div>
-        <button type="button" class="btn tiny primary project-card-open" data-project-id="${escapeHtml(project.id)}">Abrir projecto</button>
-      </article>
-    `;
-  }).join('');
+  // Drawn by ResumeUI: the rows are marked by the same read that fills Hoje and the
+  // waiting cards above them, so the page cannot contradict itself.
+  window.ResumeUI?.renderProjects?.(state.projects, state.selectedProjectId);
 }
 
 function renderTopbarProject() {
@@ -1264,6 +1240,7 @@ function renderTopbarProject() {
   titleEl.classList.remove('hidden');
   titleEl.classList.add('has-project');
   switchBtn?.classList.remove('hidden');
+  renderMobileChrome();
 }
 
 function renderUserMenuInfo() {
@@ -1289,6 +1266,8 @@ const CLIENT_VISIBLE_TABS = new Set(['projetos', 'deliveryos']);
 
 function isNavItemVisible(item) {
   if (item.superAdminOnly && !isSuperAdmin()) return false;
+  if (item.partnerOnly && !canSeeHoje()) return false;
+  if (item.requiresSelectedProject && !state.selectedProject) return false;
   if (isClientUser() && !CLIENT_VISIBLE_TABS.has(item.id)) return false;
   if (item.id === 'tarefas') {
     if (!state.selectedProject) return false;
@@ -1300,6 +1279,22 @@ function isNavItemVisible(item) {
     return false;
   }
   return true;
+}
+
+/** Hoje reads every project's agent work, which only people who run that work may see. */
+function canSeeHoje() {
+  return isSuperAdmin() || isPartnerEditor();
+}
+
+function defaultLandingTab() {
+  return canSeeHoje() ? 'hoje' : 'projetos';
+}
+
+/** The sections of the open project, as the phone's project home lists them. */
+function getProjectNavGroups() {
+  return NAV_GROUPS
+    .filter((group) => group.requiresProject && isNavGroupVisible(group))
+    .map((group) => ({ id: group.id, label: group.label, items: group.items.filter(isNavItemVisible) }));
 }
 
 function isNavGroupVisible(group) {
@@ -1353,9 +1348,9 @@ async function refreshNavBadges() {
 }
 window.refreshNavBadges = refreshNavBadges;
 
-// The collapsed rail carries exactly the work sequence, nothing else. Adding a seventh
-// icon here is how a quick nav stops being quick.
-const COLLAPSED_QUICK_NAV = ['projetos', 'camada0', 'plano', 'tarefas', 'decisoes', 'deliveryos'];
+// The collapsed rail carries the way in and the work sequence, nothing else. Adding
+// another icon here is how a quick nav stops being quick.
+const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'camada0', 'plano', 'tarefas', 'decisoes', 'deliveryos'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1399,9 +1394,15 @@ function renderNavRail() {
   for (const group of NAV_GROUPS) {
     if (!isNavGroupVisible(group)) continue;
 
-    if (group.label && group.id === 'work') {
-      html += `<div class="nav-rail-group-label">${escapeHtml(group.label)}</div>`;
+    if (group.id === 'work' && state.selectedProject) {
+      // The project's name heads its sections, so it is always clear whose work this is.
+      const project = state.selectedProject;
+      html += `<div class="nav-rail-project" title="${escapeHtml(project.name)}">
+        <span class="ios-tile">${escapeHtml(window.IosKit?.initials?.(project.name) || '')}</span>
+        <span class="nav-rail-project-text"><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(project.clientName || '')}</small></span>
+      </div>`;
     }
+    if (group.id === 'system') html += '<div class="nav-rail-spacer"></div>';
 
     if (group.collapsible && expanded) {
       const open = moreOpen || activeInMore;
@@ -1476,7 +1477,83 @@ function initNavRail() {
     localStorage.setItem(NAV_RAIL_MORE_OPEN_KEY, details.open ? 'true' : 'false');
   });
 
+  document.getElementById('mobileTabBar')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-mobile-tab]');
+    if (!button) return;
+    const tab = button.dataset.mobileTab;
+    if (tab === 'definicoes') {
+      if (state.selectedProject) switchToTab('definicoes');
+      else if (isSuperAdmin()) switchToTab('definicoesPlataforma');
+      else showToast('Abra um projecto para ver as definições dele.', 'error');
+      return;
+    }
+    switchToTab(tab);
+  });
+
+  document.getElementById('mobileBackBtn')?.addEventListener('click', (event) => {
+    const target = event.currentTarget.dataset.backTo;
+    if (target) switchToTab(target);
+  });
+
   window.addEventListener('resize', () => applyNavRailLayout());
+}
+
+// Which phone tab a page lives under. A project's pages all live under Projetos.
+const MOBILE_TAB_FOR_PAGE = { hoje: 'hoje', projetos: 'projetos', agentes: 'agentes', definicoes: 'definicoes', definicoesPlataforma: 'definicoes' };
+
+/**
+ * The phone's chrome: which tab is lit, and what the bar above the page says.
+ *
+ * Hoje, Projetos and a project's Resumo carry their own large title, so the bar only
+ * offers the way back. Every other page is titled in the bar, with the way back to the
+ * page it was reached from.
+ */
+function renderMobileChrome() {
+  const tab = state.activeTab;
+  const project = state.selectedProject;
+  const inProject = Boolean(project) && isNavPageRequiresProject(tab);
+
+  const lit = MOBILE_TAB_FOR_PAGE[tab] || 'projetos';
+  document.querySelectorAll('[data-mobile-tab]').forEach((button) => {
+    const on = button.dataset.mobileTab === lit;
+    button.classList.toggle('is-active', on);
+    button.setAttribute('aria-current', on ? 'page' : 'false');
+  });
+  const hojeTab = document.querySelector('[data-mobile-tab="hoje"]');
+  if (hojeTab) hojeTab.hidden = !canSeeHoje();
+  const agentesTab = document.querySelector('[data-mobile-tab="agentes"]');
+  if (agentesTab) agentesTab.hidden = !isSuperAdmin();
+  const definicoesTab = document.querySelector('[data-mobile-tab="definicoes"]');
+  if (definicoesTab) definicoesTab.hidden = isClientUser();
+
+  let backTo = '';
+  let backLabel = '';
+  let title = '';
+  if (inProject && tab !== 'projeto') {
+    backTo = 'projeto';
+    backLabel = project.name;
+    title = findNavItem(tab)?.label || '';
+  } else if (inProject) {
+    backTo = 'projetos';
+    backLabel = 'Projetos';
+  } else if (tab !== 'hoje' && tab !== 'projetos') {
+    title = findNavItem(tab)?.label || '';
+  }
+  // A client's whole project is Entrega; there is no Resumo to go back to.
+  if (isClientUser() && backTo === 'projeto') {
+    backTo = 'projetos';
+    backLabel = 'Projetos';
+  }
+
+  const back = document.getElementById('mobileBackBtn');
+  if (back) {
+    back.hidden = !backTo;
+    back.dataset.backTo = backTo;
+  }
+  const backText = document.getElementById('mobileBackLabel');
+  if (backText) backText.textContent = backLabel;
+  const titleEl = document.getElementById('mobileNavTitle');
+  if (titleEl) titleEl.textContent = title;
 }
 
 function renderActiveTab(project, tabId) {
@@ -1486,6 +1563,7 @@ function renderActiveTab(project, tabId) {
 
   switch (tab) {
     case 'projeto':
+      window.ProjectHomeUI?.render?.(project);
       renderProjectClarity(project);
       renderProjectOverview(project);
       renderRiskAssumptionView(project);
@@ -2800,7 +2878,7 @@ async function loadProjectById(projectId, options = {}) {
   state.selectedProjectId = projectId;
   persistNavigationState({
     projectId,
-    tab: options.switchTab === false ? state.activeTab : (options.tab || 'deliveryos'),
+    tab: options.switchTab === false ? state.activeTab : (options.tab || 'projeto'),
   });
   // Clear per-project resource state so we fetch fresh heavy data for this project
   delete projectResourceState[`req:${projectId}`];
@@ -2821,9 +2899,9 @@ async function loadProjectById(projectId, options = {}) {
   renderProjects();
   renderProjectDetails({ skipTab: true });
   if (options.switchTab !== false) {
-    // An explicit project selection opens its delivery workspace. URL state is
-    // only used during bootstrap, where loadProjects calls with switchTab=false.
-    const tab = options.tab || 'deliveryos';
+    // An explicit project selection opens its home, Resumo. URL state is only used
+    // during bootstrap, where loadProjects calls with switchTab=false.
+    const tab = options.tab || 'projeto';
     switchToTab(tab);
   } else {
     renderActiveTab(state.selectedProject, state.activeTab);
@@ -2989,6 +3067,7 @@ function navigateToFilteredTab(tabId, filters = {}) {
 
 function switchToTab(tabId) {
   let target = tabId || 'projetos';
+  if (target === 'hoje' && !canSeeHoje()) target = 'projetos';
   if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'deliveryos';
   if (target === 'tarefas') {
     const meta = window.workItemsTabMeta;
@@ -3023,12 +3102,15 @@ function switchToTab(tabId) {
 
   els.noProject?.classList.toggle('hidden', state.selectedProject || activeId !== 'projetos');
   renderNavRail();
+  renderMobileChrome();
   renderSettingsAvailability();
   renderPhaseContextBar();
   applyClientTabVisibility();
   applyReadOnlyChrome();
 
-  if (activeId === 'projetos') {
+  if (activeId === 'hoje') {
+    window.ResumeUI?.renderHoje?.();
+  } else if (activeId === 'projetos') {
     renderProjectsPage();
   } else if (state.selectedProject) {
     renderActiveTab(state.selectedProject, activeId);
@@ -3051,6 +3133,9 @@ window.renderActiveTab = renderActiveTab;
 window.navigateToRequirement = navigateToRequirement;
 window.navigateToFilteredTab = navigateToFilteredTab;
 window.renderPhaseContextBar = renderPhaseContextBar;
+window.isPartnerEditor = isPartnerEditor;
+window.getProjectNavGroups = getProjectNavGroups;
+window.navIconSvg = navIconSvg;
 
 async function loadActivity() {
   const project = state.selectedProject;
@@ -3195,7 +3280,7 @@ async function bootstrapAppAfterLogin() {
   window.PdosUI?.wirePdosEvents();
   window.PdosUI?.wireTraceEvents();
   initNavRail();
-  switchToTab(state.selectedProject ? state.activeTab : 'projetos');
+  switchToTab(state.selectedProject || !isNavPageRequiresProject(state.activeTab) ? state.activeTab : defaultLandingTab());
 }
 
 async function handleLogout() {
@@ -3917,7 +4002,20 @@ function wireEvents() {
   els.loginForm.addEventListener('submit', handleLogin);
   els.logoutBtn.addEventListener('click', handleLogout);
   els.themeToggleBtn.addEventListener('click', toggleTheme);
-  els.refreshProjectsBtn.addEventListener('click', () => loadProjects(state.selectedProjectId).catch((e) => showToast(e.message, 'error')));
+  els.refreshProjectsBtn.addEventListener('click', () => {
+    loadProjects(state.selectedProjectId).catch((e) => showToast(e.message, 'error'));
+    window.ResumeUI?.refresh?.();
+  });
+  document.getElementById('newProjectToggleBtn')?.addEventListener('click', (event) => {
+    const section = document.getElementById('newProjectSection');
+    if (!section) return;
+    section.hidden = !section.hidden;
+    event.currentTarget.setAttribute('aria-expanded', section.hidden ? 'false' : 'true');
+    if (!section.hidden) {
+      section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      document.getElementById('newProjectName')?.focus();
+    }
+  });
   els.openSettingsBtn?.addEventListener('click', () => {
     setUserMenuOpen(false);
     switchToTab('definicoes');

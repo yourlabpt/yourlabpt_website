@@ -304,3 +304,21 @@ describe('implementation units fan out to developer and tester', () => {
     assert.equal(loop.questionFor(developer).kind, 'result_review');
   });
 });
+
+describe('persona sequence', () => {
+  it('is the chain decideNext walks, so the steps drawn are the steps that run', () => {
+    const p = started(project());
+    const { personas } = loop.personaSequence(p, loop.activeExecucao(p));
+    const decision = loop.decideNext(p);
+    assert.ok(personas.length > 0);
+    assert.equal(decision.action, 'dispatch');
+    assert.equal(decision.persona.id, personas[0].id);
+  });
+
+  it('runs only the describing personas on a levantamento', () => {
+    const p = project();
+    loop.startExecucao(p, { goal: 'Descrever a app', kind: 'levantamento', maxCostUsd: 10, maxHours: 4 });
+    const ids = loop.personaSequence(p, loop.activeExecucao(p)).personas.map((persona) => persona.id);
+    assert.deepEqual(ids, ['product_owner', 'module_architect']);
+  });
+});

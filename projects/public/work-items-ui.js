@@ -3,6 +3,8 @@
  */
 (function initWorkItemsUi() {
   const API = '/api/projects';
+  // Wide enough to keep the task list beside an open task, as a split view.
+  const SPLIT_VIEW = window.matchMedia('(min-width: 1200px)');
 
   function isLinkedAgentExecution(item, execution) {
     if (!item || !execution?.runId) return false;
@@ -473,8 +475,19 @@
     const toolbar = $('workItemsToolbar');
     if (!workspace || !browse || !editor) return;
     const editing = (state.mode === 'editor' && state.selectedId) || state.mode === 'plan';
+    // On a wide screen the list stays beside the open task, so moving between tasks is
+    // one click rather than back-then-open.
+    const split = Boolean(editing) && state.mode === 'editor' && SPLIT_VIEW.matches;
     workspace.classList.toggle('ado-workspace-editing', Boolean(editing));
-    browse.classList.toggle('hidden', Boolean(editing));
+    workspace.classList.toggle('ado-workspace-split', split);
+    browse.classList.toggle('hidden', Boolean(editing) && !split);
+    // The board's columns do not fit beside a task; the list does.
+    const board = $('workItemsBoard');
+    if (board && split && board.classList.contains('ado-board')) renderList();
+    else if (board && !editing && state.view === 'board' && !board.classList.contains('ado-board')) renderBoard();
+    browse.querySelectorAll('[data-work-item-id]').forEach((row) => {
+      row.classList.toggle('is-selected', split && row.dataset.workItemId === state.selectedId);
+    });
     editor.classList.toggle('hidden', !editing);
     toolbar?.classList.toggle('ado-toolbar-browse', !editing);
     toolbar?.classList.toggle('ado-toolbar-editor', Boolean(editing));

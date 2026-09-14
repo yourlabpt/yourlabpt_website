@@ -633,3 +633,938 @@ select:focus {
   background: var(--status-err-bg);
   color: var(--danger);
 }
+
+/* ================================================================ screens
+ *
+ * Hoje, Projetos, a project's Resumo, the sidebar's project block, Tarefas as a split
+ * view, and the phone's chrome. Shapes follow docs/mockups/ios/.
+ */
+
+.ios-icon {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------------------------------------------------------------- page */
+
+.ios-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1180px;
+}
+
+#hojePanel {
+  max-width: 760px;
+}
+
+.ios-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ios-large-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+  letter-spacing: -0.025em;
+  color: var(--heading);
+}
+
+.ios-subtitle {
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.ios-page-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn.ios-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-2);
+}
+
+.ios-mobile-only {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- sections and lists */
+
+.ios-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ios-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.ios-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--heading);
+}
+
+.ios-group-label {
+  margin: 0;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ios-count {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-gold);
+  color: var(--btn-primary-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.ios-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.ios-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ios-row + .ios-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 60px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ios-row:hover {
+  background: var(--surface-3);
+}
+
+.ios-row.is-static {
+  cursor: default;
+}
+
+.ios-row.is-static:hover {
+  background: transparent;
+}
+
+.ios-row.is-selected {
+  background: var(--sidebar-selected);
+}
+
+.ios-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ios-row-title {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.ios-row-sub {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.ios-row-meta {
+  flex-shrink: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--muted-2);
+}
+
+.ios-row-index {
+  flex-shrink: 0;
+  width: 22px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted-2);
+}
+
+.ios-row-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.ios-row-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.ios-chevron {
+  color: var(--muted-2);
+}
+
+.ios-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.ios-tile.is-large {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.ios-tile.is-danger {
+  background: var(--status-err-bg);
+  color: var(--danger);
+}
+
+.ios-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ios-badge.badge-green {
+  padding-left: 0;
+}
+
+.ios-empty {
+  margin: 0;
+  padding: 16px 18px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- cards and segmented control */
+
+.ios-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.ios-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.ios-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ios-card-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--heading);
+}
+
+.ios-card-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 21px;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ios-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ios-segmented {
+  display: inline-grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  height: 32px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--bg-2);
+}
+
+.ios-segment {
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ios-segment.is-active {
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- project rows */
+
+.ios-project-row {
+  gap: 14px;
+  min-height: 68px;
+}
+
+.ios-project-row + .ios-project-row::before {
+  left: 70px;
+}
+
+.ios-project-stage {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 7px;
+  width: 220px;
+}
+
+.ios-project-status {
+  display: flex;
+  flex-shrink: 0;
+  width: 150px;
+}
+
+.ios-stagebar {
+  display: flex;
+  gap: 3px;
+}
+
+.ios-stagebar > span {
+  width: 16px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.ios-stagebar > .is-done {
+  background: var(--muted-2);
+}
+
+.ios-stagebar > .is-current {
+  background: var(--accent-gold);
+}
+
+/* ---------------------------------------------------------------- Resumo */
+
+.ios-home {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-areas:
+    "head head"
+    "track track"
+    "exec aside";
+  gap: 20px;
+  align-items: start;
+}
+
+.ios-home > .ios-page-head { grid-area: head; }
+.ios-home > .ios-stage-track { grid-area: track; }
+.ios-home > .ios-exec { grid-area: exec; }
+
+.ios-home > .ios-home-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  grid-area: aside;
+}
+
+.ios-home > .ios-home-sections {
+  display: none;
+}
+
+.ios-stage-track {
+  display: grid;
+  grid-template-columns: repeat(var(--stages, 9), minmax(0, 1fr));
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.ios-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ios-stage-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.ios-stage.is-done .ios-stage-bar { background: var(--muted-2); }
+.ios-stage.is-current .ios-stage-bar { background: var(--accent-gold); }
+
+.ios-stage-label {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.ios-stage.is-done .ios-stage-label { color: var(--text); }
+
+.ios-stage.is-current .ios-stage-label {
+  font-weight: 700;
+  color: var(--heading);
+}
+
+.ios-card.ios-exec {
+  gap: 0;
+  padding: 0;
+}
+
+.ios-exec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 10px;
+}
+
+.ios-exec-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--heading);
+}
+
+.ios-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ios-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 6px 18px;
+}
+
+.ios-step + .ios-step::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 56px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ios-step-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--text-2);
+}
+
+.ios-step.is-done .ios-step-mark {
+  border: 0;
+  background: var(--btn-bg);
+}
+
+.ios-step.is-current .ios-step-mark {
+  border: 3px solid var(--accent-gold);
+  border-right-color: var(--accent-soft);
+  animation: ios-spin 1.2s linear infinite;
+}
+
+.ios-step.is-waiting .ios-step-mark { border: 3px solid var(--warn); }
+.ios-step.is-failed .ios-step-mark { border: 3px solid var(--danger); }
+
+.ios-step.is-next .ios-row-title {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.ios-step.is-current .ios-row-title,
+.ios-step.is-waiting .ios-row-title {
+  font-weight: 600;
+}
+
+@keyframes ios-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-step.is-current .ios-step-mark { animation: none; }
+}
+
+.ios-meters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.ios-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ios-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ios-meter-head strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ios-meter-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.ios-meter-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--muted-2);
+}
+
+.ios-meter-bar > span.is-high {
+  background: var(--warn);
+}
+
+.ios-disclosure {
+  max-width: 1180px;
+  margin-top: 20px;
+}
+
+.ios-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-size: 15px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.ios-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ios-disclosure > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.8px solid var(--muted-2);
+  border-bottom: 1.8px solid var(--muted-2);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.ios-disclosure[open] > summary::after {
+  transform: rotate(45deg);
+}
+
+.ios-disclosure > .panel {
+  margin-top: 10px;
+}
+
+/* ---------------------------------------------------------------- sidebar project block */
+
+.nav-rail-project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 10px 8px;
+}
+
+.nav-rail-project .ios-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.nav-rail-project-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nav-rail-project-text strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.nav-rail-project-text small {
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.nav-rail-spacer {
+  flex: 1 0 12px;
+}
+
+.layout.is-collapsed .nav-rail-project {
+  justify-content: center;
+  padding: 10px 0 4px;
+}
+
+.layout.is-collapsed .nav-rail-project-text {
+  display: none;
+}
+
+/* The icon-only rail below this width, which the base sidebar width above overrode. */
+@media (max-width: 1180px) {
+  .layout.is-docked.is-expanded {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
+
+  .layout.is-docked.is-expanded .nav-rail-project {
+    justify-content: center;
+  }
+
+  .layout.is-docked.is-expanded .nav-rail-project-text {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- Tarefas as a split view */
+
+@media (min-width: 1200px) {
+  .ado-workspace.ado-workspace-split {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .ado-workspace-split > .ado-browse {
+    flex: 0 0 360px;
+    max-height: calc(100vh - 180px);
+    padding: 8px;
+    overflow: auto;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .ado-workspace-split > .ado-editor {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ado-workspace-split .ado-list-head,
+  .ado-workspace-split .ado-list-row > span:first-child,
+  .ado-workspace-split .ado-list-assignee,
+  .ado-workspace-split .ado-list-type,
+  .ado-workspace-split .ado-priority-intro,
+  .ado-workspace-split .ado-suggestions {
+    display: none;
+  }
+
+  .ado-workspace-split .ado-list-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 10px;
+  }
+
+  .ado-workspace-split .ado-list-row.is-selected {
+    background: var(--sidebar-selected);
+  }
+}
+
+/* ---------------------------------------------------------------- phone */
+
+.topbar-mobile,
+.ios-tab-bar {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 44px;
+    padding: 4px 8px;
+  }
+
+  .topbar-brand,
+  .topbar-center,
+  .topbar-icon-theme,
+  .topbar-icon-settings,
+  .topbar-icon-help {
+    display: none !important;
+  }
+
+  .topbar-mobile {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .ios-back {
+    display: inline-flex;
+    align-items: center;
+    max-width: 60%;
+    min-height: 44px;
+    padding: 0 6px 0 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 17px;
+    cursor: pointer;
+  }
+
+  .ios-back svg {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+  }
+
+  .ios-back span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-mobile-title {
+    flex: 1;
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-align: center;
+    text-overflow: ellipsis;
+  }
+
+  .layout.is-docked.is-expanded,
+  .layout.is-docked.is-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nav-rail {
+    display: none;
+  }
+
+  .content {
+    padding: 12px 16px calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .ios-tab-bar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 120;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--topbar-bg);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .ios-tab-bar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted-2);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .ios-tab-bar button svg {
+    width: 25px;
+    height: 25px;
+  }
+
+  .ios-tab-bar button.is-active {
+    color: var(--accent);
+  }
+
+  .ios-page {
+    gap: 22px;
+  }
+
+  .ios-page-head {
+    align-items: flex-start;
+  }
+
+  .ios-mobile-only {
+    display: block;
+  }
+
+  .ios-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ios-section-head {
+    flex-wrap: wrap;
+  }
+
+  .ios-row {
+    min-height: 48px;
+  }
+
+  .ios-project-stage {
+    display: none;
+  }
+
+  .ios-project-status {
+    width: auto;
+  }
+
+  .ios-home {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .ios-home > .ios-stage-track {
+    display: none;
+  }
+
+  .ios-home > .ios-home-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    order: 4;
+  }
+
+  .ios-home > .ios-home-aside {
+    order: 5;
+  }
+
+  .ios-meters {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
