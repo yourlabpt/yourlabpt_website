@@ -25,6 +25,8 @@ const { normalizeMode } = require('./lib/agent-connection-mode');
 const { registerWorkItemRoutes } = require('./lib/work-items-routes');
 const phaseContent = require('./lib/phase-content');
 const reqHierarchy = require('./lib/requirement-hierarchy');
+const artifactsView = require('./lib/artifacts');
+const phasesLib = require('./lib/phases');
 const phaseSync = require('./lib/phase-sync');
 const roadmapSync = require('./lib/roadmap-sync');
 const proposalGenerator = require('./lib/proposal-generator');
@@ -93,6 +95,7 @@ const DELIVERY_LEVELS = ['simple', 'standard', 'complete'];
 const ARTIFACT_TYPES = [
   'note', 'requirement', 'architecture', 'architecture_object', 'data_entity', 'api_endpoint',
   'roadmap', 'test', 'deliverable', 'monitoring', 'other',
+  'intention', 'mockup', 'plan', 'diagram', 'code',
 ];
 const TRACE_RELATIONSHIP_TYPES = [
   'derives_from',
@@ -230,6 +233,10 @@ function registerRequirementsPlatform(app, options) {
     Object.assign(normalized, deliveryOsPlatform.normalizePlatformFields(project));
     normalized.auditLog = projectAudit.normalizeAuditLog(project.auditLog);
     normalized.requirements = normalized.requirements.map((entry) => deliveryOs.enrichRequirementWithModuleTags(entry));
+    // Everything that exists to be built or changed, one list — the generic artifact
+    // store plus requirements viewed into the same shape. See lib/artifacts.js for why
+    // requirements are not duplicated into project.artifacts to get here.
+    normalized.allArtifacts = artifactsView.allArtifacts(normalized);
     normalized.traceLinks = normalizeTraceLinks(project.traceLinks, normalized.requirements, normalized.artifacts, normalized);
     normalized.engineeringState = engineeringState.normalizeState(project.engineeringState);
     normalized.engineeringChangeSets = ensureArray(project.engineeringChangeSets);
@@ -1082,6 +1089,7 @@ function registerRequirementsPlatform(app, options) {
       architectureModules: ARCHITECTURE_MODULES,
       deliveryLevels: DELIVERY_LEVELS,
       deliveryStageFlow: DELIVERY_STAGE_FLOW,
+      phases: phasesLib.PHASES,
       artifactTypes: ARTIFACT_TYPES,
       traceRelationshipTypes: TRACE_RELATIONSHIP_TYPES,
       questionStatusFlow: QUESTION_STATUS_FLOW,
@@ -1802,15 +1810,12 @@ function registerRequirementsPlatform(app, options) {
         stageId: payload.stageId,
         version: payload.version,
         relatedRequirementIds: payload.relatedRequirementIds,
+        linkedArtifacts: payload.linkedArtifacts,
+        producedByTaskId: payload.producedByTaskId,
         metadata: payload.metadata,
-        createdBy: req.auth.user.id,
       };
-      const artifact = normalizeArtifactRecord(artifactInput);
 
-      if (!artifact.name) {
-        return res.status(400).json({ message: 'name e obrigatorio.' });
-      }
-
+      let artifact = null;
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === projectId);
         if (!project) {
@@ -1818,6 +1823,22 @@ function registerRequirementsPlatform(app, options) {
         }
 
         project.artifacts = normalizeArtifacts(project.artifacts);
+        // An id that already exists is an edit, not a new artifact — merge onto it so a
+        // partial save (e.g. only bodyMarkdown from the drawer) cannot silently drop
+        // fields the form did not send, like createdAt or linkedArtifacts.
+        const existing = artifactInput.id ? project.artifacts.find((entry) => entry.id === artifactInput.id) : null;
+        artifact = normalizeArtifactRecord({
+          ...existing,
+          ...artifactInput,
+          createdBy: existing?.createdBy || req.auth.user.id,
+          createdAt: existing?.createdAt,
+          updatedBy: req.auth.user.id,
+          updatedAt: nowIso(),
+        });
+        if (!artifact.name) {
+          throw new Error('name e obrigatorio.');
+        }
+
         project.artifacts = project.artifacts.filter((entry) => entry.id !== artifact.id);
         project.artifacts.push(artifact);
         project.updatedAt = nowIso();
@@ -1825,7 +1846,7 @@ function registerRequirementsPlatform(app, options) {
         appendActivity(store, {
           actorUserId: req.auth.user.id,
           projectId: project.id,
-          action: 'project_artifact_upserted',
+          action: existing ? 'project_artifact_updated' : 'project_artifact_created',
           details: { artifactId: artifact.id, type: artifact.type, stageId: artifact.stageId },
         });
       });
@@ -3939,6 +3960,7 @@ function registerRequirementsPlatform(app, options) {
     appendActivity,
     sanitizeProject,
     normalizeArtifacts,
+    normalizeArtifactRecord,
     normalizeTraceLinks,
     normalizeApprovals,
     normalizeMeetingMinutes,
@@ -6087,6 +6109,13 @@ function normalizeArtifactRecord(raw) {
     stageId: textOr(raw?.stageId, 'requirements').toLowerCase(),
     version: numberOr(raw?.version, 1),
     relatedRequirementIds: normalizeStringArray(raw?.relatedRequirementIds),
+    // Which other artifacts this one depends on or was derived from — e.g. a mockup
+    // artifact pointing at the intention it came from, or a code artifact pointing at
+    // the tests it must pass.
+    linkedArtifacts: normalizeStringArray(raw?.linkedArtifacts),
+    // The work item whose job was to produce or change this artifact, if any — the
+    // artifact-side half of a task's `expectedOutputs[].artifactId` link.
+    producedByTaskId: textOr(raw?.producedByTaskId),
     metadata: raw?.metadata && typeof raw.metadata === 'object' && !Array.isArray(raw.metadata)
       ? raw.metadata
       : {},

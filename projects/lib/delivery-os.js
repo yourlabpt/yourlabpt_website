@@ -3928,6 +3928,7 @@ function ensureIdeaVisionFromDiscovery(project, deps = {}) {
 
 function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
   const normalizeRequirementRecord = deps.normalizeRequirementRecord || ((r) => r);
+  const normalizeArtifactRecord = deps.normalizeArtifactRecord || ((a) => a);
   const traceability = require('./diagram-traceability');
   if (!parsed || !run) return;
 
@@ -4046,9 +4047,8 @@ function applyPromptRunOutput(project, run, parsed, userId, deps = {}) {
   }
 
   if (parsed.artifacts) {
-    project.artifacts = [...ensureArray(project.artifacts), ...ensureArray(parsed.artifacts).map((a) => ({
+    project.artifacts = [...ensureArray(project.artifacts), ...ensureArray(parsed.artifacts).map((a) => normalizeArtifactRecord({
       ...a,
-      id: a.id || `art_${crypto.randomUUID().slice(0, 8)}`,
       bodyMarkdown: a.bodyMarkdown || a.descriptionMarkdown || a.description,
     }))];
   }
@@ -4212,6 +4212,7 @@ function registerDeliveryOsRoutes(app, deps) {
     appendActivity,
     sanitizeProject,
     normalizeArtifacts,
+    normalizeArtifactRecord,
     normalizeTraceLinks,
     normalizeApprovals,
     normalizeMeetingMinutes,
@@ -4492,7 +4493,7 @@ function registerDeliveryOsRoutes(app, deps) {
             review.preApplySnapshotId = snap.id;
 
             if (linkedRun && linkedRun.status !== 'applied') {
-              applyPromptRunOutput(project, linkedRun, parsed, req.auth.user.id, { normalizeRequirementRecord });
+              applyPromptRunOutput(project, linkedRun, parsed, req.auth.user.id, { normalizeRequirementRecord, normalizeArtifactRecord });
               linkedRun.status = 'applied';
               linkedRun.reviewedAt = nowIso();
               linkedRun.reviewedBy = req.auth.user.id;
@@ -4501,7 +4502,7 @@ function registerDeliveryOsRoutes(app, deps) {
                 agentType: textOr(review.suggestedChanges?.agentType, 'agent_output'),
                 stageId: 'architecture',
                 moduleTag: 'Backend',
-              }, parsed, req.auth.user.id, { normalizeRequirementRecord });
+              }, parsed, req.auth.user.id, { normalizeRequirementRecord, normalizeArtifactRecord });
             }
             project.traceLinks = mergeTraceLinks(project.traceLinks, autoDeriveTraceLinks(project));
           }
@@ -4896,7 +4897,7 @@ function registerDeliveryOsRoutes(app, deps) {
         } catch { /* task migration remains best-effort for legacy prompt runs */ }
 
         if (!deferApply && parsed) {
-          applyPromptRunOutput(project, run, parsed, req.auth.user.id, { normalizeRequirementRecord });
+          applyPromptRunOutput(project, run, parsed, req.auth.user.id, { normalizeRequirementRecord, normalizeArtifactRecord });
         }
 
         project.updatedAt = nowIso();
@@ -5538,7 +5539,7 @@ function registerDeliveryOsRoutes(app, deps) {
           resultReview = upsert.review;
           if (auditRecord && resultReview?.id) auditRecord.metadata.reviewId = resultReview.id;
         } else if (run && parsed && !deferApply) {
-          applyPromptRunOutput(project, run, parsed, req.auth.user.id, { normalizeRequirementRecord });
+          applyPromptRunOutput(project, run, parsed, req.auth.user.id, { normalizeRequirementRecord, normalizeArtifactRecord });
           run.status = 'applied';
         }
 

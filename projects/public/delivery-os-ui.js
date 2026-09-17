@@ -1019,22 +1019,83 @@
   }
 
   function openArtifactDrawer(project, artifactId) {
-    const art = (project.artifacts || []).find((a) => a.id === artifactId);
+    const art = (project.allArtifacts || project.artifacts || []).find((a) => a.id === artifactId);
     const drawer = $('pdosDetailDrawer');
     const content = $('pdosDrawerContent');
     if (!drawer || !content || !art) return;
+    const canEdit = art.editableAsArtifact !== false;
     drawer.classList.remove('hidden');
     content.innerHTML = `
       <div class="pdos-drawer-head">
         <h3>${escapeHtml(art.name)}</h3>
         <button type="button" class="btn tiny ghost pdos-drawer-close">Fechar</button>
       </div>
-      <p class="muted-text">${escapeHtml(art.type)} · ${escapeHtml(art.stageId || '')}</p>
+      <p class="muted-text">${escapeHtml(window.state?.config?.phases?.find((p) => p.id === art.phase)?.label || art.phase || '')} · ${escapeHtml(art.type)}${art.subtype ? ` · ${escapeHtml(art.subtype)}` : ''} · ${escapeHtml(art.stageId || '')}</p>
       ${formatRequirementLinks(art.relatedRequirementIds || art.metadata?.requirementIds) ? `<div class="arch-req-links drawer-req-links"><span class="muted-text">Requisitos:</span> ${formatRequirementLinks(art.relatedRequirementIds || art.metadata?.requirementIds)}</div>` : ''}
-      <div id="pdosArtifactBody" class="markdown-preview"></div>
+      ${canEdit ? `
+        <form id="pdosArtifactEditForm" class="form-grid compact mt-8">
+          <label>Status
+            <select id="pdosArtifactEditStatus">
+              ${['draft', 'in_progress', 'pending_review', 'approved', 'deprecated'].map((s) => `<option value="${s}"${s === art.status ? ' selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </label>
+          <label class="full">Conteúdo<textarea id="pdosArtifactEditBody" rows="6">${escapeHtml(art.bodyMarkdown || art.description || '')}</textarea></label>
+          <button class="btn primary" type="submit">Guardar</button>
+        </form>
+      ` : `
+        <p class="muted-text">Isto é um requisito, não um artefacto guardado à parte — edite-o no Mapa de Requisitos, não aqui.</p>
+        <div id="pdosArtifactBody" class="markdown-preview"></div>
+      `}
+      <div class="pdos-drawer-actions mt-8">
+        <button type="button" class="btn tiny" id="pdosArtifactRequestAi">${art.type === 'requirement' && art.subtype === 'test_case' ? 'Escrever teste' : 'Pedir à IA'}</button>
+      </div>
     `;
     content.querySelector('.pdos-drawer-close')?.addEventListener('click', closeDrawer);
-    renderMarkdownPreview(art.bodyMarkdown || art.description || '', $('pdosArtifactBody'));
+    if (!canEdit) renderMarkdownPreview(art.bodyMarkdown || art.description || '', $('pdosArtifactBody'));
+
+    content.querySelector('#pdosArtifactEditForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await apiRequest(`/projects/${project.id}/artifacts`, {
+          method: 'POST',
+          body: {
+            id: art.id,
+            status: $('pdosArtifactEditStatus')?.value,
+            bodyMarkdown: $('pdosArtifactEditBody')?.value,
+          },
+        });
+        showToast('Artefacto guardado');
+        await reloadProject(project.id);
+        openArtifactDrawer(window.state.selectedProject, art.id);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    content.querySelector('#pdosArtifactRequestAi')?.addEventListener('click', async () => {
+      // A TC asks for a coded test, not an edit to itself.
+      const isTestCase = art.type === 'requirement' && art.subtype === 'test_case';
+      try {
+        await apiRequest(`/projects/${project.id}/work-items`, {
+          method: 'POST',
+          body: {
+            title: isTestCase ? `Escrever teste: ${art.name}` : `Editar artefacto: ${art.name}`,
+            origin: 'human',
+            executorMode: 'agent',
+            deliveryStageId: art.stageId || 'implementation',
+            linkedRequirementIds: art.type === 'requirement' ? [art.id] : [],
+            expectedOutputs: [{
+              kind: 'artifact',
+              targetType: isTestCase ? 'test' : art.type,
+              targetId: isTestCase ? '' : (canEdit ? art.id : ''),
+              label: isTestCase ? `Teste codificado para ${art.name}` : `Alteração a ${art.name}`,
+              applyMode: 'review',
+              required: true,
+            }],
+          },
+        });
+        showToast('Pedido criado — vai aparecer nas tarefas.');
+        closeDrawer();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   function renderPhaseStatTile({ tab, label, count, stageId, hint, view, scrollTarget }) {
@@ -5147,10 +5208,17 @@
     if ($('artifactStageId')) $('artifactStageId').innerHTML = stageFlow.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)}</option>`).join('');
     if ($('traceRelationshipType')) $('traceRelationshipType').innerHTML = traceTypes.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
 
-    $('artifactsList') && ($('artifactsList').innerHTML = (project.artifacts || []).slice(0, 20).map((a) => {
+    $('artifactsList') && ($('artifactsList').innerHTML = (project.allArtifacts || project.artifacts || []).slice(0, 40).map((a) => {
       const provBadge = window.DeliveryOsPlatform?.renderProvenanceBadge?.(a) || '';
-      return `<div class="simple-item"><strong>${escapeHtml(a.name)}</strong> ${provBadge}<small>${escapeHtml(a.type)} · ${escapeHtml(a.status)}</small></div>`;
+      const subtype = a.type === 'requirement' && a.subtype ? ` · ${escapeHtml(a.subtype)}` : '';
+      const phaseLabel = window.state?.config?.phases?.find((p) => p.id === a.phase)?.label || a.phase || '';
+      return `<button type="button" class="simple-item simple-item-clickable" data-open-artifact="${escapeHtml(a.id)}">
+        <strong>${escapeHtml(a.name)}</strong> ${provBadge}<small>${escapeHtml(phaseLabel)} · ${escapeHtml(a.type)}${subtype} · ${escapeHtml(a.status)}</small>
+      </button>`;
     }).join('') || '<span class="muted-text">Sem artefactos.</span>');
+    $('artifactsList')?.querySelectorAll('[data-open-artifact]').forEach((btn) => {
+      btn.addEventListener('click', () => openArtifactDrawer(project, btn.dataset.openArtifact));
+    });
 
     $('traceLinksList') && ($('traceLinksList').innerHTML = (project.traceLinks || []).slice(0, 20).map((l) =>
       `<div class="simple-item"><small>${escapeHtml(l.sourceType)}:${escapeHtml(l.sourceId)} → ${escapeHtml(l.relationshipType)} → ${escapeHtml(l.targetType)}:${escapeHtml(l.targetId)}</small></div>`

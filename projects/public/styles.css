@@ -2399,6 +2399,14 @@ ul:not([class]) > li::before {
   font-size: 13px;
 }
 
+.simple-item-clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
 .engineering-state-panel { margin-top: 12px; border: 1px solid var(--simple-item-border); border-radius: 12px; background: var(--simple-item-bg); }
 .engineering-state-panel > summary { cursor: pointer; padding: 12px 14px; font-weight: 700; }
 .engineering-state-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 0 14px 12px; }
