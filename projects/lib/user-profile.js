@@ -75,9 +75,13 @@ function applyOwnProfile(user, body = {}, context = {}) {
 
   const newPassword = typeof input.newPassword === 'string' ? input.newPassword : '';
   if (newPassword) {
-    const current = typeof input.currentPassword === 'string' ? input.currentPassword : '';
-    if (!current || typeof verifyPassword !== 'function' || !verifyPassword(user.passwordHash, current)) {
-      throw new Error('A password actual não está certa.');
+    // An account made through Google has no password yet. Its first one needs only the
+    // signed-in session, as there is no current password to ask for.
+    if (user.passwordHash) {
+      const current = typeof input.currentPassword === 'string' ? input.currentPassword : '';
+      if (!current || typeof verifyPassword !== 'function' || !verifyPassword(user.passwordHash, current)) {
+        throw new Error('A password actual não está certa.');
+      }
     }
     if (newPassword.length < PASSWORD_MIN) {
       throw new Error(`A nova password deve ter pelo menos ${PASSWORD_MIN} caracteres.`);

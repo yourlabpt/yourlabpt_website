@@ -190,7 +190,6 @@
     $('docsClearStageFilter')?.addEventListener('click', () => {
       state.tabFilters.deliveryStageId = '';
       renderDocumentsPage(state.selectedProject);
-      renderPhaseContextBar?.();
     });
   }
 

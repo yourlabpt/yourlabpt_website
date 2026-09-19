@@ -45,34 +45,36 @@
 
   /* ------------------------------------------------------------ parts */
 
-  function header(project, entry) {
+  function header(project, entry, stage) {
     const k = kit();
-    const subtitle = [project.clientName, firstSentence(project.description, 90)].filter(Boolean).join(' · ');
-    const stage = k.stageText(entry?.stage);
+    const snap = window.WorkspaceUI?.forProject?.(project.id);
+    // What the app is for, from the repository when it says so.
+    const about = firstSentence(snap?.project?.purpose || project.description, 90);
+    const subtitle = [project.clientName, about].filter(Boolean).join(' · ');
     return `
       <header class="ios-page-head">
         <div>
           <h1 class="ios-large-title">${k.escapeHtml(project.name)}</h1>
           ${subtitle ? `<p class="ios-subtitle ios-desktop-only">${k.escapeHtml(subtitle)}</p>` : ''}
-          <p class="ios-subtitle ios-mobile-only">${k.escapeHtml([project.clientName, stage].filter(Boolean).join(' · '))}</p>
+          <p class="ios-subtitle ios-mobile-only">${k.escapeHtml([project.clientName, k.stageText(stage)].filter(Boolean).join(' · '))}</p>
         </div>
         <div class="ios-page-actions">${k.projectStatusBadge(project, entry)}</div>
       </header>`;
   }
 
-  function stageTrack(project, entry) {
+  function stageTrack(project, stage) {
     const k = kit();
     const stages = Array.isArray(project.stages) && project.stages.length
       ? project.stages
       : (window.state?.config?.deliveryStageFlow || []);
     if (!stages.length) return '';
-    const current = entry?.stage?.index ?? -1;
+    const current = stage?.index ?? -1;
     return `
       <div class="ios-stage-track" style="--stages: ${stages.length}">
-        ${stages.map((stage, index) => `
+        ${stages.map((entry, index) => `
           <div class="ios-stage ${index < current ? 'is-done' : index === current ? 'is-current' : ''}">
             <span class="ios-stage-bar"></span>
-            <span class="ios-stage-label">${k.escapeHtml(k.stageLabel(stage.id))}</span>
+            <span class="ios-stage-label">${k.escapeHtml(k.stageLabel(entry.id))}</span>
           </div>`).join('')}
       </div>`;
   }
@@ -212,26 +214,54 @@
 
   function phases(project) {
     const k = kit();
-    const list = Array.isArray(project.phases) ? project.phases : [];
+    const snap = window.WorkspaceUI?.forProject?.(project.id);
+    // The repository's fases when it has them; the platform's older record otherwise.
+    const list = snap?.phases?.length
+      ? snap.phases.map((phase) => ({ name: phase.title, weeks: phase.weeks, status: phase.status }))
+      : (project.phases || []).map((phase, index) => ({
+        name: String(phase.name || '').replace(/^\s*fase\s*\d+\s*[-–·:]\s*/i, '').trim() || `Fase ${index + 1}`,
+        weeks: Number(phase.durationWeeks) || 0,
+        status: '',
+      }));
     if (!list.length) return '';
+    const badges = { in_progress: k.badge('green', 'Em curso'), done: k.badge('gray', 'Concluída') };
     return `
       <section class="ios-section">
         <div class="ios-section-head">
-          <h2 class="ios-section-title">Plano</h2>
-          <button type="button" class="btn ghost" data-nav-go="fases">Ver tudo</button>
+          <h2 class="ios-section-title">Fases</h2>
+          <button type="button" class="btn ghost" data-nav-go="plano">Ver plano</button>
         </div>
         <div class="ios-list">
-          ${list.map((phase, index) => {
-            const name = String(phase.name || '').replace(/^\s*fase\s*\d+\s*[-–·:]\s*/i, '').trim() || phase.name || `Fase ${index + 1}`;
-            const weeks = Number(phase.durationWeeks) || 0;
-            return `
-              <button type="button" class="ios-row" data-nav-go="fases">
-                <span class="ios-row-index">${index + 1}</span>
-                <span class="ios-row-main"><span class="ios-row-title">${k.escapeHtml(name)}</span></span>
-                ${weeks ? `<span class="ios-row-meta">${weeks} semana${weeks === 1 ? '' : 's'}</span>` : ''}
-                ${k.icon('chevron', 14, 'ios-chevron')}
-              </button>`;
-          }).join('')}
+          ${list.map((phase, index) => `
+            <button type="button" class="ios-row" data-nav-go="plano">
+              <span class="ios-row-index">${index + 1}</span>
+              <span class="ios-row-main"><span class="ios-row-title">${k.escapeHtml(phase.name)}</span></span>
+              ${badges[phase.status] || (phase.weeks ? `<span class="ios-row-meta">${phase.weeks} semana${phase.weeks === 1 ? '' : 's'}</span>` : '')}
+              ${k.icon('chevron', 14, 'ios-chevron')}
+            </button>`).join('')}
+        </div>
+      </section>`;
+  }
+
+  /** What is still undecided, from the repository's questions.md. */
+  function openQuestions(project) {
+    const k = kit();
+    const snap = window.WorkspaceUI?.forProject?.(project.id);
+    const client = window.isClientUser?.() === true;
+    const open = (snap?.questions || []).filter((question) => question.state === 'open' && (!client || question.audience === 'client'));
+    if (!open.length) return '';
+    return `
+      <section class="ios-section">
+        <h2 class="ios-group-label">Perguntas em aberto · ${open.length}</h2>
+        <div class="ios-list">
+          ${open.map((question) => `
+            <div class="ios-row is-static">
+              <span class="ios-tile">${k.icon('help', 16)}</span>
+              <span class="ios-row-main">
+                <span class="ios-row-title ios-wrap">${k.escapeHtml(question.question)}</span>
+                <span class="ios-row-sub">${question.audience === 'client' ? 'Para o cliente' : 'Para a equipa'}</span>
+              </span>
+            </div>`).join('')}
         </div>
       </section>`;
   }
@@ -269,12 +299,21 @@
     const host = document.getElementById('projectHome');
     const project = state.project;
     if (!host || !project || !kit()) return;
+    const client = window.isClientUser?.() === true;
     const entry = window.ResumeUI?.entryFor?.(project.id) || null;
+    const stage = window.WorkspaceUI?.stageOf?.(project.id, entry?.stage || null) || entry?.stage || null;
+    // A client sees where the project stands and what it is for — not the agents' run.
+    host.classList.toggle('ios-home-client', client);
     host.innerHTML = `
-      ${header(project, entry)}
-      ${stageTrack(project, entry)}
-      ${executionCard()}
-      <div class="ios-home-aside">${attention(entry)}${phases(project)}</div>
+      ${header(project, entry, stage)}
+      ${stageTrack(project, stage)}
+      ${client ? '' : executionCard()}
+      <div class="ios-home-aside">
+        ${client ? '' : attention(entry)}
+        ${window.WorkspaceUI?.statusCard?.(project) || ''}
+        ${openQuestions(project)}
+        ${phases(project)}
+      </div>
       <div class="ios-home-sections">${sections(project, entry)}</div>`;
   }
 
@@ -304,8 +343,11 @@
     if (state.project?.id !== project.id) state.orchestration = null;
     state.project = project;
     paint();
-    loadOrchestration(project.id);
-    window.ResumeUI?.load?.();
+    window.WorkspaceUI?.load?.(project.id);
+    if (window.isClientUser?.() !== true) {
+      loadOrchestration(project.id);
+      window.ResumeUI?.load?.();
+    }
   }
 
   document.addEventListener('click', (event) => {
@@ -317,4 +359,7 @@
     render,
     refreshAttention: () => { if (state.project) paint(); },
   };
+
+  // The repository's documentation arrives after the page; draw again when it does.
+  window.WorkspaceUI?.subscribe?.(() => { if (state.project) paint(); });
 })();

@@ -99,7 +99,8 @@ function canEditWorkItemUpdate(user, project) {
 // A client's nav is Entrega and nothing else — Fases/Gerar/Requisitos/Documentos are
 // partner workspaces; what a client receives is the generated proposal, delivered
 // outside the tab structure entirely.
-const CLIENT_VISIBLE_TABS = new Set(['projetos', 'deliveryos']);
+// A client sees the project list and a read-only Resumo. Entrega no longer exists.
+const CLIENT_VISIBLE_TABS = new Set(['projetos', 'projeto']);
 
 module.exports = {
   CLIENT_VISIBLE_TABS,

@@ -1819,3 +1819,315 @@ select:focus {
     margin-bottom: 14px;
   }
 }
+
+/* ================================================================ disclosures as buttons
+ *
+ * Nothing expands behind an arrow. Every <details> opens from a button that looks like
+ * the app's other buttons, and is tinted while it is open — the way a toggle reads on iOS.
+ */
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::marker {
+  content: "";
+}
+
+details > summary::before,
+details > summary::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Low specificity on purpose: a component that shapes its own summary keeps its shape. */
+:where(details) > :where(summary) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+:where(details) > :where(summary):hover {
+  background: var(--btn-hover);
+}
+
+:where(details[open]) > :where(summary) {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+:where(details[open]) > :where(summary) + * {
+  margin-top: 10px;
+}
+
+/* The sidebar's «Mais» is a row like every other row. */
+.nav-rail-group-summary.nav-rail-item {
+  display: flex;
+  width: 100%;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.nav-rail-group[open] > .nav-rail-group-summary.nav-rail-item {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.nav-rail-group[open] > .nav-rail-group-summary + .nav-rail-group-items {
+  margin-top: 2px;
+}
+
+/* Resumo's "Indicadores e riscos": a full-width row button. */
+.ios-disclosure > summary {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.ios-disclosure[open] > summary {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.plano-switch {
+  width: fit-content;
+}
+
+/* ================================================================ Entrar com Google */
+
+.login-google {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.google-signin-button {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+}
+
+.login-google-note {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ================================================================ documentation from the repository
+ *
+ * Resumo's «Documentação» card, the Plano page read from yourlab/, rows that open like a
+ * button, and the sheet the mockup opens in.
+ */
+
+.ios-wrap {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.ios-prose {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  white-space: pre-line;
+  color: var(--text-2);
+}
+
+.ios-footnote + .ios-footnote {
+  margin-top: 4px;
+}
+
+/* A client's Resumo has no run card: the aside takes the full width. */
+.ios-home.ios-home-client {
+  grid-template-areas:
+    "head head"
+    "track track"
+    "aside aside";
+}
+
+.ios-home.ios-home-client > .ios-home-aside {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+/* ---------------------------------------------------------------- Documentação card */
+
+.ios-docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ios-card-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ios-findings .ios-row-title {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- rows that open */
+
+.ios-fold-list > .ios-fold + .ios-fold {
+  border-top: 1px solid var(--line);
+}
+
+.ios-fold > summary.ios-row {
+  border-radius: 0;
+}
+
+.ios-fold[open] > summary.ios-row {
+  background: var(--surface-2);
+}
+
+.ios-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 16px 16px 50px;
+  background: var(--surface-2);
+}
+
+.ios-fold-body > .ios-group-label {
+  padding: 4px 0 0;
+}
+
+.ios-sublist {
+  background: var(--surface);
+}
+
+.ios-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ios-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- the mockup sheet */
+
+.ios-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.ios-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  height: min(820px, 100%);
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.ios-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ios-sheet-head .ios-segmented {
+  max-width: 70%;
+  margin-left: auto;
+  overflow-x: auto;
+}
+
+.ios-sheet-head .ios-segmented + .btn,
+.ios-sheet-head .ios-card-title + .btn {
+  margin-left: auto;
+}
+
+.ios-sheet-head .ios-segmented + .btn {
+  margin-left: 0;
+}
+
+.ios-sheet-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: var(--surface);
+}
+
+@media (max-width: 700px) {
+  .ios-sheet-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .ios-sheet {
+    height: calc(100% - 44px);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .ios-fold-body {
+    padding-left: 16px;
+  }
+
+  .ios-home.ios-home-client > .ios-home-aside {
+    display: flex;
+  }
+}

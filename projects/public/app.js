@@ -39,7 +39,6 @@ const NAV_GROUPS = [
       { id: 'tarefas', label: 'Tarefas', icon: 'list' },
       // Carries a count when something has moved since this device last looked.
       { id: 'decisoes', label: 'Decisões', icon: 'branch' },
-      { id: 'deliveryos', label: 'Entrega', icon: 'send' },
     ],
   },
   {
@@ -53,7 +52,6 @@ const NAV_GROUPS = [
       { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'documentos', label: 'Documentos', icon: 'doc' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
-      { id: 'fases', label: 'Fases', icon: 'layers' },
       { id: 'gerar', label: 'Gerar', icon: 'sparkle' },
       { id: 'atas', label: 'Atas', icon: 'notes' },
       { id: 'atividade', label: 'Log', icon: 'clock' },
@@ -213,12 +211,11 @@ const els = {
   settingsProjectSection: document.getElementById('settingsProjectSection'),
   settingsProjectHint: document.getElementById('settingsProjectHint'),
   settingsProjectBody: document.getElementById('settingsProjectBody'),
-  agentConnectorCard: document.getElementById('agentConnectorCard'),
+  agentConnectorCard: document.getElementById('agentSetupSection'),
   agentConnectorList: document.getElementById('agentConnectorList'),
   agentPairingForm: document.getElementById('agentPairingForm'),
   agentPairingPassword: document.getElementById('agentPairingPassword'),
   agentPairingResult: document.getElementById('agentPairingResult'),
-  phaseContextBar: document.getElementById('phaseContextBar'),
   usersList: document.getElementById('usersList'),
   createUserForm: document.getElementById('createUserForm'),
   newUserRole: document.getElementById('newUserRole'),
@@ -1073,9 +1070,8 @@ function setReadonlyByRole() {
 }
 
 function applyClientTabVisibility() {
-  const clientTabs = new Set(['projetos', 'deliveryos', 'requisitos', 'fases', 'atas', 'documentos']);
-  if (isClientUser() && state.activeTab && !clientTabs.has(state.activeTab)) {
-    switchToTab('deliveryos');
+  if (isClientUser() && state.activeTab && !CLIENT_VISIBLE_TABS.has(state.activeTab)) {
+    switchToTab('projeto');
   }
   const settingsBtn = document.getElementById('openSettingsBtn');
   if (settingsBtn) settingsBtn.classList.toggle('hidden', isClientUser());
@@ -1124,7 +1120,7 @@ function renderUsersPanel() {
       <article class="user-admin-card ${active ? '' : 'is-inactive'}">
         <header class="user-admin-card-head">
           <div><strong>${escapeHtml(user.name)}</strong><small>${escapeHtml(user.email)}</small></div>
-          <div class="user-admin-badges"><span class="chip">${escapeHtml(roleLabel[user.role] || user.role)}</span><span class="chip ${active ? '' : 'status-blocked'}">${active ? 'Activo' : 'Inactivo'}</span>${isSelf ? '<span class="chip">A sua conta</span>' : ''}</div>
+          <div class="user-admin-badges"><span class="chip">${escapeHtml(roleLabel[user.role] || user.role)}</span><span class="chip ${active ? '' : 'status-blocked'}">${active ? 'Activo' : 'Inactivo'}</span>${isSelf ? '<span class="chip">A sua conta</span>' : ''}${user.authProvider === 'google' ? '<span class="chip">Google</span>' : ''}</div>
         </header>
         <details class="user-admin-editor">
           <summary>Editar utilizador</summary>
@@ -1244,8 +1240,8 @@ function navIconSvg(iconKey) {
   return window.IosIcons?.svg(iconKey, { className: 'nav-rail-icon' }) || '';
 }
 
-// Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client's whole nav is Entrega.
-const CLIENT_VISIBLE_TABS = new Set(['projetos', 'deliveryos']);
+// Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client sees Projetos and a read-only Resumo.
+const CLIENT_VISIBLE_TABS = new Set(['projetos', 'projeto']);
 
 function isNavItemVisible(item) {
   if (item.superAdminOnly && !isSuperAdmin()) return false;
@@ -1352,7 +1348,7 @@ window.refreshNavBadges = refreshNavBadges;
 
 // The collapsed rail carries the way in and the work sequence, nothing else. Adding
 // another icon here is how a quick nav stops being quick.
-const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'camada0', 'plano', 'tarefas', 'decisoes', 'deliveryos'];
+const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'camada0', 'plano', 'tarefas', 'decisoes'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1409,7 +1405,7 @@ function renderNavRail() {
     if (group.collapsible && expanded) {
       const open = moreOpen || activeInMore;
       html += `<details class="nav-rail-group" ${open ? 'open' : ''} data-nav-group="more">
-        <summary class="nav-rail-group-summary">${escapeHtml(group.label)}</summary>
+        <summary class="nav-rail-group-summary nav-rail-item">${navIconSvg('more')}<span class="nav-rail-label">${escapeHtml(group.label)}</span></summary>
         <div class="nav-rail-group-items">
           ${group.items.map((item) => renderNavItem(item)).join('')}
         </div>
@@ -1573,7 +1569,6 @@ function renderActiveTab(project, tabId) {
       window.ProjectHomeUI?.render?.(project);
       renderProjectClarity(project);
       renderProjectOverview(project);
-      renderRiskAssumptionView(project);
       break;
     case 'documentos':
       renderDocuments(project);
@@ -1612,7 +1607,8 @@ function renderActiveTab(project, tabId) {
       window.Camada0UI?.render?.(project.id);
       break;
     case 'plano':
-      window.PlanoUI?.render?.(project.id);
+      // Propósito, fases, riscos and assunções — read from the repository's yourlab/.
+      window.WorkspaceUI?.renderPlano?.(project);
       break;
     case 'decisoes':
       // Reading the log clears its own badge.
@@ -1648,6 +1644,7 @@ function renderActiveTab(project, tabId) {
       break;
     case 'definicoesPlataforma':
       window.PlatformSettingsUI?.render?.();
+      window.GoogleSignInUI?.renderSettings?.();
       break;
     case 'agentes':
       window.AgentsAdminUI?.render?.();
@@ -1678,7 +1675,6 @@ function renderProjectDetails(options = {}) {
       const show = p.dataset.panel === state.activeTab || (state.activeTab === 'projetos' && p.dataset.panel === 'projetos');
       p.classList.toggle('hidden', !show);
     });
-    renderPhaseContextBar();
     window.ProposalDownloads?.mountBar?.();
     renderProjectsPage();
     if (state.activeTab === 'agentes') {
@@ -1686,6 +1682,7 @@ function renderProjectDetails(options = {}) {
     }
     if (state.activeTab === 'definicoesPlataforma') {
       window.PlatformSettingsUI?.render?.();
+      window.GoogleSignInUI?.renderSettings?.();
     }
     if (state.activeTab === 'conta') window.AccountUI?.render?.();
     if (state.activeTab === 'hoje') window.ResumeUI?.renderHoje?.();
@@ -1721,7 +1718,6 @@ function renderProjectDetails(options = {}) {
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.classList.toggle('hidden', p.dataset.panel !== state.activeTab);
   });
-  renderPhaseContextBar();
   if (!options.skipTab) {
     renderActiveTab(project, state.activeTab);
   }
@@ -2383,6 +2379,8 @@ function wireImplementationPlanEvents() {
 }
 
 function renderImplementationPlan(project) {
+  // The old phase editor is gone; the plan is read from yourlab/phases/ on the Plano page.
+  if (!els.implementationPlanView) return;
   if (project && canEdit() && !implPhasesEditing && window.PhaseSync?.needsRequirementsPhaseSync?.(project)) {
     ensurePhasesSynced(project).then((synced) => {
       if (synced) renderImplementationPlan(synced);
@@ -2800,6 +2798,8 @@ function renderRequirementDetailEditor(project) {
 }
 
 function renderRiskAssumptionView(project) {
+  // Riscos and assunções now live in the repository (yourlab/project.md); nothing to draw into here.
+  if (!els.riskAssumptionView) return;
   const risks = Array.isArray(project.risks) ? project.risks : [];
   const assumptions = Array.isArray(project.assumptions) ? project.assumptions : [];
   const phases = Array.isArray(project.phases) ? project.phases : [];
@@ -3000,41 +3000,6 @@ async function refreshAgentConnectors() {
     : '<p class="muted-text">Nenhum Agent Runtime emparelhado.</p>';
 }
 
-function renderPhaseContextBar() {
-  const bar = els.phaseContextBar;
-  if (!bar) return;
-
-  const hideBar = !state.selectedProject
-    || state.activeTab === 'definicoes'
-    || state.activeTab === 'agentes'
-    || state.activeTab === 'projetos'
-    || state.activeTab === 'deliveryos';
-
-  if (hideBar) {
-    bar.classList.add('hidden');
-    bar.innerHTML = '';
-    return;
-  }
-
-  const stageId = state.deliverySelectedStageId || 'requirements';
-  const stageName = stageLabel(stageId);
-  const hasStageFilter = Boolean(state.tabFilters?.deliveryStageId);
-
-  bar.classList.remove('hidden');
-  bar.innerHTML = `
-    <div class="phase-context-strip">
-      <div class="phase-context-strip-left">
-        <span class="phase-context-pill">${escapeHtml(stageName)}</span>
-        ${hasStageFilter ? '<span class="phase-context-tag">filtro activo</span>' : '<span class="phase-context-tag is-muted">fase seleccionada</span>'}
-      </div>
-      <button type="button" class="phase-context-go" data-goto-tab="deliveryos" data-set-stage="${escapeHtml(stageId)}">
-        Ver conteúdo na Linha de Entrega
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-    </div>
-  `;
-}
-
 function navigateToRequirement(requirementId) {
   if (!requirementId || !state.selectedProject) return;
   state.selectedRequirementId = requirementId;
@@ -3079,8 +3044,12 @@ function navigateToFilteredTab(tabId, filters = {}) {
 
 function switchToTab(tabId) {
   let target = tabId || 'projetos';
+  // Fases lives inside Plano, and Resumo took over from Entrega. Old links and saved
+  // navigation still arrive with the old names.
+  if (target === 'fases') target = 'plano';
+  if (target === 'deliveryos') target = 'projeto';
   if (target === 'hoje' && !canSeeHoje()) target = 'projetos';
-  if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'deliveryos';
+  if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'projeto';
   if (target === 'tarefas') {
     const meta = window.workItemsTabMeta;
     const metaIsCurrent = meta?.projectId === state.selectedProject?.id;
@@ -3090,7 +3059,7 @@ function switchToTab(tabId) {
       || isPartnerEditor();
     if (!visible) {
       showToast('Sem tarefas visíveis neste projeto.', 'error');
-      state.activeTab = 'deliveryos';
+      state.activeTab = 'projeto';
     } else {
       state.activeTab = target;
     }
@@ -3116,7 +3085,6 @@ function switchToTab(tabId) {
   renderNavRail();
   renderMobileChrome();
   renderSettingsAvailability();
-  renderPhaseContextBar();
   applyClientTabVisibility();
   applyReadOnlyChrome();
 
@@ -3136,6 +3104,7 @@ function switchToTab(tabId) {
     window.AgentsAdminUI?.render?.();
   } else if (activeId === 'definicoesPlataforma') {
     window.PlatformSettingsUI?.render?.();
+      window.GoogleSignInUI?.renderSettings?.();
   }
   persistNavigationState();
 }
@@ -3147,11 +3116,12 @@ window.isSuperAdmin = isSuperAdmin;
 window.renderActiveTab = renderActiveTab;
 window.navigateToRequirement = navigateToRequirement;
 window.navigateToFilteredTab = navigateToFilteredTab;
-window.renderPhaseContextBar = renderPhaseContextBar;
 window.isPartnerEditor = isPartnerEditor;
 window.getProjectNavGroups = getProjectNavGroups;
 window.navIconSvg = navIconSvg;
 window.logout = handleLogout;
+window.completeLogin = completeLogin;
+window.setLoginStatus = setLoginStatus;
 // Conta saves through this, so the sidebar, the menu and the users list agree at once.
 window.setCurrentUser = (user) => {
   if (!user) return;
@@ -3266,6 +3236,13 @@ function safeParseJson(text, errorMessage) {
   }
 }
 
+/** What every way in ends with: keep the session, then open the platform. */
+async function completeLogin(payload) {
+  state.token = payload.token;
+  localStorage.setItem(TOKEN_KEY, state.token);
+  await bootstrapAppAfterLogin();
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   clearLoginStatus();
@@ -3279,9 +3256,7 @@ async function handleLogin(event) {
       },
     });
 
-    state.token = payload.token;
-    localStorage.setItem(TOKEN_KEY, state.token);
-    await bootstrapAppAfterLogin();
+    await completeLogin(payload);
   } catch (error) {
     setLoginStatus(error.message, 'error');
   }
@@ -4220,6 +4195,7 @@ async function bootstrap() {
     setLoginStatus(`Falha ao carregar configuração: ${error.message}`, 'error');
     return;
   }
+  window.GoogleSignInUI?.mountLogin?.(state.config);
 
   if (!state.token) {
     return;

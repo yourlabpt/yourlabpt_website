@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const { execFileSync } = require('child_process');
 const multer = require('multer');
 const userProfile = require('./lib/user-profile');
+const googleSignin = require('./lib/google-signin');
 const deliveryOs = require('./lib/delivery-os');
 const deliveryOsPlatform = require('./lib/delivery-os-platform');
 const projectAccess = require('./lib/project-access');
@@ -35,8 +36,11 @@ const engineeringState = require('./lib/engineering-state');
 const { registerEngineeringStateRoutes } = require('./lib/engineering-state-routes');
 const gitRepositories = require('./lib/git-repositories');
 const { registerGitRoutes } = require('./lib/git-routes');
+const { registerLlmProviderRoutes } = require('./lib/llm-provider-routes');
+const llmProviderSettings = require('./lib/llm-provider-settings');
 const { registerOpenspecRoutes } = require('./lib/openspec-routes');
 const { registerSurveyRoutes } = require('./lib/survey-routes');
+const { registerWorkspaceRoutes } = require('./lib/workspace-routes');
 const { registerIntakeRoutes } = require('./lib/intake-routes');
 const { registerMockupRoutes } = require('./lib/mockup-routes');
 const { registerEpicRoutes } = require('./lib/epic-routes');
@@ -892,6 +896,9 @@ function registerRequirementsPlatform(app, options) {
       phone: user.phone || '',
       company: user.company || '',
       jobTitle: user.jobTitle || '',
+      // How this person signs in. A Google account may have no password at all.
+      authProvider: user.authProvider || 'password',
+      hasPassword: Boolean(user.passwordHash),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -1115,6 +1122,8 @@ function registerRequirementsPlatform(app, options) {
       agentModelProfiles: require('./lib/execution-plans').MODEL_PROFILES,
       agentRoleRouting: require('./lib/execution-plans').ROLE_MODEL_PROFILES,
       defaultAdminEmail: process.env.REQ_PLATFORM_SUPER_ADMIN_EMAIL || 'admin@yourlab.local',
+      // Public: the login page shows «Continuar com Google» only when this is set.
+      googleSignIn: { clientId: (await googleSignin.readConfig(dataDir)).clientId },
       note: 'Se for primeiro acesso, use a password definida em REQ_PLATFORM_SUPER_ADMIN_PASSWORD ou change-me-now.',
       agentRuntime: {
         enabled: agentConnectionMode === 'remote_pull'
@@ -1211,6 +1220,49 @@ function registerRequirementsPlatform(app, options) {
 
       const store = await readStore();
       return res.json({ user: sanitizeUser(store.users.find((entry) => entry.id === userId)), changed });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /**
+   * Entrar com Google. The first sign-in makes an account with no projects; an
+   * administrator gives it access in the project's settings.
+   */
+  app.post('/api/projects/auth/google', async (req, res) => {
+    try {
+      const config = await googleSignin.readConfig(dataDir);
+      const profile = await googleSignin.verifyIdToken(req.body?.credential, config);
+      let result = null;
+      await updateStore(async (store) => {
+        result = googleSignin.signInUser(store.users, profile, { now: nowIso() });
+        appendActivity(store, {
+          actorUserId: result.user.id,
+          action: result.created ? 'user_signed_up_google' : 'user_signed_in_google',
+          details: { email: result.user.email },
+        });
+      });
+
+      const token = `sess_${crypto.randomUUID()}`;
+      sessions.set(token, {
+        userId: result.user.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      });
+      return res.json({ token, user: sanitizeUser(result.user), created: result.created });
+    } catch (error) {
+      return res.status(401).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/projects/auth/google/settings', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    return res.json(await googleSignin.readConfig(dataDir));
+  });
+
+  app.put('/api/projects/auth/google/settings', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      await googleSignin.saveSettings(dataDir, req.body || {});
+      return res.json(await googleSignin.readConfig(dataDir));
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -4054,6 +4106,12 @@ function registerRequirementsPlatform(app, options) {
     dataDir,
   });
 
+  registerLlmProviderRoutes(app, {
+    authMiddleware,
+    requireRole,
+    dataDir,
+  });
+
   registerIntakeRoutes(app, {
     authMiddleware,
     loadProjectForUser,
@@ -4099,6 +4157,17 @@ function registerRequirementsPlatform(app, options) {
     updateStore,
     appendActivity,
     dataDir,
+  });
+
+  // The project's documented artifacts, read from its repository's yourlab/ folder.
+  registerWorkspaceRoutes(app, {
+    authMiddleware,
+    requireRole,
+    loadProjectForUser,
+    updateStore,
+    appendActivity,
+    dataDir,
+    loadProject: ensureProjectLoaded,
   });
 
   registerOpenspecRoutes(app, {

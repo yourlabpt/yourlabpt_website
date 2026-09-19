@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
   <link rel="stylesheet" href="/projects/static/styles.css?v=105" />
-  <link rel="stylesheet" href="/projects/static/ios.css?v=3" />
+  <link rel="stylesheet" href="/projects/static/ios.css?v=6" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -32,6 +32,12 @@
         <label>Password<input type="password" id="loginPassword" placeholder="••••••••" required /></label>
         <button class="btn primary" type="submit">Entrar na Plataforma</button>
       </form>
+      <!-- Entrar com Google: shown only when the platform has a Google client ID. -->
+      <div class="login-google" id="googleSignInBlock" hidden>
+        <div class="login-divider"><span>ou</span></div>
+        <div id="googleSignInButton" class="google-signin-button"></div>
+        <p class="muted-text login-google-note">Primeira vez? Entrar com Google cria a sua conta. Um administrador dá-lhe acesso aos projectos.</p>
+      </div>
       <div id="loginStatus" class="status"></div>
     </section>
 
@@ -102,9 +108,6 @@
           </div>
 
           <div id="projectWorkspace">
-
-
-            <div id="phaseContextBar" class="phase-context-bar hidden" aria-live="polite"></div>
 
             <!-- TAB: HOJE — o que espera por si, em todos os projectos. Preenchido por resume-ui.js. -->
             <div class="tab-panel hidden" data-panel="hoje">
@@ -440,23 +443,6 @@
               </section>
             </div>
 
-            <!-- TAB: FASES (gestão central das fases) -->
-            <div class="tab-panel hidden" data-panel="fases">
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-teal">PLAN</span> Fases de Implementação</h3>
-                </div>
-                <p class="muted-text docs-section-intro">Gerir fases com números únicos (#1, #2…). Requisitos com «Fase 1», F1, etc. alinham automaticamente ao nome da fase correspondente. Renomeie livremente — a sincronização é automática.</p>
-                <div id="implementationPlanView"></div>
-              </section>
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <h3 class="panel-heading"><span class="section-badge badge-gray">PLAN</span> Riscos e Assunções</h3>
-                </div>
-                <div id="riskAssumptionView" class="readability-grid"></div>
-              </section>
-            </div>
-
             <!-- TAB: GERAR DOCS -->
             <div class="tab-panel hidden" data-panel="gerar">
               <section class="panel section-panel">
@@ -519,16 +505,9 @@
             </div>
 
             <!-- TAB: PLANO — CAMADAS 1 A 3 -->
+            <!-- TAB: PLANO — propósito, fases e riscos, lidos de yourlab/. Preenchido por workspace-ui.js. -->
             <div class="tab-panel hidden" data-panel="plano">
-              <section class="panel section-panel">
-                <div class="panel-title-row">
-                  <div>
-                    <h3 class="panel-heading"><span class="section-badge badge-gray">PLANO</span> Visão, epics e features</h3>
-                    <p class="muted-text">De cima para baixo o plano vai ficando mais pequeno: para que serve isto, que fatias tem, e de que é feita cada fatia. As tarefas estão em Tarefas.</p>
-                  </div>
-                </div>
-                <div id="planoPanel" class="mt-12"></div>
-              </section>
+              <div id="planoWorkspace" class="ios-page"></div>
             </div>
 
             <!-- TAB: CAMADA 0 — REFINAR INTENÇÃO -->
@@ -818,18 +797,54 @@
                     <button type="button" class="btn primary" id="gitSaveBtn">Guardar predefinições</button>
                   </div>
                 </section>
-                <section class="settings-section mt-12">
+                <section class="settings-section mt-12" id="agentSetupSection">
                   <div class="panel-title-row">
                     <div>
-                      <h4>Modelos</h4>
-                      <p class="muted-text">Os motores que as personas podem usar. A persona é sempre a mesma; o modelo é o que muda em cada execução.</p>
+                      <h4>Ligar os agentes</h4>
+                      <p class="muted-text">Quatro passos, por ordem: a chave do motor, o modelo, o Agent Runtime emparelhado, e um teste que confirma que uma execução real chegaria ao fim.</p>
                     </div>
                   </div>
-                  <div id="llmOptionsPanel" class="mt-8"></div>
-                  <div class="settings-save-row mt-8">
-                    <button type="button" class="btn ghost" id="llmAddBtn">Adicionar modelo</button>
-                    <button type="button" class="btn primary" id="llmSaveBtn">Guardar modelos</button>
+
+                  <div class="agent-setup-step">
+                    <h5>1. Motor de IA — credenciais</h5>
+                    <p class="muted-text">A chave fica guardada e cifrada na plataforma — nada de editar <code>.env</code> na máquina do Agent Runtime.</p>
+                    <div id="llmProviderPanel" class="mt-8"></div>
                   </div>
+
+                  <div class="agent-setup-step">
+                    <h5>2. Modelos</h5>
+                    <p class="muted-text">Os motores que as personas podem usar. A persona é sempre a mesma; o modelo é o que muda em cada execução.</p>
+                    <div id="llmOptionsPanel" class="mt-8"></div>
+                    <div class="settings-save-row mt-8">
+                      <button type="button" class="btn ghost" id="llmAddBtn">Adicionar modelo</button>
+                      <button type="button" class="btn primary" id="llmSaveBtn">Guardar modelos</button>
+                    </div>
+                  </div>
+
+                  <div class="agent-setup-step">
+                    <h5>3. Emparelhar o Agent Runtime</h5>
+                    <p class="muted-text">O Agent Runtime liga-se à plataforma por HTTPS. A plataforma nunca abre uma ligação à máquina onde ele corre.</p>
+                    <div id="agentConnectorList" class="simple-list mt-8"></div>
+                    <form id="agentPairingForm" class="form-grid compact mt-8">
+                      <label>Password actual
+                        <input id="agentPairingPassword" type="password" autocomplete="current-password" required />
+                      </label>
+                      <button class="btn primary" type="submit">Criar código de emparelhamento</button>
+                    </form>
+                    <div id="agentPairingResult" class="hidden mt-8"></div>
+                  </div>
+
+                  <div class="agent-setup-step">
+                    <h5>4. Testar a ligação</h5>
+                    <p class="muted-text">Confirma os três passos anteriores de uma vez, sem gastar uma execução real.</p>
+                    <button type="button" class="btn primary" id="agentSetupTestBtn">Testar ligação</button>
+                    <div id="agentSetupTestResult" class="mt-8"></div>
+                  </div>
+                </section>
+                <section class="settings-section mt-12">
+                  <h4>Entrar com Google</h4>
+                  <p class="muted-text">Quem entra com Google pela primeira vez fica com uma conta sem projectos. Dê-lhe acesso em Definições do projecto → Quem pode aceder ao projecto.</p>
+                  <div id="googleSignInSettings" class="mt-8"></div>
                 </section>
                 <section class="settings-section mt-12" id="platformUsersSection">
                   <h4>Contas</h4>
@@ -844,23 +859,6 @@
                         <button class="btn primary" type="submit">Criar utilizador</button>
                       </form><div id="usersList" class="simple-list mt-8"></div>
                   </article></div>
-                </section>
-                <section class="settings-section mt-12">
-                  <h4>Agent Runtime</h4>
-                  <details class="settings-advanced-details" id="agentConnectorCard">
-                  <summary>Agent Runtime — ligação segura</summary>
-                  <div class="read-card mt-12">
-                    <p class="muted-text">O Agent Runtime liga-se à plataforma por HTTPS. A plataforma nunca abre uma ligação ao seu Mac.</p>
-                    <div id="agentConnectorList" class="simple-list mt-8"></div>
-                    <form id="agentPairingForm" class="form-grid compact mt-8">
-                      <label>Password actual
-                        <input id="agentPairingPassword" type="password" autocomplete="current-password" required />
-                      </label>
-                      <button class="btn primary" type="submit">Criar código de emparelhamento</button>
-                    </form>
-                    <div id="agentPairingResult" class="hidden mt-8"></div>
-                  </div>
-                </details>
                 </section>
               </section>
             </div>
@@ -980,17 +978,7 @@
                 </div>
                 <p class="muted-text" id="settingsProjectHint">Seleccione um projecto para ver as opções avançadas.</p>
                 <details id="settingsProjectBody" class="hidden settings-advanced-details">
-                  <summary>Editar nível de detalhe, condições comerciais, riscos e integrações</summary>
-                  <div class="form-grid compact mt-12">
-                    <label>Nível de detalhe na linha de entrega
-                      <select id="deliveryLevelSelect">
-                        <option value="simple">Simples</option>
-                        <option value="standard">Standard</option>
-                        <option value="complete">Completo</option>
-                      </select>
-                    </label>
-                    <button type="button" class="btn primary" id="saveDeliveryLevelBtn">Guardar nível</button>
-                  </div>
+                  <summary>Editar condições comerciais, riscos e integrações</summary>
                   <div class="form-grid compact mt-12 hidden" id="engineeringFeatureAdminControl">
                     <label class="checkline"><input id="engineeringFeatureToggle" type="checkbox" /> Activar vista de Engenharia estruturada neste projecto</label>
                     <button type="button" class="btn" id="saveEngineeringFeatureBtn">Guardar feature flag</button>
@@ -1460,8 +1448,8 @@
   <script src="/projects/static/help-ui.js?v=3" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
-  <script src="/projects/static/ios-icons.js?v=1" defer></script>
-  <script src="/projects/static/app.js?v=56" defer></script>
+  <script src="/projects/static/ios-icons.js?v=2" defer></script>
+  <script src="/projects/static/app.js?v=59" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
   <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
@@ -1476,9 +1464,11 @@
   <script src="/projects/static/project-repository-ui.js?v=4" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=11" defer></script>
-  <script src="/projects/static/resume-ui.js?v=3" defer></script>
-  <script src="/projects/static/project-home-ui.js?v=2" defer></script>
-  <script src="/projects/static/account-ui.js?v=1" defer></script>
+  <script src="/projects/static/resume-ui.js?v=4" defer></script>
+  <script src="/projects/static/workspace-ui.js?v=1" defer></script>
+  <script src="/projects/static/project-home-ui.js?v=3" defer></script>
+  <script src="/projects/static/account-ui.js?v=2" defer></script>
+  <script src="/projects/static/google-signin-ui.js?v=1" defer></script>
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script src="/projects/static/camada0-ui.js?v=1" defer></script>
   <script src="/projects/static/plano-ui.js?v=1" defer></script>

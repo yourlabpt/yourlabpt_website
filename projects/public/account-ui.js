@@ -96,8 +96,9 @@
 
       <form class="ios-section" id="accountPasswordForm" novalidate>
         <h2 class="ios-group-label">Password</h2>
+        ${user.hasPassword === false ? '<p class="ios-footnote">Entra com Google. Pode também criar uma password para entrar com o email.</p>' : ''}
         <div class="ios-list">
-          ${field({ name: 'currentPassword', label: 'Actual', type: 'password', autocomplete: 'current-password' })}
+          ${user.hasPassword === false ? '' : field({ name: 'currentPassword', label: 'Actual', type: 'password', autocomplete: 'current-password' })}
           ${field({ name: 'newPassword', label: 'Nova', type: 'password', autocomplete: 'new-password', placeholder: 'Pelo menos 10 caracteres' })}
           ${field({ name: 'confirmPassword', label: 'Repetir', type: 'password', autocomplete: 'new-password' })}
         </div>
@@ -144,9 +145,10 @@
 
   async function changePassword(form) {
     const status = form.querySelector('[data-account-status]');
-    const currentPassword = form.elements.currentPassword.value;
+    const currentPassword = form.elements.currentPassword?.value || '';
+    const needsCurrent = window.state?.user?.hasPassword !== false;
     const newPassword = form.elements.newPassword.value;
-    if (!currentPassword || !newPassword) {
+    if ((needsCurrent && !currentPassword) || !newPassword) {
       status.textContent = 'Escreva a password actual e a nova.';
       return;
     }
@@ -159,6 +161,10 @@
       await window.apiRequest('/auth/me', { method: 'PATCH', body: { currentPassword, newPassword } });
       form.reset();
       status.textContent = '';
+      if (!needsCurrent) {
+        window.setCurrentUser?.({ ...window.state.user, hasPassword: true });
+        render();
+      }
       window.showToast?.('Password alterada. As sessões noutros dispositivos foram terminadas.', 'ok');
     } catch (error) {
       status.textContent = error.message;

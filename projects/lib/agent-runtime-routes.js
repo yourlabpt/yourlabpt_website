@@ -12,6 +12,7 @@ const agentPlatformSettings = require('./agent-platform-settings');
 const agentPersonas = require('./agent-personas');
 const agentTools = require('./agent-tools');
 const llmOptions = require('./llm-options');
+const llmProviderSettings = require('./llm-provider-settings');
 const personaBriefing = require('./persona-briefing');
 const gitRepositories = require('./git-repositories');
 const { resolveRuntimeReachability } = require('./work-items-routes');
@@ -356,6 +357,27 @@ function registerAgentRuntimeRoutes(app, deps) {
   // finishes, this is what advances the chain to the next persona.
   let orchestrationDriver = null;
   function setOrchestrationDriver(driver) { orchestrationDriver = driver; }
+
+  /**
+   * The chosen engine's wire-spec, plus the credential to reach it if one is
+   * configured in Definições da plataforma — so a runtime needs no `.env` of its own
+   * to bill against the right key. A runtime that does not read the extra fields
+   * falls back to its own configured key, so sending them is always safe.
+   */
+  async function resolveLlmSpec(option) {
+    const spec = llmOptions.wireSpec(option);
+    if (!spec) return spec;
+    try {
+      const credential = await llmProviderSettings.resolveProviderCredential(dataDir, spec.provider);
+      if (credential) {
+        spec.apiBaseUrl = credential.apiBaseUrl;
+        if (credential.apiKey) spec.apiKey = credential.apiKey;
+      }
+    } catch {
+      // No stored platform credential for this provider — the runtime's own .env decides.
+    }
+    return spec;
+  }
 
   const { createAgentRuntimeClient } = require('./agent-runtime-client');
   const runtime = createAgentRuntimeClient();
@@ -1605,7 +1627,7 @@ function registerAgentRuntimeRoutes(app, deps) {
           // Name the engine outright when routing chose one, so the runtime does not
           // have to guess a tier from a profile label. Null when nothing chose, and the
           // runtime then falls back to its own table.
-          llm: llmOptions.wireSpec(llmOptions.findOption(
+          llm: await resolveLlmSpec(llmOptions.findOption(
             runSettings.llmOptions,
             workItems.normalizeExecutionSettings(options.executionSettings || options).llmOptionId,
           )),

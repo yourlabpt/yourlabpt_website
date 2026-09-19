@@ -11,6 +11,8 @@
     agentSettings: null,
     modelProfiles: null,
     llmWarnings: {},
+    // Step 1 of the agent setup sequence: the credential behind each provider.
+    llmProviderSettings: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -149,7 +151,53 @@
     });
   }
 
+  /**
+   * Step 1 of the sequence: the credential behind each provider, not the catalogue of
+   * engines (that is `llmOptionsView` below). Each card is independently save-and-test,
+   * because "saved" and "actually works" are different claims and the operator should
+   * never have to guess which one is true.
+   */
+  function llmProviderView(settings) {
+    if (!settings) return '<p class="muted-text">Não foi possível ler as credenciais.</p>';
+    const providers = Object.values(settings.providers || {});
+    if (!providers.length) return '<p class="muted-text">Nenhum fornecedor conhecido.</p>';
+    return providers.map((p) => {
+      const badge = p.lastError
+        ? '<span class="section-badge badge-red">Falhou</span>'
+        : p.verifiedAt
+          ? '<span class="section-badge badge-green">Testado</span>'
+          : p.ready
+            ? '<span class="section-badge badge-amber">Por testar</span>'
+            : '<span class="section-badge badge-gray">Sem chave</span>';
+      const keyField = p.needsApiKey ? `
+        <label>Chave da API
+          <input data-llm-provider-field="apiKey" type="password" autocomplete="off"
+            placeholder="${p.hasApiKey ? `Guardada — impressão ${escapeHtml(p.apiKeyFingerprint)}` : 'cole a chave aqui'}" />
+        </label>` : '';
+      return `
+      <div class="llm-provider-card" data-llm-provider="${escapeHtml(p.id)}">
+        <div class="llm-provider-card-head">
+          <strong>${escapeHtml(p.label)}</strong>
+          ${badge}
+        </div>
+        <div class="form-grid compact mt-8">
+          <label>URL base<input data-llm-provider-field="apiBaseUrl" value="${escapeHtml(p.apiBaseUrl)}" /></label>
+          ${keyField}
+        </div>
+        ${p.verifiedAt ? `<p class="muted-text">Testado em ${escapeHtml(when(p.verifiedAt))}${p.verifiedModel ? ` — respondeu com <code>${escapeHtml(p.verifiedModel)}</code>` : ''}.</p>` : ''}
+        ${p.lastError ? `<p class="muted-text"><span class="section-badge badge-red">Erro</span> ${escapeHtml(p.lastError)}</p>` : ''}
+        <div class="ado-action-bar mt-8">
+          <button type="button" class="btn tiny primary" data-llm-provider-save="${escapeHtml(p.id)}">Guardar e testar</button>
+          ${p.hasApiKey ? `<button type="button" class="btn tiny ghost" data-llm-provider-clear="${escapeHtml(p.id)}">Remover chave</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function paint() {
+    const llmProviderHost = $('llmProviderPanel');
+    if (llmProviderHost) llmProviderHost.innerHTML = llmProviderView(state.llmProviderSettings);
+
     const llmHost = $('llmOptionsPanel');
     if (llmHost) llmHost.innerHTML = llmOptionsView(state.agentSettings, state.llmWarnings);
 
@@ -187,6 +235,13 @@
       state.agentSettings = null;
       window.showToast?.(error.message, 'error');
     }
+    try {
+      const providers = await apiRequest('/llm-provider/settings');
+      state.llmProviderSettings = providers.settings;
+    } catch (error) {
+      state.llmProviderSettings = null;
+      window.showToast?.(error.message, 'error');
+    }
     paint();
   }
 
@@ -214,6 +269,57 @@
     }
   }
 
+  /**
+   * Like `run`, but for actions unrelated to GitHub — it must not flash "A falar com
+   * o GitHub…" over that panel while an LLM provider or runtime check is running.
+   */
+  async function runQuiet(fn) {
+    try {
+      await fn();
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    } finally {
+      await load();
+    }
+  }
+
+  /**
+   * Step 4: checks the previous three steps together, in the operator's own terms,
+   * without spending a real execution. Each line names exactly what is missing rather
+   * than a single pass/fail — "something is wrong" is not a step the operator can act on.
+   */
+  async function testAgentSetup() {
+    const result = $('agentSetupTestResult');
+    if (result) result.innerHTML = '<p class="muted-text">A verificar…</p>';
+    try {
+      const [health, providerPayload] = await Promise.all([
+        apiRequest('/agent-runs/health'),
+        apiRequest('/llm-provider/settings'),
+      ]);
+      const providers = Object.values(providerPayload.settings?.providers || {});
+      const readyProvider = providers.find((p) => p.verifiedAt && !p.lastError);
+      const lines = [
+        readyProvider
+          ? `✅ Motor de IA testado com sucesso: <strong>${escapeHtml(readyProvider.label)}</strong>.`
+          : '❌ Nenhum motor de IA testado com sucesso ainda — passo 1.',
+        health.paired
+          ? '✅ Agent Runtime emparelhado.'
+          : '❌ Nenhum Agent Runtime emparelhado ainda — passo 3.',
+        health.runtimeReachable
+          ? '✅ Agent Runtime online agora.'
+          : `❌ Agent Runtime não está online${health.paired ? ' — inicie-o na máquina onde corre.' : '.'}`,
+      ];
+      const allOk = Boolean(readyProvider) && health.runtimeReachable;
+      if (result) {
+        result.innerHTML = `
+          <p><span class="section-badge ${allOk ? 'badge-green' : 'badge-red'}">${allOk ? 'Pronto para uma execução real' : 'Falta um passo'}</span></p>
+          <ul class="agent-setup-checklist">${lines.map((line) => `<li>${line}</li>`).join('')}</ul>`;
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<p class="muted-text"><span class="section-badge badge-red">Erro</span> ${escapeHtml(error.message)}</p>`;
+    }
+  }
+
   /** Saves the engine list without reloading the GitHub panel underneath it. */
   async function saveLlmOptions(options) {
     const payload = await apiRequest('/agent-platform/settings', {
@@ -227,6 +333,41 @@
   }
 
   document.addEventListener('click', (event) => {
+    const saveProviderId = event.target?.getAttribute?.('data-llm-provider-save');
+    if (saveProviderId) {
+      const card = event.target.closest('[data-llm-provider]');
+      const apiBaseUrl = card?.querySelector('[data-llm-provider-field="apiBaseUrl"]')?.value?.trim() || '';
+      const apiKeyInput = card?.querySelector('[data-llm-provider-field="apiKey"]');
+      // A blank key field means "keep the one already stored" — the operator should
+      // never have to retype a secret just to re-run the test.
+      const typedKey = apiKeyInput?.value || '';
+      runQuiet(async () => {
+        await apiRequest(`/llm-provider/settings/${encodeURIComponent(saveProviderId)}`, {
+          method: 'PATCH',
+          body: { apiBaseUrl, ...(typedKey ? { apiKey: typedKey } : {}) },
+        });
+        const result = await apiRequest(`/llm-provider/settings/${encodeURIComponent(saveProviderId)}/verify`, {
+          method: 'POST',
+          body: {},
+        });
+        window.showToast?.(`Ligação válida${result.sampleModel ? ` — ${result.sampleModel}` : ''}.`, 'ok');
+      });
+      return;
+    }
+
+    const clearProviderId = event.target?.getAttribute?.('data-llm-provider-clear');
+    if (clearProviderId) {
+      if (!window.confirm('Remover esta chave? As execuções que dependem dela deixam de conseguir chamar este motor.')) return;
+      runQuiet(async () => {
+        await apiRequest(`/llm-provider/settings/${encodeURIComponent(clearProviderId)}/disconnect`, {
+          method: 'POST',
+          body: {},
+        });
+        window.showToast?.('Chave removida.', 'ok');
+      });
+      return;
+    }
+
     const removeIndex = event.target?.getAttribute?.('data-llm-remove');
     if (removeIndex !== null && removeIndex !== undefined) {
       const options = collectLlmOptions();
@@ -260,6 +401,11 @@
       saveLlmOptions(collectLlmOptions())
         .then(() => window.showToast?.('Modelos guardados.', 'ok'))
         .catch((error) => window.showToast?.(error.message, 'error'));
+      return;
+    }
+
+    if (id === 'agentSetupTestBtn') {
+      testAgentSetup();
       return;
     }
 

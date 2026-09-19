@@ -79,3 +79,10 @@ test('the own-account route is open to anyone signed in and applies these rules'
   assert.match(api, /app\.patch\('\/api\/projects\/auth\/me', authMiddleware, async/);
   assert.match(api, /userProfile\.applyOwnProfile\(/);
 });
+
+test('an account made through Google sets its first password without a current one', () => {
+  const record = user({ passwordHash: '' });
+  const { changed } = apply(record, { newPassword: 'primeira-password' });
+  assert.deepEqual(changed, ['password']);
+  assert.equal(record.passwordHash, hashPassword('primeira-password'));
+});

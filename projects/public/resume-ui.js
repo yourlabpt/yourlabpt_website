@@ -332,7 +332,9 @@
     const grid = $('projectsPageGrid');
     if (!grid) return;
     if (!list.length) {
-      grid.innerHTML = staticRow('Ainda não há projectos. Use «Novo projecto» para criar o primeiro.');
+      grid.innerHTML = staticRow(canSee()
+        ? 'Ainda não há projectos. Use «Novo projecto» para criar o primeiro.'
+        : 'Ainda não tem projectos. Aparecem aqui quando um administrador lhe der acesso.');
       return;
     }
     const shown = list.filter((project) => {

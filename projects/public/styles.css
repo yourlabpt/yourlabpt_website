@@ -4901,6 +4901,52 @@ body.help-drawer-open {
   padding: 0 16px 16px;
 }
 
+.agent-setup-step {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--simple-item-bg);
+}
+
+.agent-setup-step + .agent-setup-step {
+  margin-top: 12px;
+}
+
+.agent-setup-step h5 {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.llm-provider-card {
+  border: 1px solid var(--simple-item-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  background: var(--surface);
+}
+
+.llm-provider-card + .llm-provider-card {
+  margin-top: 8px;
+}
+
+.llm-provider-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-setup-checklist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .settings-advanced-details > summary {
   padding: 16px 0;
   cursor: pointer;
