@@ -1850,7 +1850,7 @@ app.get('/api/digitalizept/foco', requireDigitalizept, (req, res) => {
 
 const FOCO_SELECT = `
     SELECT l.id, l.nome, l.business_type AS tipo, l.cidade, l.morada, l.whatsapp, l.telefone, l.foco_estado AS estado,
-           l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng,
+           l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng, l.foco_dor AS dor,
            l.foco_origem_json, l.criado_em, l.atualizado_em,
            (SELECT texto FROM nota n WHERE n.lead_id = l.id ORDER BY n.criado_em DESC LIMIT 1) AS ultima_nota
     FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id`;
@@ -1869,6 +1869,11 @@ function focoPodeMexer(req, contacto) {
     return contacto && (req.vendedor.papel === 'admin' || contacto.vendedor_id === req.vendedor.id);
 }
 
+// Unowned contacts (lista comum) are visible to everyone until someone takes them.
+function focoPodeVer(req, contacto) {
+    return contacto && (focoPodeMexer(req, contacto) || contacto.vendedor_id === '');
+}
+
 async function focoGerarDemo(db, contacto, codigo) {
     const r = await foco.criarDemo({ ...contacto, codigo });
     db.prepare('UPDATE lead SET dmn_token = ?, dmn_link = ? WHERE id = ?').run(r.token, r.link, contacto.id);
@@ -1880,7 +1885,7 @@ app.get('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => {
     const todos = req.vendedor.papel === 'admin' && req.query.todos === '1';
     // ponytail: whole list in one response; page it if a partner's list passes a few thousand
     const rows = db.prepare(`${FOCO_SELECT}
-        WHERE l.foco_estado != '' ${todos ? '' : 'AND l.vendedor_id = ?'}
+        WHERE l.foco_estado != '' ${todos ? '' : "AND (l.vendedor_id = ? OR (l.vendedor_id = '' AND l.foco_estado = 'por_contactar'))"}
         ORDER BY CASE WHEN l.revisitar_em != '' AND l.revisitar_em <= date('now') THEN 0 ELSE 1 END,
                  CASE WHEN l.foco_estado = 'por_contactar' THEN 1 ELSE 0 END, l.atualizado_em DESC
         LIMIT 5000
@@ -1888,7 +1893,7 @@ app.get('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => {
     res.json({ contactos: rows.map(focoLinha) });
 });
 
-app.post('/api/digitalizept/foco/contactos', requireDigitalizept, async (req, res) => {
+app.post('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => {
     const b = req.body || {};
     const nome = cleanText(b.nome, 200);
     const tipo = cleanText(b.tipo, 80);
@@ -1903,13 +1908,7 @@ app.post('/api/digitalizept/foco/contactos', requireDigitalizept, async (req, re
     const nota = cleanText(b.nota, 2000);
     if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), id, nota, now);
     digitalizeptLogEvento(db, 'lead', id, 'foco_estado', { estado: 'contactado', nota });
-    let erroDemo = '';
-    try {
-        await focoGerarDemo(db, focoContacto(db, id), req.vendedor.codigo);
-    } catch (err) {
-        erroDemo = `Contacto guardado, mas a demo falhou: ${err.message}`;
-    }
-    res.json({ contacto: focoContacto(db, id), erroDemo });
+    res.json({ contacto: focoContacto(db, id) });
 });
 
 app.post('/api/digitalizept/foco/contactos/:id/demo', requireDigitalizept, async (req, res) => {
@@ -1934,9 +1933,17 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
     const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
     const nota = cleanText(b.nota, 2000);
     const canal = foco.CANAIS[b.canal] ? b.canal : '';
-    db.prepare('UPDATE lead SET foco_estado = ?, revisitar_em = ? WHERE id = ?').run(estado, voltarEm, contacto.id);
+    const dor = foco.DORES[b.dor] ? b.dor : contacto.dor;
+    const dorItens = Array.isArray(b.dor_itens) ? b.dor_itens.map((x) => cleanText(x, 200)).filter(Boolean).slice(0, 12) : [];
+    db.prepare('UPDATE lead SET foco_estado = ?, revisitar_em = ?, foco_dor = ? WHERE id = ?').run(estado, voltarEm, dor, contacto.id);
+    // The call guide asks for the best WhatsApp number before sending the link.
+    const whatsapp = cleanText(b.whatsapp, 40);
+    if (whatsapp) db.prepare('UPDATE lead SET whatsapp = ? WHERE id = ?').run(whatsapp, contacto.id);
     if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, nota, digitalizeptNow());
-    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_estado', { estado, nota, voltar_em: voltarEm, canal, de: contacto.estado });
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_estado', {
+        estado, nota, voltar_em: voltarEm, canal, de: contacto.estado,
+        dor: foco.DORES[b.dor] ? b.dor : '', dor_itens: dorItens, guiao: b.guiao === true
+    });
     res.json({ contacto: focoContacto(db, contacto.id) });
 });
 
@@ -1944,7 +1951,7 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
 app.get('/api/digitalizept/foco/contactos/:id/historico', requireDigitalizept, (req, res) => {
     const db = getDigitalizeptDb();
     const contacto = focoContacto(db, req.params.id);
-    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    if (!focoPodeVer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
     const eventos = db.prepare(`
         SELECT e.tipo, e.payload_json, e.criado_em, v.nome AS quem FROM evento e LEFT JOIN vendedor v ON v.id = e.vendedor_id
         WHERE e.entidade = 'lead' AND e.entidade_id = ? ORDER BY e.criado_em DESC LIMIT 200
@@ -1960,7 +1967,8 @@ app.get('/api/digitalizept/foco/contactos/:id/historico', requireDigitalizept, (
 app.patch('/api/digitalizept/foco/contactos/:id', requireDigitalizeptAdmin, (req, res) => {
     const db = getDigitalizeptDb();
     const contacto = focoContacto(db, req.params.id);
-    const para = db.prepare('SELECT id, nome FROM vendedor WHERE id = ? AND ativo = 1').get(cleanText((req.body || {}).vendedor_id, 80));
+    const paraId = cleanText((req.body || {}).vendedor_id, 80);
+    const para = paraId ? db.prepare('SELECT id, nome FROM vendedor WHERE id = ? AND ativo = 1').get(paraId) : { id: '', nome: 'Lista comum' };
     if (!contacto || !para) return res.status(404).json({ error: 'Contacto ou pessoa não encontrados.' });
     db.prepare('UPDATE lead SET vendedor_id = ? WHERE id = ?').run(para.id, contacto.id);
     digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_atribuido', { de: contacto.vendedor || '', para: para.nome });
@@ -1973,21 +1981,111 @@ app.post('/api/digitalizept/foco/importar', requireDigitalizept, (req, res) => {
     if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: 'O ficheiro tem de ser uma lista JSON de negócios.' });
     if (b.rows.length > 20000) return res.status(400).json({ error: 'Máximo 20 000 negócios por importação.' });
     const db = getDigitalizeptDb();
-    const vendedorId = req.vendedor.papel === 'admin' && b.vendedor_id
-        ? (db.prepare('SELECT id FROM vendedor WHERE id = ? AND ativo = 1').get(String(b.vendedor_id)) || {}).id
-        : req.vendedor.id;
-    if (!vendedorId) return res.status(400).json({ error: 'Pessoa não encontrada.' });
+    // Admin imports into the shared list unless handing them to someone; a partner imports for themselves.
+    let vendedorId = req.vendedor.id;
+    if (req.vendedor.papel === 'admin') {
+        vendedorId = b.vendedor_id ? (db.prepare('SELECT id FROM vendedor WHERE id = ? AND ativo = 1').get(String(b.vendedor_id)) || {}).id : '';
+        if (vendedorId === undefined) return res.status(400).json({ error: 'Pessoa não encontrada.' });
+    }
     try {
-        const r = foco.importar(db, b.rows, {
+        const r = equipa.semVendedor(() => foco.importar(db, b.rows, {
             vendedorId, soFoco: b.soFoco !== false, parseMapsUrl, whatsappIfMobile,
             nowIso: digitalizeptNow, uuid: () => crypto.randomUUID()
-        });
-        digitalizeptLogEvento(db, 'importacao', vendedorId, 'foco_importar', r);
+        }));
+        digitalizeptLogEvento(db, 'importacao', vendedorId || 'lista_comum', 'foco_importar', r);
         res.json(r);
     } catch (err) {
         console.error('foco importar:', err.message);
         res.status(500).json({ error: err.message });
     }
+});
+
+// Take a contact from the shared list. The WHERE makes it first-come: two
+// partners tapping at once, only one UPDATE changes a row.
+app.post('/api/digitalizept/foco/contactos/:id/assumir', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const r = db.prepare("UPDATE lead SET vendedor_id = ? WHERE id = ? AND vendedor_id = ''").run(req.vendedor.id, req.params.id);
+    const contacto = focoContacto(db, req.params.id);
+    if (!contacto) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    if (!r.changes) return res.status(409).json({ error: `Já está com ${contacto.vendedor || 'outra pessoa'}.`, contacto });
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_atribuido', { de: 'Lista comum', para: req.vendedor.nome });
+    res.json({ contacto });
+});
+
+// Give it back — only while nobody has talked to them yet (history stays with the lead).
+app.post('/api/digitalizept/foco/contactos/:id/largar', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    if (contacto.estado !== 'por_contactar') return res.status(409).json({ error: 'Já foi contactado — fica com quem o contactou.' });
+    db.prepare("UPDATE lead SET vendedor_id = '' WHERE id = ?").run(contacto.id);
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_atribuido', { de: contacto.vendedor || '', para: 'Lista comum' });
+    res.json({ contacto: focoContacto(db, contacto.id) });
+});
+
+// A WhatsApp message went out: which template, the exact text. The first
+// message moves the contact to "contactado" (or "link enviado" if it had the link).
+app.post('/api/digitalizept/foco/contactos/:id/mensagem', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Assuma o contacto primeiro.' });
+    const b = req.body || {};
+    const texto = cleanText(b.texto, 4000);
+    const comLink = Boolean(contacto.dmn_link) && texto.includes(contacto.dmn_link);
+    let estado = contacto.estado;
+    if (['por_contactar', 'contactado', 'voltar'].includes(estado)) estado = comLink ? 'demo_mostrada' : 'contactado';
+    db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?').run(estado, contacto.id);
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_mensagem', {
+        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal: 'whatsapp', com_link: comLink, estado
+    });
+    res.json({ contacto: focoContacto(db, contacto.id) });
+});
+
+// Message templates — shared by everyone; you edit your own, the admin edits all.
+function focoMensagens(db) {
+    return db.prepare(`SELECT m.id, m.nome, m.segmento_id, m.texto, m.criado_por, v.nome AS autor, m.atualizado_em
+        FROM foco_mensagem m LEFT JOIN vendedor v ON v.id = m.criado_por WHERE m.ativo = 1 ORDER BY m.nome`).all();
+}
+app.get('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => {
+    res.json({ mensagens: focoMensagens(getDigitalizeptDb()) });
+});
+app.post('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => {
+    const b = req.body || {};
+    const nome = cleanText(b.nome, 120);
+    const texto = cleanText(b.texto, 4000);
+    if (!nome || !texto) return res.status(400).json({ error: 'Falta o nome ou o texto.' });
+    const db = getDigitalizeptDb();
+    const now = digitalizeptNow();
+    db.prepare(`INSERT INTO foco_mensagem (id, nome, segmento_id, texto, criado_por, criado_em, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(crypto.randomUUID(), nome, cleanText(b.segmento_id, 80), texto, req.vendedor.id, now, now);
+    res.json({ mensagens: focoMensagens(db) });
+});
+app.patch('/api/digitalizept/foco/mensagens/:id', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const m = db.prepare('SELECT * FROM foco_mensagem WHERE id = ? AND ativo = 1').get(req.params.id);
+    if (!m) return res.status(404).json({ error: 'Modelo não encontrado.' });
+    if (req.vendedor.papel !== 'admin' && m.criado_por !== req.vendedor.id) return res.status(403).json({ error: 'Só quem criou (ou o admin) pode mudar este modelo.' });
+    const b = req.body || {};
+    db.prepare('UPDATE foco_mensagem SET nome = ?, segmento_id = ?, texto = ?, ativo = ?, atualizado_em = ? WHERE id = ?').run(
+        cleanText(b.nome, 120) || m.nome, b.segmento_id !== undefined ? cleanText(b.segmento_id, 80) : m.segmento_id,
+        cleanText(b.texto, 4000) || m.texto, b.ativo === false ? 0 : 1, digitalizeptNow(), m.id
+    );
+    res.json({ mensagens: focoMensagens(db) });
+});
+
+// Admin: old leads nobody ever contacted (no touch in the old sequence, not in
+// Foco yet, not closed) go to the shared list so partners can take them.
+const FOCO_LIBERTAVEIS = `FROM lead l WHERE l.foco_estado IN ('', 'por_contactar') AND l.estado != 'fechado'
+    AND l.vendedor_id IN (SELECT id FROM vendedor WHERE papel = 'admin')
+    AND NOT EXISTS (SELECT 1 FROM lead_toque t WHERE t.lead_id = l.id)`;
+app.get('/api/digitalizept/foco/libertar', requireDigitalizeptAdmin, (req, res) => {
+    res.json({ n: getDigitalizeptDb().prepare(`SELECT COUNT(*) AS n ${FOCO_LIBERTAVEIS}`).get().n });
+});
+app.post('/api/digitalizept/foco/libertar', requireDigitalizeptAdmin, (req, res) => {
+    const db = getDigitalizeptDb();
+    const r = db.prepare(`UPDATE lead SET vendedor_id = '', foco_estado = 'por_contactar' WHERE id IN (SELECT l.id ${FOCO_LIBERTAVEIS})`).run();
+    digitalizeptLogEvento(db, 'importacao', 'lista_comum', 'foco_libertar', { n: r.changes });
+    res.json({ n: r.changes });
 });
 
 // Who can receive contacts — any logged-in person may see the names (not the logins).
@@ -3637,7 +3735,8 @@ app.get('/api/digitalizept/leads', requireDigitalizept, (req, res) => {
         const rows = db.prepare(`
             SELECT l.id, l.business_type, l.nome, l.morada, l.cidade, l.telefone, l.whatsapp, l.estado,
                    l.cobertura, l.resultado, l.demo_slug, l.notas_admin, l.criado_em, l.atualizado_em, l.lat, l.lng, l.followup_json,
-                   l.processo_estado, l.proxima_acao_em, l.revisitar_em,
+                   l.processo_estado, l.proxima_acao_em, l.revisitar_em, l.vendedor_id, l.foco_estado,
+                   (SELECT nome FROM vendedor WHERE id = l.vendedor_id) AS vendedor_nome,
                    d.obrigatorios_json, d.opcionais_json, cl.email AS legal_email,
                    p.total_com_iva_centimos, p.iva_rate
             FROM lead l
@@ -3684,6 +3783,8 @@ app.get('/api/digitalizept/leads', requireDigitalizept, (req, res) => {
                     callDoneAt: followup.callDoneAt || '',
                     processoEstado: r.processo_estado || '',
                     processoEstadoLabel: leadProcess.ESTADO_LABELS[r.processo_estado] || '',
+                    vendedor: r.vendedor_id ? (r.vendedor_nome || '—') : 'Lista comum',
+                    focoEstado: foco.ESTADOS[r.foco_estado] || '',
                     proximaAcaoEm: r.proxima_acao_em || '',
                     revisitarEm: r.revisitar_em || '',
                     fichaMissing: dossier.assessCompleteness({

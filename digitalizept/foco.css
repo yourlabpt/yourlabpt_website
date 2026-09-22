@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 /* Foco comercial — builds on digitalizept.css tokens. */
 #user-input {
     padding: 14px 16px;
@@ -121,7 +122,7 @@
 }
 
 .foco-filtros { display: grid; gap: 8px; grid-template-columns: 1fr; }
-@media (min-width: 560px) { .foco-filtros { grid-template-columns: 2fr 1fr 1fr; } .foco-filtros .foco-toggle { grid-column: 1 / -1; } }
+@media (min-width: 560px) { .foco-filtros { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); } .foco-filtros .foco-toggle { grid-column: 1 / -1; } }
 .foco-mapa { position: relative; z-index: 0; isolation: isolate; height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); overflow: hidden; background: var(--secondary-dark); }
 .foco-legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--text-muted); }
 .foco-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
@@ -132,3 +133,15 @@
 }
 .foco-historico { display: grid; gap: 10px; }
 .foco-evento { border-left: 2px solid var(--separator); padding-left: 12px; display: grid; gap: 2px; font-size: 0.9rem; }
+
+.foco-mensagem { font-size: 0.95rem; line-height: 1.4; }
+.foco-pre { white-space: pre-wrap; }
+.foco-checks { display: grid; gap: 8px; font-size: 0.95rem; }
+.foco-checks input { margin-right: 6px; }
+.foco-contactar button {
+    padding: 7px 12px; border-radius: 999px; background: var(--fill-color); color: var(--accent-color);
+    border: 0; font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+
+.foco-se { border-left: 2px solid var(--accent-soft); padding-left: 12px; display: grid; gap: 8px; }
+.foco-conversa { display: grid; gap: 12px; }

@@ -815,6 +815,10 @@ function addControloLeadButton(actions, leadId, { primary = true } = {}) {
     return btn;
 }
 
+function escapeHtmlText(t) {
+    return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 function renderDemos() {
     const q = (el.demosFilter.value || '').trim().toLowerCase();
     const segmento = leadsSegmento();
@@ -861,6 +865,7 @@ function renderDemos() {
             <h3>${leadDueIconHtml(l)}${leadProcessDotHtml(l)}<span class="lead-card-name">${l.nome || 'Sem nome'}</span></h3>
             <p class="meta">${tipo || '—'} · ${situacaoTxt} · ${new Date(l.criado_em).toLocaleDateString('pt-PT')}</p>
             <p class="meta">${addr} · ${phone || '—'} · ${l.email || '—'}</p>
+            <p class="meta">Com: ${escapeHtmlText(l.vendedor || '—')}${l.focoEstado ? ` · Foco: ${escapeHtmlText(l.focoEstado)}` : ''}</p>
         `;
         const actions = document.createElement('div');
         actions.className = 'actions';

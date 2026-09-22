@@ -33,7 +33,10 @@ test('owner is created, old leads are theirs, new rows are stamped with whoever 
         db.prepare("INSERT INTO lead (id, nome) VALUES ('novo', 'y')").run();
         db.prepare("INSERT INTO evento (id, tipo) VALUES ('e1', 't')").run();
         db.prepare("INSERT INTO lead_toque (id) VALUES ('t1')").run();
+        // Shared-list rows are unowned on purpose, even inside a logged-in request.
+        equipa.semVendedor(() => db.prepare("INSERT INTO lead (id, nome) VALUES ('comum', 'w')").run());
     });
+    assert.equal(db.prepare("SELECT vendedor_id FROM lead WHERE id = 'comum'").get().vendedor_id, '');
     assert.equal(db.prepare("SELECT vendedor_id FROM lead WHERE id = 'novo'").get().vendedor_id, p.id);
     assert.equal(db.prepare("SELECT vendedor_id FROM evento WHERE id = 'e1'").get().vendedor_id, p.id);
     assert.equal(db.prepare("SELECT vendedor FROM lead_toque WHERE id = 't1'").get().vendedor, 'Ana');

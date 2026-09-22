@@ -15,17 +15,19 @@ const VERTICAIS_FILE = process.env.VERTICAIS_FILE || path.join(FOCO_DIR, 'vertic
 const TIPOS_FILE = path.join(FOCO_DIR, 'tipos.json');
 const DMN_BASE_URL = (process.env.DMN_BASE_URL || 'https://digitalizemeunegocio.pt').replace(/\/+$/, '');
 
-// Funnel = the conversion rule: show the demo → activate one product → configure.
+// Funnel: find out if the pain is real → send the app link → they try it → activate.
+// (`demo_mostrada` keeps its id for old rows; it now means the app link was sent.)
 const ESTADOS = {
     por_contactar: 'Por contactar',
     contactado: 'Contactado',
-    demo_mostrada: 'Demo mostrada',
+    demo_mostrada: 'Link da app enviado',
     quer_ativar: 'Quer ativar',
     ativou: 'Ativou produto',
     voltar: 'Voltar a falar',
     sem_interesse: 'Sem interesse'
 };
 const VIU_DEMO = ['demo_mostrada', 'quer_ativar', 'ativou'];
+const DORES = { sim: 'Dor real', talvez: 'Mais ou menos', nao: 'Não é dor' };
 const CANAIS = { presencial: 'Presencial', telefone: 'Telefone', whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', email: 'Email' };
 
 function nomesDosTipos() {
@@ -47,7 +49,7 @@ function carregar() {
     const verticais = (cfg.verticais || [])
         .map((v) => ({ ...v, tipos_nomes: (v.tipos || []).map((id) => ({ id, nome: nomes[id] || id })) }))
         .sort((a, b) => (a.foco || 99) - (b.foco || 99) || a.prioridade - b.prioridade);
-    return { versao: cfg.versao, nota: cfg.nota, regra_conversao: cfg.regra_conversao, fases: cfg.fases, verticais, estados: ESTADOS, canais: CANAIS, dmnBaseUrl: DMN_BASE_URL };
+    return { versao: cfg.versao, nota: cfg.nota, regra_conversao: cfg.regra_conversao, fases: cfg.fases, verticais, estados: ESTADOS, canais: CANAIS, dores: DORES, dmnBaseUrl: DMN_BASE_URL };
 }
 
 function segmentoDoTipo(verticais, tipo) {
@@ -90,13 +92,14 @@ function resumo(db, { vendedorId = null } = {}) {
     const { verticais } = carregar();
     const filtro = vendedorId ? 'AND l.vendedor_id = @vendedorId' : '';
     const rows = db.prepare(`
-        SELECT l.vendedor_id, l.business_type, l.foco_estado, COUNT(*) AS n
+        SELECT l.vendedor_id, l.business_type, l.foco_estado, l.foco_dor, COUNT(*) AS n
         FROM lead l WHERE l.foco_estado != '' ${filtro}
-        GROUP BY 1, 2, 3
+        GROUP BY 1, 2, 3, 4
     `).all({ vendedorId });
     const nomes = Object.fromEntries(db.prepare('SELECT id, nome FROM vendedor').all().map((v) => [v.id, v.nome]));
-    const vazio = () => ({ por_contactar: 0, contactos: 0, demos: 0, ativos: 0, sem_interesse: 0 });
+    const vazio = () => ({ por_contactar: 0, contactos: 0, demos: 0, ativos: 0, sem_interesse: 0, dor_sim: 0, dor_talvez: 0, dor_nao: 0 });
     const somar = (alvo, r) => {
+        if (DORES[r.foco_dor]) alvo[`dor_${r.foco_dor}`] += r.n;
         if (r.foco_estado === 'por_contactar') { alvo.por_contactar += r.n; return; }
         alvo.contactos += r.n;
         if (VIU_DEMO.includes(r.foco_estado)) alvo.demos += r.n;
@@ -109,7 +112,7 @@ function resumo(db, { vendedorId = null } = {}) {
     rows.forEach((r) => {
         const seg = segmentoDoTipo(verticais, r.business_type);
         const segId = seg ? seg.id : 'outros';
-        porVendedor[r.vendedor_id] = porVendedor[r.vendedor_id] || { id: r.vendedor_id, nome: nomes[r.vendedor_id] || '—', ...vazio() };
+        porVendedor[r.vendedor_id] = porVendedor[r.vendedor_id] || { id: r.vendedor_id, nome: r.vendedor_id ? (nomes[r.vendedor_id] || '—') : 'Lista comum', ...vazio() };
         porSegmento[segId] = porSegmento[segId] || { id: segId, nome: seg ? seg.nome : 'Outros', foco: seg ? seg.foco : null, ...vazio(), motivos: [] };
         somar(porVendedor[r.vendedor_id], r);
         somar(porSegmento[segId], r);
@@ -128,15 +131,27 @@ function resumo(db, { vendedorId = null } = {}) {
     // Which way of reaching out gets people to see the demo.
     const canais = db.prepare(`
         SELECT json_extract(e.payload_json, '$.canal') AS canal, COUNT(DISTINCT e.entidade_id) AS contactos,
+               COUNT(DISTINCT CASE WHEN l.foco_dor = 'sim' THEN l.id END) AS dor_sim,
                COUNT(DISTINCT CASE WHEN l.foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou') THEN l.id END) AS demos,
                COUNT(DISTINCT CASE WHEN l.foco_estado = 'ativou' THEN l.id END) AS ativos
         FROM evento e JOIN lead l ON l.id = e.entidade_id
         WHERE e.tipo = 'foco_estado' AND COALESCE(json_extract(e.payload_json, '$.canal'), '') != '' ${filtro}
         GROUP BY 1 ORDER BY 2 DESC
     `).all({ vendedorId }).map((c) => ({ ...c, nome: CANAIS[c.canal] || c.canal }));
+    // Which message gets a real conversation going.
+    const mensagens = db.prepare(`
+        SELECT json_extract(e.payload_json, '$.modelo') AS nome, COUNT(DISTINCT e.entidade_id) AS contactos,
+               COUNT(DISTINCT CASE WHEN l.foco_dor = 'sim' THEN l.id END) AS dor_sim,
+               COUNT(DISTINCT CASE WHEN l.foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou') THEN l.id END) AS demos,
+               COUNT(DISTINCT CASE WHEN l.foco_estado = 'ativou' THEN l.id END) AS ativos
+        FROM evento e JOIN lead l ON l.id = e.entidade_id
+        WHERE e.tipo = 'foco_mensagem' ${filtro}
+        GROUP BY 1 ORDER BY 2 DESC
+    `).all({ vendedorId });
     return {
         total,
         canais,
+        mensagens,
         vendedores: Object.values(porVendedor).sort((a, b) => b.ativos - a.ativos || b.demos - a.demos),
         segmentos: Object.values(porSegmento).sort((a, b) => (a.foco || 99) - (b.foco || 99))
     };
@@ -226,4 +241,4 @@ function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappI
     return r;
 }
 
-module.exports = { carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, ESTADOS, CANAIS, VERTICAIS_FILE, DMN_BASE_URL };
+module.exports = { carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

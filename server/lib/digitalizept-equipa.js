@@ -16,6 +16,11 @@ const PAPEIS = ['admin', 'parceiro'];
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const tokens = new Map(); // ponytail: in-memory, a restart logs everyone out — move to a table if that hurts
 
+/** Run code whose rows set their owner explicitly ('' = shared list) — the triggers leave them alone. */
+function semVendedor(fn) {
+    return als.exit(fn);
+}
+
 function atual() {
     const store = als.getStore();
     return (store && store.vendedor) || null;
@@ -62,8 +67,21 @@ function instalar(db, addMissingColumns) {
         dmn_link: "TEXT NOT NULL DEFAULT ''",
         foco_estado: "TEXT NOT NULL DEFAULT ''",
         // What the crawler found (maps, website, instagram, facebook, email, rating).
-        foco_origem_json: "TEXT NOT NULL DEFAULT '{}'"
+        foco_origem_json: "TEXT NOT NULL DEFAULT '{}'",
+        // Is the pain real? '' not asked yet · sim · talvez · nao — the thing we are testing.
+        foco_dor: "TEXT NOT NULL DEFAULT ''"
     });
+    // WhatsApp message templates, shared by the team (see foco.js for placeholders).
+    db.exec(`CREATE TABLE IF NOT EXISTS foco_mensagem (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL DEFAULT '',
+        segmento_id TEXT NOT NULL DEFAULT '',
+        texto TEXT NOT NULL DEFAULT '',
+        criado_por TEXT NOT NULL DEFAULT '',
+        ativo INTEGER NOT NULL DEFAULT 1,
+        criado_em TEXT NOT NULL,
+        atualizado_em TEXT NOT NULL
+    )`);
     addMissingColumns(db, 'evento', { vendedor_id: "TEXT NOT NULL DEFAULT ''" });
     db.exec('CREATE INDEX IF NOT EXISTS idx_lead_vendedor ON lead(vendedor_id)');
     db.exec("CREATE INDEX IF NOT EXISTS idx_lead_dmn_token ON lead(dmn_token) WHERE dmn_token != ''");
@@ -182,4 +200,4 @@ function atualizar(db, id, { nome, papel, senha, ativo }) {
     return publico(db.prepare('SELECT * FROM vendedor WHERE id = ?').get(id));
 }
 
-module.exports = { instalar, dono, login, logout, middleware, listar, criar, atualizar, atual, hashSenha, senhaCerta };
+module.exports = { instalar, dono, login, logout, middleware, listar, criar, atualizar, atual, semVendedor, hashSenha, senhaCerta };
