@@ -106,11 +106,26 @@ function instalar(db, addMissingColumns) {
         FOR EACH ROW WHEN NEW.foco_estado = ''
         BEGIN UPDATE lead SET foco_estado = CASE WHEN NEW.estado = 'fechado' THEN 'ativou' ELSE 'por_contactar' END WHERE id = NEW.id; END;`);
 
+    // Contacts nobody has talked to belong to the shared list, so every partner
+    // sees them and can take one. The admin's untouched leads move there once.
+    if (!db.prepare("SELECT 1 FROM app_setting WHERE key = 'foco_lista_comum_v1'").get()) {
+        db.prepare(`UPDATE lead SET vendedor_id = '' WHERE foco_estado = 'por_contactar'
+            AND vendedor_id IN (SELECT id FROM vendedor WHERE papel = 'admin')`).run();
+        db.prepare("INSERT INTO app_setting (key, value, actualizado_em) VALUES ('foco_lista_comum_v1', '1', ?)").run(new Date().toISOString());
+    }
+
     db.function('vendedor_atual', () => (atual() ? atual().id : ''));
     db.function('vendedor_atual_nome', () => (atual() ? atual().nome : ''));
+    db.function('vendedor_atual_papel', () => (atual() ? atual().papel : ''));
+    // A lead is stamped with who created it — except when the admin creates an
+    // untouched one in the admin pages (quick lead, visits, Descobrir): that one
+    // goes to the shared list for the partners. A contact the admin registers in
+    // Foco already has a state (contactado), so it stays theirs.
+    db.exec('DROP TRIGGER IF EXISTS lead_stamp_vendedor');
     db.exec(`
-        CREATE TRIGGER IF NOT EXISTS lead_stamp_vendedor AFTER INSERT ON lead
+        CREATE TRIGGER lead_stamp_vendedor AFTER INSERT ON lead
         FOR EACH ROW WHEN NEW.vendedor_id = '' AND vendedor_atual() != ''
+            AND NOT (vendedor_atual_papel() = 'admin' AND NEW.estado != 'fechado' AND NEW.foco_estado IN ('', 'por_contactar'))
         BEGIN UPDATE lead SET vendedor_id = vendedor_atual() WHERE id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS evento_stamp_vendedor AFTER INSERT ON evento
         FOR EACH ROW WHEN NEW.vendedor_id = '' AND vendedor_atual() != ''
