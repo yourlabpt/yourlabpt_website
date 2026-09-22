@@ -72,6 +72,7 @@ const {
 const dossier = require('./lib/digitalizept-dossier');
 const { leadsListOrderSql } = require('./lib/digitalizept-leads-list');
 const { lookupFromMaps, whatsappIfMobile } = require('./lib/digitalizept-maps-lookup');
+const { parseMapsUrl } = require('./lib/digitalizept-maps-url');
 const { fetchImageAsDataUrl } = require('./lib/digitalizept-fetch-image');
 const { ensureLeadFromVisit, findReusableLead, findLeadByContact, reconcileVisitLeadPair, syncLinkedVisitsIdentity } = require('./lib/digitalizept-visit-lead');
 const {
@@ -138,15 +139,16 @@ if (process.env.NODE_ENV === 'production' && DIGITALIZEPT_KEY === 'digitalizept-
 if (DIGITALIZEPT_KEY === 'digitalizept-key') {
     console.warn('digitalizept: using the default key. Set DIGITALIZEPT_KEY before sharing this app.');
 }
-const digitalizeptAuth = createAdminAuth({
-    password: DIGITALIZEPT_KEY,
-    tokenTtlMs: 12 * 60 * 60 * 1000
-});
-const requireDigitalizept = digitalizeptAuth.requireAdmin;
+// One login per person (owner + partners) — see lib/digitalizept-equipa.js.
+// The master key still works and logs in as the owner.
+const equipa = require('./lib/digitalizept-equipa');
+const foco = require('./lib/digitalizept-foco');
+const requireDigitalizept = equipa.middleware(() => getDigitalizeptDb());
+const requireDigitalizeptAdmin = equipa.middleware(() => getDigitalizeptDb(), { soAdmin: true });
 
 function isDigitalizeptPassword(input) {
     if (!input) return false;
-    if (digitalizeptAuth.validatePassword(input)) return true;
+    if (input === DIGITALIZEPT_KEY) return true;
     const adminKey = process.env.ADMIN_PASSWORD || '';
     return Boolean(adminKey) && input === adminKey;
 }
@@ -1788,22 +1790,219 @@ const digitalizeAuthLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10 }
 
 app.post('/api/digitalizept/login', (req, res) => {
     const ip = clientIp(req);
-    const key = cleanText(req.body && req.body.password, 300);
-    if (!isDigitalizeptPassword(key)) {
+    const senha = cleanText(req.body && req.body.password, 300);
+    const utilizador = cleanText(req.body && req.body.utilizador, 60);
+    const sessao = senha && equipa.login(getDigitalizeptDb(), {
+        utilizador, senha, masterOk: isDigitalizeptPassword
+    });
+    if (!sessao) {
         if (digitalizeptLoginLimiter.isLimited(ip)) {
             res.setHeader('retry-after', '900');
             return res.status(429).json({ error: 'Demasiadas tentativas. Espere alguns minutos.' });
         }
-        return res.status(401).json({ error: 'Invalid key.' });
+        return res.status(401).json({ error: 'Utilizador ou password errados.' });
     }
-    const token = digitalizeptAuth.issueToken();
-    return res.json({ token });
+    return res.json(sessao);
 });
 
 app.post('/api/digitalizept/logout', (req, res) => {
-    const token = (req.headers['x-admin-token'] || '').trim();
-    if (token) digitalizeptAuth.revokeToken(token);
+    equipa.logout((req.headers['x-admin-token'] || '').trim());
     return res.json({ success: true });
+});
+
+app.get('/api/digitalizept/me', requireDigitalizept, (req, res) => res.json({ vendedor: req.vendedor }));
+
+// Equipa — admin manages who can log in. Each person gets a public `codigo`
+// that tags the demo links they send (src=p-<codigo>).
+app.get('/api/digitalizept/equipa', requireDigitalizeptAdmin, (req, res) => {
+    res.json({ vendedores: equipa.listar(getDigitalizeptDb()) });
+});
+app.post('/api/digitalizept/equipa', requireDigitalizeptAdmin, (req, res) => {
+    try {
+        const v = equipa.criar(getDigitalizeptDb(), req.body || {}, digitalizeptNow);
+        digitalizeptLogEvento(getDigitalizeptDb(), 'vendedor', v.id, 'criado', { utilizador: v.utilizador, papel: v.papel });
+        res.json({ vendedor: v });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+app.patch('/api/digitalizept/equipa/:id', requireDigitalizeptAdmin, (req, res) => {
+    try {
+        const b = req.body || {};
+        const v = equipa.atualizar(getDigitalizeptDb(), req.params.id, { nome: b.nome, papel: b.papel, senha: b.senha, ativo: b.ativo });
+        digitalizeptLogEvento(getDigitalizeptDb(), 'vendedor', v.id, 'alterado', { papel: v.papel, ativo: v.ativo, senha: Boolean(b.senha) });
+        res.json({ vendedor: v });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// Foco comercial — segments + scripts (from digitalizemeunegocio's verticais.json),
+// each person's contacts, the demo link and the funnel outcome.
+app.get('/api/digitalizept/foco', requireDigitalizept, (req, res) => {
+    try {
+        res.json(foco.carregar());
+    } catch (err) {
+        console.error('foco:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+const FOCO_SELECT = `
+    SELECT l.id, l.nome, l.business_type AS tipo, l.cidade, l.morada, l.whatsapp, l.telefone, l.foco_estado AS estado,
+           l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng,
+           l.foco_origem_json, l.criado_em, l.atualizado_em,
+           (SELECT texto FROM nota n WHERE n.lead_id = l.id ORDER BY n.criado_em DESC LIMIT 1) AS ultima_nota
+    FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id`;
+
+function focoLinha(row) {
+    if (!row) return row;
+    const { foco_origem_json: origem, ...rest } = row;
+    return { ...rest, origem: JSON.parse(origem || '{}') };
+}
+
+function focoContacto(db, id) {
+    return focoLinha(db.prepare(`${FOCO_SELECT} WHERE l.id = ?`).get(id));
+}
+
+function focoPodeMexer(req, contacto) {
+    return contacto && (req.vendedor.papel === 'admin' || contacto.vendedor_id === req.vendedor.id);
+}
+
+async function focoGerarDemo(db, contacto, codigo) {
+    const r = await foco.criarDemo({ ...contacto, codigo });
+    db.prepare('UPDATE lead SET dmn_token = ?, dmn_link = ? WHERE id = ?').run(r.token, r.link, contacto.id);
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_demo', { link: r.link });
+}
+
+app.get('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const todos = req.vendedor.papel === 'admin' && req.query.todos === '1';
+    // ponytail: whole list in one response; page it if a partner's list passes a few thousand
+    const rows = db.prepare(`${FOCO_SELECT}
+        WHERE l.foco_estado != '' ${todos ? '' : 'AND l.vendedor_id = ?'}
+        ORDER BY CASE WHEN l.revisitar_em != '' AND l.revisitar_em <= date('now') THEN 0 ELSE 1 END,
+                 CASE WHEN l.foco_estado = 'por_contactar' THEN 1 ELSE 0 END, l.atualizado_em DESC
+        LIMIT 5000
+    `).all(...(todos ? [] : [req.vendedor.id]));
+    res.json({ contactos: rows.map(focoLinha) });
+});
+
+app.post('/api/digitalizept/foco/contactos', requireDigitalizept, async (req, res) => {
+    const b = req.body || {};
+    const nome = cleanText(b.nome, 200);
+    const tipo = cleanText(b.tipo, 80);
+    if (!nome || !tipo) return res.status(400).json({ error: 'Falta o nome do negócio ou o tipo.' });
+    const db = getDigitalizeptDb();
+    const id = crypto.randomUUID();
+    const now = digitalizeptNow();
+    db.prepare(`INSERT INTO lead (id, business_type, nome, cidade, telefone, whatsapp, estado, foco_estado, criado_em)
+        VALUES (?, ?, ?, ?, ?, ?, 'novo', 'contactado', ?)`).run(
+        id, tipo, nome, cleanText(b.cidade, 120), cleanText(b.telefone, 40), cleanText(b.whatsapp, 40), now
+    );
+    const nota = cleanText(b.nota, 2000);
+    if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), id, nota, now);
+    digitalizeptLogEvento(db, 'lead', id, 'foco_estado', { estado: 'contactado', nota });
+    let erroDemo = '';
+    try {
+        await focoGerarDemo(db, focoContacto(db, id), req.vendedor.codigo);
+    } catch (err) {
+        erroDemo = `Contacto guardado, mas a demo falhou: ${err.message}`;
+    }
+    res.json({ contacto: focoContacto(db, id), erroDemo });
+});
+
+app.post('/api/digitalizept/foco/contactos/:id/demo', requireDigitalizept, async (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    try {
+        await focoGerarDemo(db, contacto, req.vendedor.codigo);
+        res.json({ contacto: focoContacto(db, contacto.id) });
+    } catch (err) {
+        res.status(502).json({ error: `A demo falhou: ${err.message}` });
+    }
+});
+
+app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    const b = req.body || {};
+    const estado = cleanText(b.estado, 40);
+    if (!foco.ESTADOS[estado]) return res.status(400).json({ error: 'Estado desconhecido.' });
+    const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
+    const nota = cleanText(b.nota, 2000);
+    const canal = foco.CANAIS[b.canal] ? b.canal : '';
+    db.prepare('UPDATE lead SET foco_estado = ?, revisitar_em = ? WHERE id = ?').run(estado, voltarEm, contacto.id);
+    if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, nota, digitalizeptNow());
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_estado', { estado, nota, voltar_em: voltarEm, canal, de: contacto.estado });
+    res.json({ contacto: focoContacto(db, contacto.id) });
+});
+
+// Everything that happened to one contact, newest first, with who did it.
+app.get('/api/digitalizept/foco/contactos/:id/historico', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    const eventos = db.prepare(`
+        SELECT e.tipo, e.payload_json, e.criado_em, v.nome AS quem FROM evento e LEFT JOIN vendedor v ON v.id = e.vendedor_id
+        WHERE e.entidade = 'lead' AND e.entidade_id = ? ORDER BY e.criado_em DESC LIMIT 200
+    `).all(contacto.id).map((e) => ({ tipo: e.tipo, quando: e.criado_em, quem: e.quem || '', ...JSON.parse(e.payload_json || '{}') }));
+    // Notes written elsewhere (admin dossier) that no Foco event already carries.
+    const ditas = new Set(eventos.map((e) => e.nota).filter(Boolean));
+    const notas = db.prepare('SELECT texto, criado_em FROM nota WHERE lead_id = ? ORDER BY criado_em DESC LIMIT 100').all(contacto.id)
+        .filter((n) => !ditas.has(n.texto)).map((n) => ({ tipo: 'nota', quando: n.criado_em, nota: n.texto, quem: '' }));
+    res.json({ historico: [...eventos, ...notas].sort((a, b) => (a.quando < b.quando ? 1 : -1)) });
+});
+
+// Admin hands a contact to someone else.
+app.patch('/api/digitalizept/foco/contactos/:id', requireDigitalizeptAdmin, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    const para = db.prepare('SELECT id, nome FROM vendedor WHERE id = ? AND ativo = 1').get(cleanText((req.body || {}).vendedor_id, 80));
+    if (!contacto || !para) return res.status(404).json({ error: 'Contacto ou pessoa não encontrados.' });
+    db.prepare('UPDATE lead SET vendedor_id = ? WHERE id = ?').run(para.id, contacto.id);
+    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_atribuido', { de: contacto.vendedor || '', para: para.nome });
+    res.json({ contacto: focoContacto(db, contacto.id) });
+});
+
+// Crawler JSON (linkgen `export --json`) → contacts "por contactar", on the map.
+app.post('/api/digitalizept/foco/importar', requireDigitalizept, (req, res) => {
+    const b = req.body || {};
+    if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: 'O ficheiro tem de ser uma lista JSON de negócios.' });
+    if (b.rows.length > 20000) return res.status(400).json({ error: 'Máximo 20 000 negócios por importação.' });
+    const db = getDigitalizeptDb();
+    const vendedorId = req.vendedor.papel === 'admin' && b.vendedor_id
+        ? (db.prepare('SELECT id FROM vendedor WHERE id = ? AND ativo = 1').get(String(b.vendedor_id)) || {}).id
+        : req.vendedor.id;
+    if (!vendedorId) return res.status(400).json({ error: 'Pessoa não encontrada.' });
+    try {
+        const r = foco.importar(db, b.rows, {
+            vendedorId, soFoco: b.soFoco !== false, parseMapsUrl, whatsappIfMobile,
+            nowIso: digitalizeptNow, uuid: () => crypto.randomUUID()
+        });
+        digitalizeptLogEvento(db, 'importacao', vendedorId, 'foco_importar', r);
+        res.json(r);
+    } catch (err) {
+        console.error('foco importar:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Who can receive contacts — any logged-in person may see the names (not the logins).
+app.get('/api/digitalizept/foco/pessoas', requireDigitalizept, (req, res) => {
+    res.json({ pessoas: getDigitalizeptDb().prepare('SELECT id, nome FROM vendedor WHERE ativo = 1 ORDER BY nome').all() });
+});
+
+app.get('/api/digitalizept/foco/resumo', requireDigitalizept, (req, res) => {
+    try {
+        const vendedorId = req.vendedor.papel === 'admin' ? null : req.vendedor.id;
+        res.json(foco.resumo(getDigitalizeptDb(), { vendedorId }));
+    } catch (err) {
+        console.error('foco resumo:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Digitalize Portugal — business-type configs. Adding a type = adding a file, no deploy.
@@ -1882,7 +2081,7 @@ app.get('/api/digitalizept/business-types', requireDigitalizept, (req, res) => {
     }
 });
 
-app.patch('/api/digitalizept/provider', requireDigitalizept, (req, res) => {
+app.patch('/api/digitalizept/provider', requireDigitalizeptAdmin, (req, res) => {
     try {
         const parsed = sanitizeSender(req.body || {});
         if (parsed.error) return res.status(400).json({ error: parsed.error });
@@ -1915,7 +2114,7 @@ app.get('/api/digitalizept/catalog', requireDigitalizept, (req, res) => {
     }
 });
 
-app.post('/api/digitalizept/catalog', requireDigitalizept, (req, res) => {
+app.post('/api/digitalizept/catalog', requireDigitalizeptAdmin, (req, res) => {
     try {
         const body = req.body || {};
         const codigo = cleanText(body.codigo, 80).toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -1952,7 +2151,7 @@ app.post('/api/digitalizept/catalog', requireDigitalizept, (req, res) => {
     }
 });
 
-app.patch('/api/digitalizept/catalog/:codigo', requireDigitalizept, (req, res) => {
+app.patch('/api/digitalizept/catalog/:codigo', requireDigitalizeptAdmin, (req, res) => {
     try {
         const codigo = cleanText(req.params.codigo, 80);
         const body = req.body || {};
@@ -1990,7 +2189,7 @@ app.patch('/api/digitalizept/catalog/:codigo', requireDigitalizept, (req, res) =
     }
 });
 
-app.delete('/api/digitalizept/catalog/:codigo', requireDigitalizept, (req, res) => {
+app.delete('/api/digitalizept/catalog/:codigo', requireDigitalizeptAdmin, (req, res) => {
     try {
         const codigo = cleanText(req.params.codigo, 80);
         const db = getDigitalizeptDb();
@@ -2432,7 +2631,7 @@ app.post('/api/digitalizept/import-negocio', (req, res) => {
 // session instead of the shared secret — for when the automatic push from
 // digitalizemeunegocio fails and you copy/paste its "Copy JSON" output here
 // by hand (see the Importar button on the Propostas tab).
-app.post('/api/digitalizept/import-negocio/manual', requireDigitalizept, (req, res) => {
+app.post('/api/digitalizept/import-negocio/manual', requireDigitalizeptAdmin, (req, res) => {
     try {
         const db = getDigitalizeptDb();
         const payload = req.body || {};
@@ -4090,7 +4289,7 @@ app.patch('/api/digitalizept/visits/:id', requireDigitalizept, async (req, res) 
     }
 });
 
-app.delete('/api/digitalizept/visits/:id', requireDigitalizept, (req, res) => {
+app.delete('/api/digitalizept/visits/:id', requireDigitalizeptAdmin, (req, res) => {
     try {
         const id = cleanText(req.params.id, 80);
         const db = getDigitalizeptDb();
@@ -4943,7 +5142,7 @@ app.patch('/api/digitalizept/deals/:projectId', requireDigitalizept, (req, res) 
     }
 });
 
-app.delete('/api/digitalizept/leads/:leadId', requireDigitalizept, (req, res) => {
+app.delete('/api/digitalizept/leads/:leadId', requireDigitalizeptAdmin, (req, res) => {
     try {
         const leadId = cleanText(req.params.leadId, 80);
         const db = getDigitalizeptDb();
@@ -4975,7 +5174,7 @@ app.delete('/api/digitalizept/leads/:leadId', requireDigitalizept, (req, res) =>
     }
 });
 
-app.delete('/api/digitalizept/deals/:projectId', requireDigitalizept, (req, res) => {
+app.delete('/api/digitalizept/deals/:projectId', requireDigitalizeptAdmin, (req, res) => {
     try {
         const projectId = cleanText(req.params.projectId, 80);
         const db = getDigitalizeptDb();
@@ -5733,7 +5932,7 @@ app.post('/api/digitalizept/leads/:leadId/outreach/email', requireDigitalizept, 
     }
 });
 
-app.post('/api/digitalizept/outreach/email-demos', requireDigitalizept, async (req, res) => {
+app.post('/api/digitalizept/outreach/email-demos', requireDigitalizeptAdmin, async (req, res) => {
     try {
         const force = Boolean(req.body && req.body.force);
         const db = getDigitalizeptDb();

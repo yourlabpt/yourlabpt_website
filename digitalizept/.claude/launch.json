@@ -4,7 +4,23 @@
     {
       "name": "digitalizept-server",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "../server", "start"],
+      "runtimeArgs": [
+        "--prefix",
+        "../server",
+        "start"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "digitalizept-server-dmn-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DMN_BASE_URL=http://localhost:3100",
+        "npm",
+        "--prefix",
+        "../server",
+        "start"
+      ],
       "port": 3000
     }
   ]

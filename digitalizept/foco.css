@@ -1,0 +1,134 @@
+/* Foco comercial — builds on digitalizept.css tokens. */
+#user-input {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    border: none;
+    background: var(--fill-color);
+    color: var(--text-light);
+}
+#user-input:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.foco { max-width: 640px; margin: 0 auto; padding: 0 16px calc(32px + env(safe-area-inset-bottom)); }
+
+.foco-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: calc(16px + env(safe-area-inset-top)) 0 12px;
+}
+.foco-header h1 { font-size: 1.3rem; letter-spacing: -0.03em; }
+.foco-header p, .foco-meta { color: var(--text-muted); font-size: 0.85rem; }
+.foco-header-links { display: flex; gap: 4px; flex-shrink: 0; }
+.foco-link {
+    background: none; border: 0; color: var(--accent-color); font-size: 0.9rem;
+    padding: 8px; cursor: pointer; text-decoration: none;
+}
+
+.foco-tabs {
+    position: sticky; top: 0; z-index: 5; display: flex; gap: 4px; padding: 8px 0;
+    background: var(--primary-dark); overflow-x: auto;
+}
+.foco-tabs button {
+    flex: 1; min-width: max-content; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);
+    background: var(--fill-color); color: var(--text-muted); font-weight: 600; cursor: pointer;
+}
+.foco-tabs button.active { background: var(--accent-color); color: var(--primary-dark); }
+
+.foco-main { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; }
+.foco-vazio { color: var(--text-muted); text-align: center; padding: 40px 0; }
+
+.foco-regra { background: var(--accent-soft); border-radius: var(--radius-lg); padding: 16px; }
+.foco-regra h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-color); margin-bottom: 8px; }
+.foco-regra ol { padding-left: 20px; display: grid; gap: 4px; margin-bottom: 8px; }
+.foco-regra p { color: var(--text-muted); font-size: 0.85rem; }
+
+.foco-lista { display: grid; gap: 10px; }
+.foco-card {
+    display: grid; gap: 6px; width: 100%; text-align: left; padding: 14px 16px; border: 0;
+    border-radius: var(--radius-lg); background: var(--secondary-dark); color: var(--text-light); cursor: pointer;
+    font: inherit;
+}
+.foco-card:hover { background: var(--accent-dark); }
+.foco-card-top { display: flex; align-items: center; gap: 10px; }
+.foco-card-top strong { flex: 1; }
+.foco-num {
+    display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent-color); color: var(--primary-dark); font-weight: 700; font-size: 0.85rem;
+}
+.foco-frase { font-size: 0.95rem; }
+.foco-frase-grande { font-size: 1.15rem; font-weight: 600; color: var(--accent-color); }
+.foco-inativo { opacity: 0.5; }
+
+.foco-fase, .foco-chip {
+    font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+    background: var(--fill-color); color: var(--text-muted); white-space: nowrap;
+}
+.foco-fase-ataque { background: var(--accent-color); color: var(--primary-dark); }
+.foco-chip-demo_mostrada, .foco-chip-quer_ativar { background: var(--accent-soft); color: var(--accent-color); }
+.foco-chip-ativou { background: rgba(74, 222, 128, 0.16); color: var(--success-color); }
+.foco-chip-sem_interesse { color: var(--danger-color); }
+.foco-chip-voltar { background: rgba(96, 165, 250, 0.16); color: #60a5fa; }
+.foco-hoje { color: var(--accent-color); font-weight: 600; }
+
+.foco-depois summary { cursor: pointer; color: var(--text-muted); padding: 8px 0; }
+.foco-depois p { font-size: 0.88rem; color: var(--text-muted); margin: 6px 0; }
+
+.foco-bloco { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--separator); }
+.foco-bloco h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.foco-bloco ul { padding-left: 18px; display: grid; gap: 4px; }
+.foco-bloco dl { display: grid; gap: 4px; }
+.foco-bloco dt { color: var(--text-muted); font-size: 0.8rem; margin-top: 6px; }
+.foco-dizer { font-size: 1.05rem; font-weight: 600; }
+.foco-nota { background: var(--fill-color); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 0.9rem; }
+
+.foco-form { display: grid; gap: 12px; }
+.foco-campo { display: grid; gap: 6px; font-size: 0.85rem; color: var(--text-muted); }
+.foco-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.foco-acoes > * { flex: 1 1 120px; }
+.foco-cta { width: 100%; }
+.foco-toggle { color: var(--text-muted); font-size: 0.9rem; }
+
+.foco-estados { display: flex; flex-wrap: wrap; gap: 6px; }
+.foco-estado {
+    padding: 9px 12px; border-radius: 999px; border: 1px solid var(--separator); background: none;
+    color: var(--text-light); cursor: pointer; font-size: 0.88rem;
+}
+.foco-estado.active { background: var(--accent-color); color: var(--primary-dark); border-color: transparent; }
+
+.foco-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.foco-kpis div { background: var(--secondary-dark); border-radius: var(--radius-lg); padding: 14px; display: grid; gap: 2px; }
+.foco-kpis strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.foco-kpis span { color: var(--text-muted); font-size: 0.78rem; }
+.foco-tabela { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.foco-tabela th { text-align: right; color: var(--text-muted); font-weight: 500; padding: 6px 4px; }
+.foco-tabela td { text-align: right; padding: 8px 4px; border-top: 1px solid var(--separator); }
+.foco-tabela th:first-child, .foco-tabela td:first-child { text-align: left; }
+.foco-motivos { font-size: 0.88rem; margin-top: 8px; }
+
+.foco-sheet { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.foco-sheet-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
+.foco-sheet-panel {
+    position: relative; width: 100%; max-width: 640px; max-height: 92dvh; overflow-y: auto;
+    background: var(--primary-dark); border-radius: 20px 20px 0 0;
+    padding: 20px 16px calc(24px + env(safe-area-inset-bottom)); display: grid; gap: 12px; align-content: start;
+}
+.foco-sheet-panel h2 { font-size: 1.3rem; letter-spacing: -0.02em; padding-right: 36px; }
+.foco-sheet-fechar {
+    position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%;
+    border: 0; background: var(--fill-color); color: var(--text-light); font-size: 1.3rem; cursor: pointer;
+}
+@media (min-width: 700px) {
+    .foco-sheet { align-items: center; }
+    .foco-sheet-panel { border-radius: 20px; }
+}
+
+.foco-filtros { display: grid; gap: 8px; grid-template-columns: 1fr; }
+@media (min-width: 560px) { .foco-filtros { grid-template-columns: 2fr 1fr 1fr; } .foco-filtros .foco-toggle { grid-column: 1 / -1; } }
+.foco-mapa { position: relative; z-index: 0; isolation: isolate; height: 62dvh; min-height: 320px; border-radius: var(--radius-lg); overflow: hidden; background: var(--secondary-dark); }
+.foco-legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--text-muted); }
+.foco-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.foco-contactar { display: flex; flex-wrap: wrap; gap: 6px; }
+.foco-contactar a {
+    padding: 9px 14px; border-radius: 999px; background: var(--fill-color); color: var(--accent-color);
+    text-decoration: none; font-size: 0.9rem; font-weight: 600;
+}
+.foco-historico { display: grid; gap: 10px; }
+.foco-evento { border-left: 2px solid var(--separator); padding-left: 12px; display: grid; gap: 2px; font-size: 0.9rem; }

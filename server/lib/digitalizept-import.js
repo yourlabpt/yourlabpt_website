@@ -75,7 +75,12 @@ function importExternalDeal(db, payload, businessType) {
     const now = nowIso();
     const pagoEm = payload.pagoEm || now;
 
-    const leadId = crypto.randomUUID();
+    // A demo link sent from the Foco tool carries its session token: the paid
+    // deal then closes that same contact, keeping the partner who opened it.
+    const origemFoco = payload.token
+        ? db.prepare("SELECT id FROM lead WHERE dmn_token = ? AND dmn_token != ''").get(cleanText(payload.token, 200))
+        : null;
+    const leadId = origemFoco ? origemFoco.id : crypto.randomUUID();
     const dadosNegocioId = crypto.randomUUID();
     const propostaId = crypto.randomUUID();
     const clienteId = crypto.randomUUID();
@@ -94,7 +99,19 @@ function importExternalDeal(db, payload, businessType) {
     const { htmlPath, pdfPath } = saveIncomingContract(contratoId, payload.contratoHtml || '', payload.contratoPdfBase64 || '');
 
     db.transaction(() => {
-        db.prepare(`
+        if (origemFoco) {
+            db.prepare(`
+                UPDATE lead SET estado = 'fechado', foco_estado = 'ativou', demo_json = ?, identidade_json = ?,
+                    demo_slug = ?, cobertura = 'demo_apresentada', resultado = 'digitalizado',
+                    origem_externa = 'digitalizemeunegocio', origem_externa_id = ?,
+                    morada = COALESCE(NULLIF(?, ''), morada), telefone = COALESCE(NULLIF(?, ''), telefone),
+                    whatsapp = COALESCE(NULLIF(?, ''), whatsapp)
+                WHERE id = ?
+            `).run(
+                JSON.stringify(payload.demo || {}), JSON.stringify(payload.identidade || {}), demoSlug, negocioId,
+                cleanText(dados.morada, 300), cleanText(dados.telefone, 40), cleanText(dados.whatsapp, 40), leadId
+            );
+        } else db.prepare(`
             INSERT INTO lead (
                 id, business_type, nome, morada, telefone, whatsapp, estado, criado_em,
                 demo_json, identidade_json, demo_slug, cobertura, resultado,

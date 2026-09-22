@@ -280,7 +280,7 @@ export function renderLeadDossier(host, payload, {
     mais.className = 'dossier-mais';
     mais.appendChild(el('summary', 'btn-secondary', 'Mais'));
     const resume = el('a', 'btn-secondary', payload.lead.estado === 'fechado' ? 'Editar proposta' : 'Continuar venda');
-    resume.href = `./?resume=${encodeURIComponent(payload.lead.id)}`;
+    resume.href = `./proposta.html?resume=${encodeURIComponent(payload.lead.id)}`;
     resume.title = 'Pacotes e contrato — fotos e logo ficam no separador Demo';
     mais.appendChild(resume);
     if (typeof onWebsiteZip === 'function') {

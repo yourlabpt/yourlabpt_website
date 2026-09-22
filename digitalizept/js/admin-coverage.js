@@ -738,7 +738,7 @@ export function setupCoverage({
                     clearPendingMarker();
                     closeDrawer();
                     if (resumeSale) {
-                        window.location.href = `./?resume=${encodeURIComponent(result.leadId)}`;
+                        window.location.href = `./proposta.html?resume=${encodeURIComponent(result.leadId)}`;
                         return;
                     }
                     await refresh();
@@ -936,7 +936,7 @@ export function setupCoverage({
             }
             const resume = document.createElement('a');
             resume.className = 'btn-secondary';
-            resume.href = `./?resume=${encodeURIComponent(pin.id)}`;
+            resume.href = `./proposta.html?resume=${encodeURIComponent(pin.id)}`;
             resume.textContent = pin.estado === 'fechado' ? 'Editar proposta' : 'Continuar venda';
             actions.appendChild(resume);
             if (pin.demo_slug) {

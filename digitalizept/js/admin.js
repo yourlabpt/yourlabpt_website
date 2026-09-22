@@ -867,7 +867,7 @@ function renderDemos() {
 
         const resume = document.createElement('a');
         resume.className = 'btn-secondary';
-        resume.href = `./?resume=${encodeURIComponent(l.id)}`;
+        resume.href = `./proposta.html?resume=${encodeURIComponent(l.id)}`;
         resume.textContent = 'Continuar venda';
         actions.appendChild(resume);
 
@@ -997,7 +997,7 @@ function renderDeals() {
         if (d.leadId) {
             const revise = document.createElement('a');
             revise.className = d.hasGoogle ? 'btn-secondary' : 'btn-primary';
-            revise.href = `./?resume=${encodeURIComponent(d.leadId)}`;
+            revise.href = `./proposta.html?resume=${encodeURIComponent(d.leadId)}`;
             revise.textContent = 'Editar proposta';
             actions.appendChild(revise);
         }
@@ -1457,6 +1457,12 @@ async function loadDeals() {
 
 
 async function bootData() {
+    // Partners work in the Foco tool; this panel (prices, everyone's leads) is the owner's.
+    const { data: me } = await api('/api/digitalizept/me');
+    if (!me.vendedor || me.vendedor.papel !== 'admin') {
+        window.location.replace('./');
+        return;
+    }
     await Promise.all([loadCatalog(), loadLeads(), loadDeals(), loadProviderCard()]);
     ensurePortoFinder(); // Descobrir is the default landing tab.
     if (el.callQueue) {
@@ -1508,7 +1514,7 @@ el.loginForm.addEventListener('submit', async (event) => {
     try {
         const { response, data } = await apiRequest('/api/digitalizept/login', {
             method: 'POST',
-            body: { password: key }
+            body: { password: key, utilizador: (document.getElementById('user-input')?.value || '').trim() }
         });
         if (!response.ok || !data.token) {
             el.loginError.textContent = data.error || 'Chave inválida.';

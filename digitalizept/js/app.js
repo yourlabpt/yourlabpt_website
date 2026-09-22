@@ -179,7 +179,7 @@ async function handleLoginSubmit(event) {
     try {
         const { response, data } = await apiRequest('/api/digitalizept/login', {
             method: 'POST',
-            body: { password: key }
+            body: { password: key, utilizador: (document.getElementById('user-input')?.value || '').trim() }
         });
 
         if (!response.ok || !data.token) {

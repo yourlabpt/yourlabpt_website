@@ -1179,6 +1179,8 @@ function vendedorAtual(db) {
 function resolverVendedor(db, leadId, patch = {}) {
     const pedido = cleanStr(patch.vendedor, 80);
     if (pedido) return pedido;
+    const logado = require('./digitalizept-equipa').atual();
+    if (logado && logado.nome) return logado.nome;
     const ultimo = db.prepare(`
         SELECT vendedor FROM lead_toque
         WHERE lead_id = ? AND TRIM(vendedor) != ''

@@ -1,6 +1,6 @@
 /**
  * SQLite store for the Digitalize Portugal sales app.
- * One file, one vendedor (owner) for now — see 06 · Plano de Execução da Plataforma on Notion.
+ * One file; vendedores (owner + partners) live in digitalizept-equipa.js.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -450,6 +450,7 @@ function getDb() {
     dbInstance.pragma('journal_mode = WAL');
     dbInstance.exec(SCHEMA);
     migrate(dbInstance);
+    require('./digitalizept-equipa').instalar(dbInstance, addMissingColumns);
     seedCatalog(dbInstance);
 
     return dbInstance;
