@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "foco:sync": "node scripts/foco-sync.js",
+    "test:foco": "node --test lib/digitalizept-foco.test.js lib/digitalizept-equipa.test.js",
     "test:diagrams": "node --test ../projects/tests/diagrams.test.js"
   },
   "keywords": [

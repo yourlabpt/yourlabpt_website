@@ -1,0 +1,19 @@
+{
+  "arquiteto": "Arquiteto",
+  "barbeiro": "Barbeiro",
+  "canalizador": "Canalizador",
+  "clinica-estetica": "Clínica de Estética",
+  "clinica-medica": "Clínica médica",
+  "consultor-imobiliario": "Consultor imobiliário",
+  "dentista": "Dentista",
+  "designer": "Designer (Gráfico / Interiores)",
+  "eletricista": "Eletricista",
+  "fisioterapeuta": "Fisioterapeuta",
+  "limpezas": "Limpezas",
+  "nutricionista": "Nutricionista",
+  "personal-trainer": "Personal Trainer",
+  "psicologo": "Psicólogo/a",
+  "remodelacao-interiores": "Remodelação e interiores",
+  "salao-beleza": "Salão de Beleza",
+  "veterinaria": "Clínica Veterinária"
+}

@@ -15,3 +15,11 @@ test('crawler categories and old free-text types map to the types we sell to', (
     assert.equal(t('restaurante'), 'restaurante');
     assert.equal(t(''), 'generico');
 });
+
+test('the copy shipped in config/foco loads on its own, with a name for every type', () => {
+    const { carregar } = require('./digitalizept-foco');
+    const cfg = carregar();
+    assert.ok(cfg.verticais.filter((v) => v.foco).length >= 1);
+    const nomes = require('../config/foco/tipos.json');
+    cfg.verticais.forEach((v) => v.tipos.forEach((id) => assert.ok(nomes[id], `tipos.json sem ${id} — corra npm run foco:sync`)));
+});

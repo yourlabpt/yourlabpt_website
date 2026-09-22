@@ -1,0 +1,1938 @@
+{
+  "versao": "2026-09-21",
+  "nota": "Foco comercial de 2026-09-21: oito segmentos pela ordem do dono (foco 1–8). Cada um diz o resultado no idioma do negócio (posicionamento), começa pelos produtos de entrada, e tem o bot, o site e o gestor social afinados para o setor. Os restantes da Onda 1 ficam para depois.",
+  "ordem_venda": [
+    "website",
+    "bot",
+    "redes"
+  ],
+  "regra_conversao": [
+    "Mostrar a demo com o nome real do negócio",
+    "Ativar um produto",
+    "Só depois pedir a configuração detalhada"
+  ],
+  "fases": {
+    "ataque": "Os três primeiros do foco comercial: barbearias/salões, estética, fisioterapia.",
+    "expansao": "Foco 4–8: entram assim que a rotina de venda dos três primeiros estiver a funcionar.",
+    "depois": "Da Onda 1, fora do foco atual — pedem guião próprio antes de contactar."
+  },
+  "verticais": [
+    {
+      "id": "saloes-premium",
+      "nome": "Barbearias e salões de beleza",
+      "prioridade": 1,
+      "fase": "ataque",
+      "tipos": [
+        "salao-beleza",
+        "barbeiro"
+      ],
+      "porque": {
+        "ticket": "Ticket médio alto e recorrência mensal.",
+        "dor": "Marcações por Instagram e telefone enquanto se está com as mãos numa cliente; faltas de sábado.",
+        "demo": "Stories com o estilo do salão e um bot que marca corte e cor para sábado."
+      },
+      "dor_principal": "Marcar e responder enquanto se trabalha; faltas ao sábado.",
+      "urgencia": [
+        "Sábados cheios de pedidos ao mesmo tempo",
+        "Instagram é a montra, mas ninguém responde a tempo"
+      ],
+      "produto_entrada": "bot",
+      "produto_forte": "bot",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Presencial a meio da semana, de manhã; mensagem no Instagram com a demo.",
+        "gancho": "Quantas marcações perde ao sábado porque não consegue responder?",
+        "pergunta_abertura": "Quem responde ao Instagram quando está com uma coloração nas mãos?",
+        "objecao": {
+          "texto": "As clientes gostam de falar comigo.",
+          "resposta": "E continuam. O bot só trata da hora e do serviço; a conversa é sua. E lembra-as no dia anterior — as faltas caem."
+        },
+        "prova": "Uma semana de stories com o nome do salão; conversa simulada a marcar corte e cor."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "Fotos: espaço, cadeira, trabalhos",
+          "Paleta",
+          "Contactos",
+          "Preçário? sim/não"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Serviços com duração",
+          "Regra: pergunta pelo profissional preferido",
+          "Lembrete no dia anterior"
+        ],
+        "redes": [
+          "Frequência (todos os dias, um story)",
+          "10 fotos base de trabalhos com autorização",
+          "Tom descontraído",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca cortes e cores sozinho — mesmo com as mãos ocupadas.",
+        "resultado_redes": "Mostra trabalhos novos todos os dias, sem parar o que está a fazer.",
+        "pedido_cliente": "Olá! Queria marcar corte e cor para sábado de manhã. Têm vaga?",
+        "unidade": "marcação",
+        "cliente_demo": "Joana P.",
+        "stories": [
+          {
+            "tema": "Hoje",
+            "texto": "Um trabalho de hoje em {nome}: {servico}.",
+            "foto": "O resultado, de costas ou perfil, com autorização"
+          },
+          {
+            "tema": "Dica",
+            "texto": "Como manter a cor mais tempo — por {nome}.",
+            "foto": "Os produtos usados, na bancada"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Abrir o salão às 9h em {nome}: música, café, primeira cliente.",
+            "foto": "O salão vazio, com luz da manhã"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Marcar em {nome} ficou mais fácil",
+            "texto": "Escreva no WhatsApp com o serviço e o dia. Recebe a confirmação no minuto e um lembrete na véspera.",
+            "foto": "A fachada ou a montra"
+          },
+          {
+            "titulo": "Antes e depois",
+            "texto": "Uma transformação desta semana em {nome}. Corte, cor e brushing — com o tempo que merece.",
+            "foto": "Duas fotos do mesmo ângulo, com autorização"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Marcações pelo bot",
+        "Faltas ao sábado",
+        "Stories publicados por semana"
+      ],
+      "foco": 1,
+      "posicionamento": "Mais marcações, menos trocas de mensagens.",
+      "posicionamento_sub": "Os clientes marcam sozinhos no WhatsApp; o site mostra os seus trabalhos e preços.",
+      "produtos_entrada": [
+        "bot",
+        "website"
+      ],
+      "bot_sku": "bot_leads",
+      "bot": {
+        "saudacao": "Olá! Bem-vindo a {nome}. Diga-me o serviço e o dia, e eu marco já.",
+        "servicos": [
+          {
+            "nome": "Corte",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Barba",
+            "duracaoMin": 20
+          },
+          {
+            "nome": "Corte + barba",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Coloração",
+            "duracaoMin": 90
+          },
+          {
+            "nome": "Brushing",
+            "duracaoMin": 30
+          }
+        ],
+        "slots": [
+          "Hoje ao fim da tarde",
+          "Amanhã de manhã",
+          "Amanhã à tarde",
+          "Sábado de manhã"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura {servico} {em_cidade} vê os seus trabalhos e marca num toque."
+      },
+      "redes": {
+        "tom": "divertido",
+        "frequencia": "forte",
+        "pilares": [
+          {
+            "id": "trabalho",
+            "nome": "Trabalho do dia",
+            "ideia": "um corte, barba ou cor acabado hoje, com o nome do estilo"
+          },
+          {
+            "id": "antes_depois",
+            "nome": "Antes e depois",
+            "ideia": "a transformação de um cliente, do mesmo ângulo"
+          },
+          {
+            "id": "dica",
+            "nome": "Dica de manutenção",
+            "ideia": "como manter o corte ou a cor mais tempo em casa"
+          },
+          {
+            "id": "equipa",
+            "nome": "Quem corta",
+            "ideia": "apresentar um profissional da equipa e a especialidade dele"
+          },
+          {
+            "id": "agenda",
+            "nome": "Vagas da semana",
+            "ideia": "lembrar que ainda há vagas e que se marca pelo WhatsApp"
+          }
+        ],
+        "cuidados": [
+          "Só mostrar clientes com autorização; de costas ou de perfil quando houver dúvida.",
+          "Nunca prometer \"sem esperas\" se o negócio não o disse."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Uso isto em {nome}: os clientes marcam sozinhos no WhatsApp e eu deixei de responder a mensagens enquanto corto. Mostra-te a demo com o nome da tua barbearia/salão: {link}"
+      }
+    },
+    {
+      "id": "clinicas-estetica-avancada",
+      "nome": "Clínicas de estética",
+      "prioridade": 2,
+      "fase": "ataque",
+      "tipos": [
+        "clinica-estetica"
+      ],
+      "porque": {
+        "ticket": "Tratamentos e packs de centenas de euros, com recorrência.",
+        "dor": "A captação vive do Instagram, mas ninguém responde às mensagens a tempo; a avaliação inicial fica por marcar.",
+        "demo": "Stories com a estética da clínica e um bot que marca a avaliação — o que elas já tentam fazer à mão."
+      },
+      "dor_principal": "Mensagens no Instagram sem resposta e avaliações que não ficam marcadas.",
+      "urgencia": [
+        "Concorrência intensa nas redes",
+        "Pedidos à noite e ao fim de semana",
+        "Tratamentos sazonais (verão, festas)"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Mensagem no Instagram com o link da demo + visita presencial.",
+        "gancho": "Quantas mensagens ficam por responder até ao fim do dia?",
+        "pergunta_abertura": "Quem responde ao Instagram quando estão a fazer um tratamento?",
+        "objecao": {
+          "texto": "Já temos alguém a tratar das redes.",
+          "resposta": "Perfeito — a proposta prepara a semana e essa pessoa só aprova. Ganha tempo para o que só ela sabe fazer."
+        },
+        "prova": "Uma semana de stories já preparada com o nome da clínica; conversa simulada a marcar uma avaliação."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "Fotos: espaço, gabinete, detalhe de produto",
+          "Paleta",
+          "Contactos",
+          "Avaliação gratuita? sim/não"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Tratamentos com duração",
+          "Regra: primeira vez → marca avaliação",
+          "Notificações"
+        ],
+        "redes": [
+          "Frequência (5 stories + 2 posts)",
+          "6 a 10 fotos base do espaço e produtos",
+          "Tom próximo e cuidado",
+          "Aprovar a primeira semana",
+          "Nunca antes/depois sem consentimento escrito"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Responde e marca avaliações sozinho — mesmo durante um tratamento.",
+        "resultado_redes": "Uma semana de stories com a estética da clínica, pronta a aprovar.",
+        "pedido_cliente": "Olá! Queria informações sobre um tratamento para manchas no rosto. Fazem avaliação primeiro?",
+        "unidade": "avaliação",
+        "cliente_demo": "Marta L.",
+        "stories": [
+          {
+            "tema": "Novo",
+            "texto": "{servico} em {nome}: como funciona, em 3 passos.",
+            "foto": "O gabinete de tratamento, arrumado, com luz suave"
+          },
+          {
+            "tema": "Pergunta frequente",
+            "texto": "Quanto tempo dura o resultado? A resposta honesta de {nome}.",
+            "foto": "Um detalhe de produto ou equipamento"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Preparar a sala para a primeira cliente do dia em {nome}.",
+            "foto": "A receção ou a entrada, sem pessoas"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Avaliação primeiro, tratamento depois",
+            "texto": "Em {nome} nenhum tratamento começa sem uma avaliação. É aí que se percebe o que a sua pele precisa — e o que não precisa.",
+            "foto": "A fachada ou a entrada da clínica"
+          },
+          {
+            "titulo": "Manchas no rosto: o que resulta mesmo",
+            "texto": "Proteção solar todos os dias e o tratamento certo para o tipo de mancha. {nome}{em_cidade_virgula} avalia e explica antes de propor.",
+            "foto": "Uma bancada com os produtos usados na clínica"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Avaliações marcadas",
+        "Tempo até primeira resposta",
+        "Stories aprovados e publicados por semana"
+      ],
+      "foco": 2,
+      "posicionamento": "Presença profissional e atendimento rápido para converter contactos em consultas.",
+      "posicionamento_sub": "Um site que transmite confiança e um assistente que responde e marca a avaliação na hora.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_leads",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Posso marcar a sua avaliação gratuita ou esclarecer um tratamento.",
+        "servicos": [
+          {
+            "nome": "Avaliação gratuita",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Depilação a laser",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Limpeza de pele",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Tratamento de rosto",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Tratamento corporal",
+            "duracaoMin": 60
+          }
+        ],
+        "slots": [
+          "Amanhã às 10:00",
+          "Amanhã às 15:00",
+          "Quinta às 18:00",
+          "Sábado às 11:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura {servico} {em_cidade} encontra uma clínica que inspira confiança — e marca a avaliação."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "media",
+        "pilares": [
+          {
+            "id": "tratamento",
+            "nome": "Um tratamento explicado",
+            "ideia": "o que é, para quem é indicado, quanto tempo demora"
+          },
+          {
+            "id": "mito",
+            "nome": "Mito ou verdade",
+            "ideia": "desfazer uma ideia comum sobre pele ou laser"
+          },
+          {
+            "id": "espaco",
+            "nome": "O espaço",
+            "ideia": "mostrar a cabine, a higiene e o equipamento"
+          },
+          {
+            "id": "equipa",
+            "nome": "Quem trata",
+            "ideia": "a formação e a experiência da técnica"
+          },
+          {
+            "id": "avaliacao",
+            "nome": "Avaliação gratuita",
+            "ideia": "convidar a marcar a primeira avaliação sem compromisso"
+          }
+        ],
+        "cuidados": [
+          "Nunca prometer resultados garantidos nem números de sessões.",
+          "Antes e depois só com autorização escrita e sem exagerar o efeito.",
+          "Não usar linguagem médica que a clínica não pode usar."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Na {nome} as mensagens de quem quer marcar avaliação passaram a ter resposta na hora, mesmo durante tratamentos. Vê a demo com o nome da tua clínica: {link}"
+      }
+    },
+    {
+      "id": "fisioterapia-osteopatia",
+      "nome": "Fisioterapia e osteopatia",
+      "prioridade": 3,
+      "fase": "ataque",
+      "tipos": [
+        "fisioterapeuta"
+      ],
+      "porque": {
+        "ticket": "Planos de várias sessões; recorrência natural.",
+        "dor": "Sessões de 45 minutos com as mãos ocupadas — o telefone fica sem resposta.",
+        "demo": "Bot a marcar uma primeira sessão para alguém com dor; agenda a preencher-se."
+      },
+      "dor_principal": "Não conseguir atender durante as sessões.",
+      "urgencia": [
+        "Dor aguda quer resposta hoje",
+        "Faltas que deixam buracos de 45 minutos"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Presencial entre sessões (perguntar a melhor hora) + WhatsApp.",
+        "gancho": "Quantas chamadas ficam por atender numa tarde de sessões?",
+        "pergunta_abertura": "Quem marca as primeiras sessões quando está com um paciente?",
+        "objecao": {
+          "texto": "Prefiro falar com o paciente antes de marcar.",
+          "resposta": "Continua a falar — o bot só reserva a hora e recolhe a queixa principal. A conversa clínica é sua."
+        },
+        "prova": "Conversa simulada de uma dor nas costas a ficar marcada para esta semana."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo ou nome",
+          "3 fotos: sala, equipamento, exterior",
+          "Paleta",
+          "Contactos",
+          "Domicílio? sim/não"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Tipos de sessão com duração",
+          "Regra: primeira vez → avaliação",
+          "Notificações"
+        ],
+        "redes": [
+          "Frequência",
+          "6 fotos base",
+          "Tom próximo e claro",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca sessões sozinho — mesmo com as mãos ocupadas.",
+        "resultado_redes": "Um exercício simples por semana, com o seu nome, sem escrever nada.",
+        "pedido_cliente": "Olá, tenho dores nas costas há duas semanas. Conseguem ver-me esta semana?",
+        "unidade": "sessão",
+        "cliente_demo": "Rui T.",
+        "stories": [
+          {
+            "tema": "Exercício da semana",
+            "texto": "30 segundos para aliviar a lombar ao fim do dia — por {nome}.",
+            "foto": "A marquesa e a sala, com luz natural"
+          },
+          {
+            "tema": "Pergunta frequente",
+            "texto": "Quantas sessões vou precisar? A resposta honesta de {nome}.",
+            "foto": "Um detalhe do equipamento"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Preparar a sala para a primeira sessão do dia em {nome}.",
+            "foto": "A entrada ou a receção"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Dor nas costas: quando marcar",
+            "texto": "Se dura mais de uma semana, se acorda com ela, ou se desce pela perna. {nome} avalia na primeira sessão e explica o plano.",
+            "foto": "A fachada ou a porta do consultório"
+          },
+          {
+            "titulo": "Primeira sessão em {nome}",
+            "texto": "Conversa, avaliação e já algum tratamento. Sai com dois exercícios para casa e uma ideia clara do caminho.",
+            "foto": "A sala de tratamento arrumada"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Sessões marcadas pelo bot",
+        "Faltas",
+        "Pedidos fora do horário respondidos"
+      ],
+      "foco": 3,
+      "posicionamento": "Um site claro e atendimento organizado para facilitar novas marcações.",
+      "posicionamento_sub": "O site explica o que trata; a agenda no WhatsApp organiza as sessões recorrentes por si.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_agenda",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Diga-me o que sente e quando pode vir, e eu marco a sessão.",
+        "servicos": [
+          {
+            "nome": "Primeira consulta",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Sessão de fisioterapia",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Osteopatia",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Recuperação desportiva",
+            "duracaoMin": 45
+          }
+        ],
+        "slots": [
+          "Amanhã às 8:00",
+          "Amanhã às 13:00",
+          "Amanhã às 19:00",
+          "Sexta às 9:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem tem dores e procura {servico} {em_cidade} percebe o que trata e marca a primeira consulta."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "media",
+        "pilares": [
+          {
+            "id": "exercicio",
+            "nome": "Exercício da semana",
+            "ideia": "um exercício simples, seguro, com quem deve ou não fazer"
+          },
+          {
+            "id": "postura",
+            "nome": "Postura do dia a dia",
+            "ideia": "um gesto comum (telemóvel, secretária, carregar peso) e como o fazer melhor"
+          },
+          {
+            "id": "quando",
+            "nome": "Quando procurar ajuda",
+            "ideia": "sinais de que uma dor já precisa de avaliação"
+          },
+          {
+            "id": "recuperacao",
+            "nome": "Uma recuperação",
+            "ideia": "a evolução de um tipo de caso, sem identificar o paciente"
+          },
+          {
+            "id": "equipa",
+            "nome": "A equipa",
+            "ideia": "quem trata e em que é especialista"
+          }
+        ],
+        "cuidados": [
+          "Nunca dar diagnósticos nem prometer cura.",
+          "Exercícios sempre com \"se tiver dor, pare e procure avaliação\".",
+          "Nunca identificar pacientes."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Uso isto na {nome}: marco e mudo sessões por mensagem e recebo o dia seguinte todas as manhãs. Vê a demo com o nome da tua clínica: {link}"
+      }
+    },
+    {
+      "id": "clinicas-dentarias",
+      "nome": "Clínicas dentárias",
+      "prioridade": 4,
+      "fase": "expansao",
+      "tipos": [
+        "dentista"
+      ],
+      "porque": {
+        "ticket": "Tratamentos de centenas a milhares de euros; um paciente novo paga o ano inteiro dos três produtos.",
+        "dor": "O telefone toca durante as consultas e ninguém atende; quem tem dor liga ao próximo da lista.",
+        "demo": "Site com o nome da clínica e uma conversa de marcação de urgência — percebe-se em 60 segundos."
+      },
+      "dor_principal": "Perder pacientes novos porque a resposta não é imediata.",
+      "urgencia": [
+        "Dor de dentes não espera pelo dia seguinte",
+        "Faltas e buracos na agenda",
+        "Concorrência com clínicas de grupo que respondem a qualquer hora"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Presencial na clínica em hora morta (meio da manhã), seguido de WhatsApp com o link da demo.",
+        "gancho": "Quantas chamadas perde enquanto está com um paciente?",
+        "pergunta_abertura": "Quando alguém pesquisa 'dentista em {cidade}' às 22h com dor, o que encontra de vocês?",
+        "objecao": {
+          "texto": "Já temos site e página no Facebook.",
+          "resposta": "Ótimo — a demo usa o vosso nome e mostra só o que muda: quem chega marca sozinho, sem ligar. Dois minutos e decidem."
+        },
+        "prova": "Demo do site com o nome real + conversa simulada de uma urgência a ficar marcada."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo ou nome em texto",
+          "3 fotos: receção, gabinete, equipa",
+          "Paleta",
+          "Telefone e WhatsApp",
+          "Horário",
+          "Atende urgências? sim/não"
+        ],
+        "bot": [
+          "Número de WhatsApp do negócio",
+          "Horário de consultas",
+          "Tratamentos com duração",
+          "Regra: urgência → oferece o primeiro horário do dia e avisa o dentista",
+          "Como quer ser notificado"
+        ],
+        "redes": [
+          "Frequência (3 stories + 1 post por semana chega)",
+          "6 fotos base sem pacientes",
+          "Tom clínico e tranquilizador",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca consultas e urgências sozinho — mesmo com a cadeira ocupada.",
+        "resultado_redes": "Explica higiene oral em linguagem simples, todas as semanas — sem escrever uma linha.",
+        "pedido_cliente": "Boa noite, estou com uma dor de dentes forte desde ontem. Têm vaga amanhã de manhã?",
+        "unidade": "consulta",
+        "cliente_demo": "Ana M.",
+        "stories": [
+          {
+            "tema": "Sabia que…",
+            "texto": "Uma limpeza de 6 em 6 meses evita a maior parte das cáries. {nome} explica em 30 segundos.",
+            "foto": "A cadeira e o equipamento, com a luz ligada e sem pessoas"
+          },
+          {
+            "tema": "Pergunta frequente",
+            "texto": "O branqueamento estraga os dentes? Resposta curta da equipa de {nome}.",
+            "foto": "Um detalhe do kit de branqueamento ou do gabinete"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Manhã em {nome}: esterilização, agenda e o primeiro café.",
+            "foto": "A receção antes de abrir"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Dor de dentes ao fim de semana: o que fazer",
+            "texto": "Analgésico, frio no exterior da face e nunca calor. Se houver inchaço, é urgência. {nome} atende urgências {em_cidade} — marque por WhatsApp.",
+            "foto": "A fachada da clínica, de dia"
+          },
+          {
+            "titulo": "Primeira consulta em {nome}: o que acontece",
+            "texto": "Conversa, observação e um plano explicado sem pressa. Só depois se decide o tratamento. É assim que se perde o medo do dentista.",
+            "foto": "O gabinete arrumado, visto da porta"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Pedidos por WhatsApp por semana",
+        "Marcações feitas pelo bot sem intervenção",
+        "Faltas (devem cair com os lembretes)"
+      ],
+      "foco": 4,
+      "posicionamento": "Um site claro e atendimento organizado para facilitar novas marcações.",
+      "posicionamento_sub": "Credibilidade para quem procura dentista na zona e resposta imediata a quem quer marcar.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_leads",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Posso marcar a sua consulta ou dar-lhe o nosso horário.",
+        "servicos": [
+          {
+            "nome": "Consulta de avaliação",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Higiene oral",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Urgência dentária",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Ortodontia (avaliação)",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Implantes (avaliação)",
+            "duracaoMin": 30
+          }
+        ],
+        "slots": [
+          "Amanhã às 9:30",
+          "Amanhã às 14:30",
+          "Quinta às 17:00",
+          "Sábado às 10:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura dentista {em_cidade} encontra uma clínica de confiança e marca sem telefonar."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "leve",
+        "pilares": [
+          {
+            "id": "prevencao",
+            "nome": "Prevenção",
+            "ideia": "um hábito simples para evitar cáries ou gengivite"
+          },
+          {
+            "id": "duvida",
+            "nome": "Pergunta frequente",
+            "ideia": "responder a uma dúvida real dos pacientes em linguagem simples"
+          },
+          {
+            "id": "tratamento",
+            "nome": "Um tratamento explicado",
+            "ideia": "o que acontece numa consulta de higiene, ortodontia ou implante"
+          },
+          {
+            "id": "equipa",
+            "nome": "A equipa",
+            "ideia": "apresentar um médico dentista ou a assistente"
+          },
+          {
+            "id": "acordos",
+            "nome": "Acordos e pagamento",
+            "ideia": "seguros aceites e facilidades de pagamento, se existirem"
+          }
+        ],
+        "cuidados": [
+          "Nunca prometer resultados nem \"sem dor\".",
+          "Casos clínicos só com autorização e sem identificar o paciente.",
+          "Preços apenas se a clínica os indicou."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Na {nome} os pedidos de marcação passaram a ter resposta automática, mesmo com a recepção ocupada. Vê a demo com o nome da tua clínica: {link}"
+      }
+    },
+    {
+      "id": "psicologia-terapia",
+      "nome": "Psicologia",
+      "prioridade": 5,
+      "fase": "expansao",
+      "tipos": [
+        "psicologo"
+      ],
+      "porque": {
+        "ticket": "Acompanhamento semanal durante meses.",
+        "dor": "O primeiro contacto é difícil para quem procura; se não há resposta rápida e discreta, desiste.",
+        "demo": "Bot discreto que marca uma primeira consulta, presencial ou online, sem perguntas invasivas."
+      },
+      "dor_principal": "Receber o primeiro contacto com discrição e responder depressa.",
+      "urgencia": [
+        "Quem escreve pela primeira vez muitas vezes não volta a tentar",
+        "Consultas online alargam a zona"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Email ou WhatsApp direto; nunca interromper consultas.",
+        "gancho": "A primeira mensagem de alguém que procura ajuda merece resposta na hora — mesmo quando está em consulta.",
+        "pergunta_abertura": "Como respondem hoje a quem escreve pela primeira vez, fora de horas?",
+        "objecao": {
+          "texto": "Não quero um robô a falar com pessoas em sofrimento.",
+          "resposta": "Concordo. O bot só oferece horários e o modo (presencial/online). Nada de perguntas sobre o motivo — isso é consigo."
+        },
+        "prova": "Conversa simulada, curta e discreta, a marcar a primeira consulta."
+      },
+      "minimos": {
+        "website": [
+          "Foto profissional ou nome",
+          "Paleta calma",
+          "Contactos",
+          "Online? sim/não",
+          "Cédula da Ordem"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Consulta individual/casal/online",
+          "Regra: nunca perguntar o motivo",
+          "Notificações discretas"
+        ],
+        "redes": [
+          "Frequência baixa",
+          "Fotos do espaço",
+          "Tom sereno",
+          "Aprovar a primeira semana",
+          "Nunca casos, nem anonimizados"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca primeiras consultas com discrição — presencial ou online.",
+        "resultado_redes": "Conteúdo sereno e útil, sem casos nem promessas, todas as semanas.",
+        "pedido_cliente": "Boa tarde. Gostava de marcar uma primeira consulta. Fazem online?",
+        "unidade": "consulta",
+        "cliente_demo": "Cliente (simulado)",
+        "stories": [
+          {
+            "tema": "Sabia que…",
+            "texto": "A primeira consulta em {nome} serve para se conhecerem. Não há pressa.",
+            "foto": "O consultório com luz natural, sem pessoas"
+          },
+          {
+            "tema": "Pergunta frequente",
+            "texto": "Online funciona? Para a maioria das pessoas, sim — {nome} explica quando faz sentido.",
+            "foto": "Um detalhe: a cadeira, uma planta, a janela"
+          },
+          {
+            "tema": "Pausa",
+            "texto": "Três respirações lentas antes de continuar o dia. Por {nome}.",
+            "foto": "A vista da janela do consultório"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Como é a primeira consulta em {nome}",
+            "texto": "Uma conversa. Sem formulários nem diagnósticos à pressa. No fim decide se quer continuar — e com que ritmo.",
+            "foto": "A porta do consultório ou a sala de espera"
+          },
+          {
+            "titulo": "Sinais de que vale a pena pedir ajuda",
+            "texto": "Dormir mal há semanas, adiar tudo, não ter com quem falar. Não precisa de um motivo grande. {nome} atende presencialmente{em_cidade_virgula} e online.",
+            "foto": "Uma mesa com um caderno e uma chávena"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Primeiras consultas marcadas",
+        "Tempo até primeira resposta",
+        "Pedidos online vs presencial"
+      ],
+      "foco": 5,
+      "posicionamento": "Uma presença simples e discreta, e marcações sem ter de atender o telefone entre sessões.",
+      "posicionamento_sub": "O site explica como trabalha, com calma; a agenda organiza as sessões por mensagem.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_agenda",
+      "bot": {
+        "saudacao": "Olá. Sou o assistente de {nome}. Posso marcar uma primeira consulta, com toda a discrição.",
+        "servicos": [
+          {
+            "nome": "Primeira consulta",
+            "duracaoMin": 50
+          },
+          {
+            "nome": "Consulta de acompanhamento",
+            "duracaoMin": 50
+          },
+          {
+            "nome": "Consulta online",
+            "duracaoMin": 50
+          }
+        ],
+        "slots": [
+          "Amanhã às 10:00",
+          "Amanhã às 18:00",
+          "Quarta às 19:00",
+          "Sexta às 12:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura apoio psicológico {em_cidade} percebe como trabalha e marca com discrição."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "leve",
+        "pilares": [
+          {
+            "id": "psicoeducacao",
+            "nome": "Explicar sem alarmar",
+            "ideia": "um conceito (ansiedade, burnout, luto) explicado com calma"
+          },
+          {
+            "id": "mito",
+            "nome": "Mito sobre terapia",
+            "ideia": "desfazer um preconceito sobre ir ao psicólogo"
+          },
+          {
+            "id": "como",
+            "nome": "Como funciona",
+            "ideia": "o que acontece numa primeira consulta, presencial ou online"
+          },
+          {
+            "id": "autocuidado",
+            "nome": "Um gesto de autocuidado",
+            "ideia": "uma prática simples para o dia a dia, sem substituir acompanhamento"
+          }
+        ],
+        "cuidados": [
+          "Nunca usar testemunhos de clientes.",
+          "Nunca prometer resultados nem dar conselhos clínicos individuais.",
+          "Em temas de risco, indicar sempre ajuda profissional e a linha SNS 24 (808 24 24 24).",
+          "Tom sereno: nada de dramatismo nem de humor sobre sofrimento."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Uso isto no meu consultório: marco e mudo consultas por mensagem, sem atender o telefone entre sessões. Vê a demo com o teu nome: {link}"
+      }
+    },
+    {
+      "id": "nutricao",
+      "nome": "Nutrição",
+      "tipos": [
+        "nutricionista"
+      ],
+      "foco": 5,
+      "fase": "expansao",
+      "porque": {
+        "ticket": "Consultas de acompanhamento mensais — um cliente fica meses.",
+        "dor": "Marcações e remarcações por mensagem entre consultas; redes paradas por falta de tempo.",
+        "demo": "Uma agenda que marca e muda consultas por mensagem e uma semana de conteúdos sobre hábitos."
+      },
+      "dor_principal": "Organizar consultas de acompanhamento e manter as redes com conteúdo útil.",
+      "urgencia": [
+        "Janeiro e setembro trazem muitos pedidos ao mesmo tempo",
+        "Quem pesquisa quer ver um profissional credível antes de marcar"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Mensagem no Instagram com a demo; visita a clínica ou ginásio parceiro.",
+        "gancho": "Quantas remarcações faz por semana por mensagem?",
+        "pergunta_abertura": "Quanto tempo gasta a combinar e a mudar consultas de acompanhamento?",
+        "objecao": {
+          "texto": "Os meus pacientes preferem falar comigo.",
+          "resposta": "E continuam. A agenda só trata do dia e da hora — a consulta é sua."
+        },
+        "prova": "Conversa simulada a remarcar uma consulta e três publicações sobre hábitos com o nome do consultório."
+      },
+      "minimos": {
+        "website": [
+          "Foto profissional",
+          "Cédula da Ordem dos Nutricionistas",
+          "Tipos de consulta",
+          "Presencial/online",
+          "Contactos"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário de consultas",
+          "Duração de cada consulta"
+        ],
+        "redes": [
+          "Tom",
+          "Três temas em que é especialista",
+          "Frequência"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca e muda consultas por mensagem — entre uma consulta e outra.",
+        "resultado_redes": "Publica hábitos simples todas as semanas, sem gastar a tarde nisso.",
+        "pedido_cliente": "Olá! Gostava de marcar uma primeira consulta de nutrição. Têm vaga esta semana?",
+        "unidade": "consulta",
+        "cliente_demo": "Marta S.",
+        "stories": [
+          {
+            "tema": "Mito ou verdade",
+            "texto": "Comer à noite engorda? {nome} explica em 20 segundos.",
+            "foto": "Um prato simples ao jantar, com luz natural"
+          },
+          {
+            "tema": "Troca simples",
+            "texto": "Uma troca no lanche que faz diferença — por {nome}.",
+            "foto": "Dois lanches lado a lado, antes e depois da troca"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Preparar a semana de consultas em {nome}.",
+            "foto": "A secretária com a agenda e uma peça de fruta"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "O que acontece na primeira consulta",
+            "texto": "Conversa sobre hábitos, objetivos e rotina — sem dietas milagrosas. Em {nome}{em_cidade_virgula} presencial ou online.",
+            "foto": "O consultório, arrumado e iluminado"
+          },
+          {
+            "titulo": "3 hábitos antes de qualquer dieta",
+            "texto": "Beber água, horários regulares e dormir bem. Parece simples — e é por aí que se começa em {nome}.",
+            "foto": "Um copo de água, uma peça de fruta e um relógio"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Consultas marcadas pela agenda",
+        "Remarcações feitas por mensagem",
+        "Publicações por semana"
+      ],
+      "posicionamento": "Uma presença simples e credível, e consultas organizadas sem troca de mensagens.",
+      "posicionamento_sub": "O site mostra como acompanha; a agenda marca e muda consultas por si.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_agenda",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Posso marcar a sua primeira consulta, presencial ou online.",
+        "servicos": [
+          {
+            "nome": "Primeira consulta",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Consulta de acompanhamento",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Consulta online",
+            "duracaoMin": 45
+          }
+        ],
+        "slots": [
+          "Amanhã às 9:00",
+          "Amanhã às 18:00",
+          "Quarta às 13:00",
+          "Sábado às 10:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura nutricionista {em_cidade} percebe como acompanha e marca a primeira consulta."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "media",
+        "pilares": [
+          {
+            "id": "mito",
+            "nome": "Mito ou verdade",
+            "ideia": "desfazer uma ideia comum sobre alimentação"
+          },
+          {
+            "id": "troca",
+            "nome": "Troca simples",
+            "ideia": "uma troca fácil num lanche ou refeição"
+          },
+          {
+            "id": "rotulo",
+            "nome": "Ler um rótulo",
+            "ideia": "o que olhar primeiro num rótulo de supermercado"
+          },
+          {
+            "id": "receita",
+            "nome": "Receita rápida",
+            "ideia": "uma refeição simples em 15 minutos"
+          },
+          {
+            "id": "consulta",
+            "nome": "Como é a consulta",
+            "ideia": "o que acontece na primeira consulta, presencial ou online"
+          }
+        ],
+        "cuidados": [
+          "Nunca prometer perda de peso nem prazos.",
+          "Nada de dietas restritivas nem conselhos para doenças específicas.",
+          "Testemunhos só com autorização e sem números de quilos."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Uso isto no meu consultório: as consultas marcam-se e mudam-se por mensagem e as redes têm conteúdo todas as semanas. Vê a demo com o teu nome: {link}"
+      },
+      "prioridade": 6
+    },
+    {
+      "id": "agencias-imobiliarias",
+      "nome": "Consultores imobiliários",
+      "prioridade": 7,
+      "fase": "expansao",
+      "tipos": [
+        "consultor-imobiliario"
+      ],
+      "nota": "Numa agência cada consultor pode ter o seu site e o seu bot; a agência contrata por consultor.",
+      "porque": {
+        "ticket": "Uma comissão paga anos de subscrição; decisão comercial rápida.",
+        "dor": "Leads dos portais que não são respondidas a tempo; visitas marcadas ao telefone enquanto se está noutra visita.",
+        "demo": "Site pessoal com a zona e um bot que marca visitas — o que perdem todos os dias."
+      },
+      "dor_principal": "Responder a leads e marcar visitas enquanto se está noutra visita.",
+      "urgencia": [
+        "A lead que não é respondida em 10 minutos vai para outro consultor",
+        "Portais caros que só rendem com resposta rápida"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "redes",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Presencial na agência + WhatsApp direto ao consultor; agências de bairro ao fim da tarde.",
+        "gancho": "Quantas leads do Idealista ficam sem resposta enquanto está numa visita?",
+        "pergunta_abertura": "Se alguém perguntar às 21h se o T2 ainda está disponível, quem responde?",
+        "objecao": {
+          "texto": "A agência já nos dá site e CRM.",
+          "resposta": "O site da agência vende a agência. Este vende-o a si, na sua zona — e o bot marca as suas visitas, não as da rede."
+        },
+        "prova": "Site com o nome do consultor e a zona; conversa simulada a marcar a visita a um imóvel."
+      },
+      "minimos": {
+        "website": [
+          "Foto profissional",
+          "Zonas onde trabalha",
+          "Paleta",
+          "Contactos",
+          "Licença AMI da mediadora"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário de visitas",
+          "Serviços: venda, compra, arrendamento, avaliação",
+          "Regra: pergunta pelo imóvel e pela zona antes de marcar",
+          "Notificações"
+        ],
+        "redes": [
+          "Frequência (5 stories + 2 posts)",
+          "Fotos de imóveis com autorização",
+          "Tom próximo e confiante",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca visitas a imóveis sozinho — mesmo quando está noutra visita.",
+        "resultado_redes": "Mostra imóveis novos e vendidos todas as semanas, sem gastar a tarde nisso.",
+        "pedido_cliente": "Olá! Vi o T2 na Rua das Flores. Ainda está disponível? Gostava de visitar.",
+        "unidade": "visita",
+        "cliente_demo": "Pedro S.",
+        "stories": [
+          {
+            "tema": "Novo no mercado",
+            "texto": "T2 renovado, varanda e luz o dia todo. Visitas esta semana com {nome}.",
+            "foto": "A sala do imóvel, tirada de um canto, com a janela ao fundo"
+          },
+          {
+            "tema": "Dica de quem compra",
+            "texto": "Antes de visitar, peça a certidão predial. Explico porquê em 20 segundos.",
+            "foto": "Uma chave na mão, à porta de casa"
+          },
+          {
+            "tema": "Vendido",
+            "texto": "Vendido em 3 semanas {em_cidade}. Obrigada pela confiança.",
+            "foto": "A fachada do imóvel com a placa \"vendido\""
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Quanto vale a sua casa?",
+            "texto": "Uma avaliação séria olha para a zona, o estado e o que se vendeu por perto — não para o anúncio do vizinho. {nome} faz avaliações gratuitas e sem compromisso.",
+            "foto": "Uma rua da zona onde trabalha, de manhã"
+          },
+          {
+            "titulo": "Da visita à escritura: as 5 etapas",
+            "texto": "Visita, proposta, CPCV, crédito e escritura. Em cada uma há um documento que costuma atrasar tudo. {nome} trata deles antes de serem um problema.",
+            "foto": "Mesa com plantas, chaves e uma caneta"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Visitas marcadas pelo bot",
+        "Tempo até primeira resposta a leads",
+        "Contactos vindos do site"
+      ],
+      "foco": 6,
+      "posicionamento": "Presença constante nas redes e resposta rápida a quem quer ver ou vender casa.",
+      "posicionamento_sub": "O gestor social mantém os imóveis e a zona sempre visíveis; o site recebe pedidos de avaliação.",
+      "produtos_entrada": [
+        "website",
+        "redes"
+      ],
+      "bot_sku": "bot_leads",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Quer marcar uma visita ou pedir a avaliação da sua casa?",
+        "servicos": [
+          {
+            "nome": "Visita a imóvel",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Avaliação da minha casa",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Quero comprar — conversa inicial",
+            "duracaoMin": 30
+          }
+        ],
+        "slots": [
+          "Amanhã às 11:00",
+          "Amanhã às 18:30",
+          "Sábado às 10:00",
+          "Sábado às 15:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem quer vender casa {em_cidade} encontra-o a si e pede a avaliação num minuto."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "forte",
+        "pilares": [
+          {
+            "id": "imovel",
+            "nome": "Imóvel novo",
+            "ideia": "um imóvel disponível: 3 pormenores que o tornam especial"
+          },
+          {
+            "id": "vendido",
+            "nome": "Vendido",
+            "ideia": "um imóvel vendido e quanto tempo levou, se o consultor o disse"
+          },
+          {
+            "id": "zona",
+            "nome": "A zona",
+            "ideia": "um café, escola ou jardim da zona onde trabalha"
+          },
+          {
+            "id": "processo",
+            "nome": "Passo do processo",
+            "ideia": "um documento ou etapa da compra/venda explicada em 20 segundos"
+          },
+          {
+            "id": "avaliacao",
+            "nome": "Avaliação",
+            "ideia": "convidar quem pensa vender a pedir avaliação sem compromisso"
+          }
+        ],
+        "cuidados": [
+          "Nunca inventar preços, áreas ou prazos de venda.",
+          "Não mostrar moradas exatas nem pessoas sem autorização."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Tenho as redes sempre ativas com isto: diz-me o que publicar, dá-me o texto e lembra-me no dia. Vê a demo com o teu nome: {link}"
+      }
+    },
+    {
+      "id": "personal-trainers",
+      "tipos": [
+        "personal-trainer"
+      ],
+      "fase": "expansao",
+      "porque": {
+        "ticket": "Pacotes mensais de treino; um aluno satisfeito traz outro.",
+        "dor": "Vendem imagem e prova, mas não têm tempo para pensar no que publicar.",
+        "demo": "Uma semana de conteúdos com o nome do treinador: o que filmar e o texto pronto."
+      },
+      "dor_principal": "Publicar com frequência sem gastar horas a pensar no conteúdo.",
+      "urgencia": [
+        "Janeiro e setembro são os meses de decisão — quem não aparece, não é escolhido",
+        "Os alunos chegam pelo Instagram"
+      ],
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Mensagem no Instagram com a demo; no ginásio, fora das horas de ponta.",
+        "gancho": "Quantas semanas passam sem publicar porque não sabe o que filmar?",
+        "pergunta_abertura": "O que o impede de publicar três vezes por semana?",
+        "objecao": {
+          "texto": "Eu sei o que publicar, só não tenho tempo.",
+          "resposta": "É exatamente isso: a app diz o que filmar em 15 segundos e dá o texto pronto. Filma entre aulas e cola."
+        },
+        "prova": "Uma semana de conteúdos com o nome do treinador e um lembrete com o texto pronto."
+      },
+      "minimos": {
+        "website": [
+          "Foto profissional",
+          "Certificação (TEF)",
+          "Planos",
+          "Onde treina",
+          "Contactos"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horários de treino",
+          "Duração das aulas"
+        ],
+        "redes": [
+          "Tom",
+          "Frequência",
+          "Três vídeos de exercícios base"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca aulas experimentais e treinos — entre um aluno e outro.",
+        "resultado_redes": "Publica exercícios e dicas todas as semanas, sem pensar no que filmar.",
+        "pedido_cliente": "Olá! Queria experimentar um treino. Tens vaga esta semana ao fim do dia?",
+        "unidade": "treino",
+        "cliente_demo": "Tiago M.",
+        "stories": [
+          {
+            "tema": "Erro comum",
+            "texto": "O agachamento que toda a gente faz mal — {nome} mostra a correção.",
+            "foto": "Um vídeo de 15s de lado, a fazer o exercício"
+          },
+          {
+            "tema": "Treino rápido",
+            "texto": "10 minutos em casa, sem material. Guarda para amanhã.",
+            "foto": "Um tapete no chão da sala"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "7h da manhã com {nome}: primeiro treino do dia.",
+            "foto": "O ginásio vazio, com luz da manhã"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Aula experimental",
+            "texto": "Vem experimentar um treino com {nome}{em_cidade_virgula} sem compromisso. Marca por mensagem.",
+            "foto": "Um treino a dois, de longe"
+          },
+          {
+            "titulo": "3 mitos do ginásio",
+            "texto": "Suar mais não é queimar mais, abdominais não tiram barriga e não precisas de treinar todos os dias. {nome} explica.",
+            "foto": "Uma garrafa de água e umas sapatilhas"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Publicações por semana",
+        "Aulas experimentais marcadas",
+        "Novos alunos"
+      ],
+      "foco": 7,
+      "nome": "Personal trainers",
+      "posicionamento": "Redes com conteúdo todas as semanas, sem gastar horas a pensar no que publicar.",
+      "posicionamento_sub": "O gestor social diz-lhe o que filmar e escreve o texto; o site mostra planos e marca a aula experimental.",
+      "produtos_entrada": [
+        "redes",
+        "website"
+      ],
+      "produto_entrada": "redes",
+      "produto_forte": "redes",
+      "bot_sku": "bot_agenda",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Quer marcar uma aula experimental?",
+        "servicos": [
+          {
+            "nome": "Aula experimental",
+            "duracaoMin": 45
+          },
+          {
+            "nome": "Treino personalizado",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Treino a dois",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Avaliação física",
+            "duracaoMin": 45
+          }
+        ],
+        "slots": [
+          "Amanhã às 7:00",
+          "Amanhã às 12:30",
+          "Amanhã às 19:00",
+          "Sábado às 9:00"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura personal trainer {em_cidade} vê os seus resultados e marca a aula experimental."
+      },
+      "redes": {
+        "tom": "viral",
+        "frequencia": "forte",
+        "pilares": [
+          {
+            "id": "exercicio",
+            "nome": "Exercício em 15 segundos",
+            "ideia": "um exercício filmado, com o erro mais comum e a correção"
+          },
+          {
+            "id": "mito",
+            "nome": "Mito do ginásio",
+            "ideia": "desfazer uma ideia errada sobre treino ou alimentação"
+          },
+          {
+            "id": "rotina",
+            "nome": "Rotina rápida",
+            "ideia": "um treino de 10 minutos para fazer em casa"
+          },
+          {
+            "id": "evolucao",
+            "nome": "Evolução de um aluno",
+            "ideia": "o progresso de um aluno com autorização, em força ou hábitos"
+          },
+          {
+            "id": "bastidores",
+            "nome": "Um dia de treinos",
+            "ideia": "bastidores do dia, das 7h à última aula"
+          }
+        ],
+        "cuidados": [
+          "Nunca prometer quilos perdidos nem resultados em prazos.",
+          "Evoluções de alunos só com autorização.",
+          "Nada de dietas: remeter para nutricionista."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Agora publico todas as semanas sem pensar: a app diz-me o que filmar e dá-me o texto pronto. Vê a demo com o teu nome: {link}"
+      },
+      "prioridade": 8
+    },
+    {
+      "id": "servicos-tecnicos",
+      "nome": "Canalizadores, eletricistas e limpezas",
+      "tipos": [
+        "canalizador",
+        "eletricista",
+        "limpezas"
+      ],
+      "foco": 8,
+      "fase": "expansao",
+      "porque": {
+        "ticket": "Cada pedido atendido a tempo é um serviço — muitas vezes urgente e bem pago.",
+        "dor": "Pedidos de orçamento chegam quando se está numa obra, com as mãos ocupadas; quem não responde perde o trabalho.",
+        "demo": "Um site que aparece na pesquisa local e um assistente que recolhe o pedido e marca a visita."
+      },
+      "dor_principal": "Responder a pedidos de orçamento enquanto se trabalha.",
+      "urgencia": [
+        "Quem tem uma fuga ou um disjuntor a saltar liga ao primeiro que responde",
+        "Sem site, nem aparece na pesquisa da zona"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Presencial ou chamada ao fim do dia; mensagem com a demo pelo WhatsApp.",
+        "gancho": "Quantos pedidos de orçamento perde por não conseguir atender numa obra?",
+        "pergunta_abertura": "Quando está com as mãos ocupadas, quem responde a quem liga?",
+        "objecao": {
+          "texto": "Os meus clientes vêm por boca a boca.",
+          "resposta": "E continuam. Mas quem recebe o seu nome pesquisa-o antes de ligar — e um site com fotos de trabalhos fecha a decisão."
+        },
+        "prova": "A pesquisa \"{servico} {em_cidade}\" com o seu site e uma conversa a pedir orçamento e marcar visita."
+      },
+      "minimos": {
+        "website": [
+          "Zonas onde trabalha",
+          "Serviços",
+          "Fotos de trabalhos",
+          "Urgências sim/não",
+          "Contactos"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Zonas",
+          "Janelas de visita"
+        ],
+        "redes": [
+          "Fotos de antes e depois",
+          "Frequência"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Recolhe o pedido de orçamento e marca a visita — mesmo quando está numa obra.",
+        "resultado_redes": "Mostra trabalhos acabados todas as semanas, sem parar a obra.",
+        "pedido_cliente": "Boa tarde! Preciso de um orçamento para {servico}. Conseguem vir esta semana?",
+        "unidade": "visita",
+        "cliente_demo": "Rui F.",
+        "stories": [
+          {
+            "tema": "Antes e depois",
+            "texto": "Um trabalho de {servico} acabado hoje por {nome}.",
+            "foto": "Duas fotos do mesmo ângulo: antes e depois"
+          },
+          {
+            "tema": "Dica rápida",
+            "texto": "O que fazer nos primeiros 5 minutos até o técnico chegar — por {nome}.",
+            "foto": "A ferramenta certa, pousada na bancada"
+          },
+          {
+            "tema": "A caminho",
+            "texto": "{nome} a caminho de mais um serviço{em_cidade_virgula} hoje.",
+            "foto": "A carrinha ou a caixa de ferramentas, sem matrícula visível"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Orçamento sem compromisso",
+            "texto": "Diga o que precisa por WhatsApp, com uma foto se puder. {nome} responde e marca a visita.",
+            "foto": "Um trabalho acabado, bem iluminado"
+          },
+          {
+            "titulo": "3 sinais de que não deve esperar",
+            "texto": "Cheiro a queimado, água onde não devia, contador a disparar. {nome}{em_cidade_virgula} atende pedidos rápidos.",
+            "foto": "Um pormenor técnico, sem pessoas"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Pedidos de orçamento pelo bot",
+        "Visitas marcadas",
+        "Chamadas perdidas"
+      ],
+      "posicionamento": "Ser encontrado online e responder rápido a pedidos de orçamento.",
+      "posicionamento_sub": "O site aparece a quem procura na sua zona; o assistente recolhe o pedido e marca a visita.",
+      "produtos_entrada": [
+        "website",
+        "bot"
+      ],
+      "bot_sku": "bot_leads",
+      "bot": {
+        "saudacao": "Olá! Sou o assistente de {nome}. Diga-me o que precisa (uma foto ajuda) e marcamos a visita para o orçamento.",
+        "servicos": [
+          {
+            "nome": "Pedido de orçamento",
+            "duracaoMin": 30
+          },
+          {
+            "nome": "Urgência",
+            "duracaoMin": 60
+          },
+          {
+            "nome": "Manutenção",
+            "duracaoMin": 60
+          }
+        ],
+        "slots": [
+          "Hoje ao fim do dia",
+          "Amanhã de manhã",
+          "Amanhã à tarde",
+          "Esta semana, a combinar"
+        ]
+      },
+      "site": {
+        "resultado": "Quem procura {servico} {em_cidade} encontra-o a si e pede orçamento num toque."
+      },
+      "redes": {
+        "tom": "profissional",
+        "frequencia": "leve",
+        "pilares": [
+          {
+            "id": "antes_depois",
+            "nome": "Antes e depois",
+            "ideia": "um trabalho acabado, do mesmo ângulo"
+          },
+          {
+            "id": "dica",
+            "nome": "Dica de prevenção",
+            "ideia": "um cuidado simples que evita uma avaria"
+          },
+          {
+            "id": "urgencia",
+            "nome": "Quando é urgente",
+            "ideia": "sinais de que não se deve esperar"
+          },
+          {
+            "id": "zona",
+            "nome": "Onde trabalhamos",
+            "ideia": "as zonas onde atende e o tempo típico de resposta, se o disse"
+          }
+        ],
+        "cuidados": [
+          "Nunca prometer tempos de chegada que o técnico não indicou.",
+          "Em eletricidade e gás, nunca ensinar a fazer reparações sozinho — só a manter-se seguro.",
+          "Não mostrar moradas nem matrículas."
+        ]
+      },
+      "partilha": {
+        "mensagem": "Olá! Com isto deixei de perder pedidos de orçamento quando estou numa obra: o assistente responde e marca a visita. Vê a demo com o nome da tua empresa: {link}"
+      },
+      "prioridade": 9
+    },
+    {
+      "id": "clinicas-medicas",
+      "nome": "Clínicas médicas privadas",
+      "prioridade": 10,
+      "fase": "depois",
+      "tipos": [
+        "clinica-medica"
+      ],
+      "porque": {
+        "ticket": "Consultas de especialidade e exames; volume alto e recorrente.",
+        "dor": "Receção sobrecarregada, marcações por telefone, pacientes que não sabem que especialidades existem.",
+        "demo": "Site com as especialidades e um bot que marca e responde a 'aceitam o meu seguro?'."
+      },
+      "dor_principal": "A receção não consegue atender e marcar ao mesmo tempo.",
+      "urgencia": [
+        "Filas de espera no telefone",
+        "Pacientes que desistem para clínicas de grupo",
+        "Especialidades novas que ninguém sabe que existem"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Contacto com o gestor da clínica por email + visita marcada; a receção não decide.",
+        "gancho": "Quantas marcações ficam por fazer porque a linha estava ocupada?",
+        "pergunta_abertura": "Se um paciente perguntar às 20h se aceitam o seguro dele, quem responde?",
+        "objecao": {
+          "texto": "Temos software de gestão clínica.",
+          "resposta": "Mantêm. O bot só trata da conversa antes da marcação e avisa a receção — nada substitui o vosso sistema."
+        },
+        "prova": "Conversa simulada com a pergunta do seguro e a marcação a ficar feita."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "3 fotos: receção, gabinete, exterior",
+          "Paleta",
+          "Contactos",
+          "Especialidades",
+          "Seguros aceites"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Especialidades com duração",
+          "Lista de seguros aceites",
+          "Notificações à receção"
+        ],
+        "redes": [
+          "Frequência",
+          "6 fotos base sem pacientes",
+          "Tom clínico e sóbrio",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca consultas e responde sobre seguros — sem ocupar a receção.",
+        "resultado_redes": "Apresenta cada especialidade e responde às dúvidas mais comuns, todas as semanas.",
+        "pedido_cliente": "Bom dia, gostava de marcar uma consulta de dermatologia. Aceitam seguro de saúde?",
+        "unidade": "consulta",
+        "cliente_demo": "Carlos F.",
+        "stories": [
+          {
+            "tema": "Sabia que…",
+            "texto": "Em {nome} pode marcar por WhatsApp e receber a confirmação no mesmo minuto.",
+            "foto": "A receção, arrumada, sem pessoas"
+          },
+          {
+            "tema": "Especialidade da semana",
+            "texto": "Dermatologia em {nome}: quando é que um sinal deve ser visto?",
+            "foto": "Um gabinete de consulta, visto da porta"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "A equipa de {nome} antes de abrir portas.",
+            "foto": "O corredor ou a sala de espera com luz natural"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Seguros aceites em {nome}",
+            "texto": "Trabalhamos com os principais seguros de saúde. Em dúvida, envie mensagem — respondemos com o que está coberto antes de marcar.",
+            "foto": "A fachada da clínica"
+          },
+          {
+            "titulo": "Consulta de rotina: de quanto em quanto tempo?",
+            "texto": "Uma vez por ano para a maioria dos adultos. {nome}{em_cidade_virgula} marca por WhatsApp, sem esperar ao telefone.",
+            "foto": "Um pormenor do gabinete: estetoscópio, secretária"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Marcações por WhatsApp",
+        "Tempo de resposta médio",
+        "Perguntas sobre seguros resolvidas pelo bot"
+      ]
+    },
+    {
+      "id": "clinicas-veterinarias",
+      "nome": "Clínicas veterinárias",
+      "prioridade": 11,
+      "fase": "depois",
+      "tipos": [
+        "veterinaria"
+      ],
+      "porque": {
+        "ticket": "Consultas, vacinas e cirurgias; clientes para a vida do animal.",
+        "dor": "Urgências e marcações ao telefone com a receção ocupada; donos aflitos que ligam para a próxima clínica.",
+        "demo": "Bot a triar 'o meu cão está a vomitar' e a marcar para hoje."
+      },
+      "dor_principal": "Atender donos aflitos enquanto a receção trata de quem está à frente.",
+      "urgencia": [
+        "Urgências não esperam",
+        "Vacinas e desparasitações esquecidas = receita perdida"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Presencial ao fim da manhã; a rececionista indica quem decide.",
+        "gancho": "Quantos donos aflitos desligam antes de alguém atender?",
+        "pergunta_abertura": "Se alguém escrever às 23h porque o gato não come, o que recebe?",
+        "objecao": {
+          "texto": "Urgências têm de ser por telefone.",
+          "resposta": "Continuam. O bot reconhece a urgência, dá o número direto e avisa a equipa — e trata das marcações normais para libertar a linha."
+        },
+        "prova": "Conversa simulada de uma urgência a ser encaminhada e uma consulta a ficar marcada."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "3 fotos: receção, consultório, equipa",
+          "Paleta",
+          "Contactos",
+          "Urgências 24h? sim/não"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Serviços com duração",
+          "Regra: sinais de urgência → telefone direto",
+          "Notificações"
+        ],
+        "redes": [
+          "Frequência",
+          "Fotos de pacientes com autorização dos donos",
+          "Tom próximo",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca consultas e encaminha urgências sozinho — enquanto a equipa trata de quem está à frente.",
+        "resultado_redes": "Lembra vacinas e mostra pacientes felizes todas as semanas, sem esforço.",
+        "pedido_cliente": "Boa tarde, o meu cão está a vomitar desde manhã. Conseguem vê-lo hoje?",
+        "unidade": "consulta",
+        "cliente_demo": "Dono do Bolt (simulado)",
+        "stories": [
+          {
+            "tema": "Sabia que…",
+            "texto": "A desparasitação é de 3 em 3 meses. {nome} lembra-o por WhatsApp.",
+            "foto": "O consultório, arrumado, sem animais"
+          },
+          {
+            "tema": "Paciente da semana",
+            "texto": "O Bolt veio à vacina e portou-se como um campeão. Em {nome}.",
+            "foto": "Um paciente calmo, com autorização do dono"
+          },
+          {
+            "tema": "Bastidores",
+            "texto": "Abrir {nome}: limpeza, agenda e o primeiro cliente de quatro patas.",
+            "foto": "A receção antes de abrir"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "O meu cão está a vomitar: quando é urgência",
+            "texto": "Mais de duas vezes, com sangue, ou com prostração — venha já. Uma vez e ativo — observe. {nome} responde por WhatsApp e encaminha urgências na hora.",
+            "foto": "A fachada da clínica"
+          },
+          {
+            "titulo": "Plano de vacinas em {nome}",
+            "texto": "Cachorros, adultos e seniores têm calendários diferentes. Nós tratamos de lembrar — o dono só marca.",
+            "foto": "Uma mesa de consulta com o material de vacinação"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Consultas marcadas pelo bot",
+        "Urgências encaminhadas",
+        "Lembretes de vacinas respondidos"
+      ]
+    },
+    {
+      "id": "remodelacao-interiores",
+      "nome": "Cozinhas por medida, remodelação e interiores",
+      "prioridade": 12,
+      "fase": "depois",
+      "tipos": [
+        "remodelacao-interiores",
+        "arquiteto",
+        "designer"
+      ],
+      "porque": {
+        "ticket": "Obras de milhares a dezenas de milhares de euros.",
+        "dor": "Pedidos de orçamento chegam pelo Instagram e ficam sem resposta enquanto se está em obra; a prova social (antes/depois) não é publicada.",
+        "demo": "Antes/depois em stories e um bot que marca a visita técnica."
+      },
+      "dor_principal": "Responder a pedidos de orçamento e marcar visitas enquanto se está em obra.",
+      "urgencia": [
+        "Quem pede orçamento pede a três; o primeiro a responder leva a visita",
+        "Obras acabadas que ninguém vê"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "redes",
+      "encaixe_redes": "alto",
+      "abordagem": {
+        "canal": "Instagram e WhatsApp; visita ao showroom ou a uma obra a decorrer.",
+        "gancho": "Quantos pedidos de orçamento ficam por responder numa semana de obra?",
+        "pergunta_abertura": "Onde estão as fotos da última cozinha que entregaram?",
+        "objecao": {
+          "texto": "Cada orçamento é diferente, não dá para automatizar.",
+          "resposta": "Exato — por isso o bot não orça. Recolhe a divisão, a área e a zona, e marca a visita técnica. O orçamento continua a ser seu."
+        },
+        "prova": "Semana de stories com antes/depois; conversa simulada a marcar a visita técnica."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "6 fotos de obras acabadas",
+          "Paleta",
+          "Contactos",
+          "Orçamento gratuito? sim/não",
+          "Zonas onde trabalha"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário de visitas",
+          "Tipos de obra",
+          "Regra: recolhe divisão, área e zona → marca visita técnica",
+          "Notificações"
+        ],
+        "redes": [
+          "Frequência (5 stories + 2 posts)",
+          "10 fotos de obras, antes e depois",
+          "Tom próximo e concreto",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca visitas técnicas sozinho — mesmo quando está em obra.",
+        "resultado_redes": "Mostra o antes e depois de cada obra, todas as semanas, sem parar a obra.",
+        "pedido_cliente": "Olá, queremos remodelar a cozinha (cerca de 12 m²). Fazem orçamento gratuito?",
+        "unidade": "visita técnica",
+        "cliente_demo": "Família Costa (simulado)",
+        "stories": [
+          {
+            "tema": "Antes e depois",
+            "texto": "Cozinha de 12 m² em {cidade}: 3 semanas de obra, por {nome}.",
+            "foto": "O mesmo ângulo, antes e depois"
+          },
+          {
+            "tema": "Em obra",
+            "texto": "Dia 4: bancada a entrar. {nome} mostra o processo.",
+            "foto": "Um pormenor da obra em curso, com boa luz"
+          },
+          {
+            "tema": "Dica",
+            "texto": "Gavetas em vez de portas em baixo — porquê. Por {nome}.",
+            "foto": "Um pormenor de uma cozinha acabada"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Quanto custa remodelar uma cozinha?",
+            "texto": "Depende da área, dos materiais e do que se mexe em água e eletricidade. {nome} faz uma visita técnica gratuita e entrega um orçamento fechado — sem surpresas a meio.",
+            "foto": "Uma cozinha acabada, de frente"
+          },
+          {
+            "titulo": "Uma remodelação, do início ao fim",
+            "texto": "Visita, projeto, orçamento fechado, obra e entrega. {nome}{em_cidade_virgula} acompanha cada etapa e mostra o progresso por WhatsApp.",
+            "foto": "Planta ou desenho ao lado de uma amostra de material"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Visitas técnicas marcadas",
+        "Tempo até primeira resposta a pedidos de orçamento",
+        "Obras publicadas"
+      ]
+    },
+    {
+      "id": "cirurgia-estetica-medica",
+      "nome": "Cirurgia e estética médica",
+      "prioridade": 13,
+      "fase": "depois",
+      "tipos": [
+        "clinica-estetica"
+      ],
+      "nota": "Usa o mesmo tipo de negócio que a estética avançada, com tom mais clínico. Se a procura justificar, ganha um tipo próprio.",
+      "porque": {
+        "ticket": "O mais alto da lista — uma consulta de avaliação vale meses de subscrição.",
+        "dor": "Confiança: quem procura quer ver credenciais e falar com alguém antes de se comprometer.",
+        "demo": "Site sóbrio com credenciais e um bot que marca só consultas de avaliação, sem falar de preços."
+      },
+      "dor_principal": "Transmitir confiança antes do primeiro contacto humano.",
+      "urgencia": [
+        "Decisão longa: o primeiro contacto conta muito",
+        "Concorrência com clínicas de grupo"
+      ],
+      "produto_entrada": "website",
+      "produto_forte": "bot",
+      "encaixe_redes": "medio",
+      "abordagem": {
+        "canal": "Contacto direto ao médico ou gestor, por referência sempre que possível.",
+        "gancho": "O primeiro contacto de um paciente é uma mensagem. Quem a responde e quando?",
+        "pergunta_abertura": "O que acontece a uma mensagem recebida numa sexta à noite?",
+        "objecao": {
+          "texto": "O nosso paciente quer falar com o médico, não com um robô.",
+          "resposta": "E vai falar — o bot só marca a consulta de avaliação e recolhe o essencial. Nunca fala de preços nem de resultados."
+        },
+        "prova": "Conversa simulada que marca uma consulta de avaliação e passa a palavra ao médico."
+      },
+      "minimos": {
+        "website": [
+          "Logótipo",
+          "Fotos do espaço",
+          "Paleta sóbria",
+          "Credenciais e Ordem",
+          "Contactos"
+        ],
+        "bot": [
+          "Número de WhatsApp",
+          "Horário",
+          "Só consulta de avaliação",
+          "Regra: nunca preços, nunca resultados",
+          "Notificações ao médico"
+        ],
+        "redes": [
+          "Frequência baixa (2 stories + 1 post)",
+          "Fotos do espaço e equipa",
+          "Tom clínico",
+          "Aprovar a primeira semana"
+        ]
+      },
+      "demo": {
+        "resultado_bot": "Marca consultas de avaliação com discrição — e passa a palavra ao médico.",
+        "resultado_redes": "Conteúdo sóbrio e informativo, sem promessas, todas as semanas.",
+        "pedido_cliente": "Boa tarde, gostava de marcar uma consulta de avaliação. É possível ter uma primeira conversa sem compromisso?",
+        "unidade": "consulta de avaliação",
+        "cliente_demo": "Inês R.",
+        "stories": [
+          {
+            "tema": "Como funciona",
+            "texto": "Uma consulta de avaliação em {nome}: perguntas, exame e tempo para decidir.",
+            "foto": "O gabinete de consulta, sóbrio"
+          },
+          {
+            "tema": "Pergunta frequente",
+            "texto": "Quanto tempo de recuperação? Depende — {nome} explica caso a caso.",
+            "foto": "A sala de espera com luz natural"
+          },
+          {
+            "tema": "Equipa",
+            "texto": "Quem vai acompanhá-lo em {nome}.",
+            "foto": "Retrato profissional do médico, com autorização"
+          }
+        ],
+        "posts": [
+          {
+            "titulo": "Antes de decidir: a consulta de avaliação",
+            "texto": "Nenhuma decisão se toma na primeira conversa. Em {nome} a avaliação serve para ouvir, examinar e explicar opções — incluindo não fazer nada.",
+            "foto": "A entrada da clínica"
+          },
+          {
+            "titulo": "O que perguntar numa primeira consulta",
+            "texto": "Credenciais, experiência com o procedimento, riscos e alternativas. {nome} responde a tudo isto por escrito, se preferir.",
+            "foto": "Secretária do gabinete com documentos"
+          }
+        ]
+      },
+      "kpi_30_dias": [
+        "Consultas de avaliação marcadas",
+        "Tempo até primeira resposta"
+      ]
+    }
+  ]
+}

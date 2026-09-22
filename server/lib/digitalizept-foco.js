@@ -1,19 +1,18 @@
 /**
  * Foco comercial: the sales tool side of digitalizemeunegocio.pt.
  *
- * The segments, lines and scripts are NOT kept here. They live in
- * digitalizemeunegocio's server/config/verticais.json (its single source of
- * truth, also rendered as VERTICAIS.md) and are read from disk on every
- * request, so an edit there shows up here without a copy or a restart.
- * Set VERTICAIS_FILE when the two repos are not side by side as in dev.
+ * The segments, lines and scripts are decided in digitalizemeunegocio
+ * (server/config/verticais.json, also rendered as its VERTICAIS.md). This repo
+ * ships a copy in config/foco/ so it deploys on its own server; refresh it with
+ * `npm run foco:sync` and commit. Read on every request, so a fresh copy (or a
+ * VERTICAIS_FILE override) shows up without a restart.
  */
 const fs = require('fs');
 const path = require('path');
 
-const DMN_DIR = process.env.DMN_DIR
-    || path.resolve(__dirname, '../../../../../yourlab_company/drive/03_WORK/digitalizemeunegocio');
-const VERTICAIS_FILE = process.env.VERTICAIS_FILE || path.join(DMN_DIR, 'server/config/verticais.json');
-const TIPOS_DIR = path.join(path.dirname(VERTICAIS_FILE), 'business-types');
+const FOCO_DIR = path.join(__dirname, '..', 'config', 'foco');
+const VERTICAIS_FILE = process.env.VERTICAIS_FILE || path.join(FOCO_DIR, 'verticais.json');
+const TIPOS_FILE = path.join(FOCO_DIR, 'tipos.json');
 const DMN_BASE_URL = (process.env.DMN_BASE_URL || 'https://digitalizemeunegocio.pt').replace(/\/+$/, '');
 
 // Funnel = the conversion rule: show the demo → activate one product → configure.
@@ -29,11 +28,11 @@ const ESTADOS = {
 const VIU_DEMO = ['demo_mostrada', 'quer_ativar', 'ativou'];
 const CANAIS = { presencial: 'Presencial', telefone: 'Telefone', whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', email: 'Email' };
 
-function nomeDoTipo(id) {
+function nomesDosTipos() {
     try {
-        return JSON.parse(fs.readFileSync(path.join(TIPOS_DIR, `${id}.json`), 'utf8')).nome || id;
+        return JSON.parse(fs.readFileSync(TIPOS_FILE, 'utf8'));
     } catch (_) {
-        return id;
+        return {};
     }
 }
 
@@ -42,10 +41,11 @@ function carregar() {
     try {
         cfg = JSON.parse(fs.readFileSync(VERTICAIS_FILE, 'utf8'));
     } catch (err) {
-        throw new Error(`Não consegui ler verticais.json (${VERTICAIS_FILE}): ${err.message}`);
+        throw new Error(`Não consegui ler verticais.json (${VERTICAIS_FILE}): ${err.message}. Corra npm run foco:sync e faça commit de server/config/foco/.`);
     }
+    const nomes = nomesDosTipos();
     const verticais = (cfg.verticais || [])
-        .map((v) => ({ ...v, tipos_nomes: (v.tipos || []).map((id) => ({ id, nome: nomeDoTipo(id) })) }))
+        .map((v) => ({ ...v, tipos_nomes: (v.tipos || []).map((id) => ({ id, nome: nomes[id] || id })) }))
         .sort((a, b) => (a.foco || 99) - (b.foco || 99) || a.prioridade - b.prioridade);
     return { versao: cfg.versao, nota: cfg.nota, regra_conversao: cfg.regra_conversao, fases: cfg.fases, verticais, estados: ESTADOS, canais: CANAIS, dmnBaseUrl: DMN_BASE_URL };
 }
