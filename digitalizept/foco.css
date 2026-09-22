@@ -145,3 +145,10 @@
 
 .foco-se { border-left: 2px solid var(--accent-soft); padding-left: 12px; display: grid; gap: 8px; }
 .foco-conversa { display: grid; gap: 12px; }
+
+.foco-dono { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-muted); }
+.foco-dono select { padding: 8px 32px 8px 12px; font-size: 0.9rem; }
+.foco-assumir { height: 40px; width: 100%; }
+.foco-massa { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.foco-massa select { flex: 1 1 160px; }
+.foco-massa button { height: 44px; flex: 0 0 auto; padding: 0 16px; }

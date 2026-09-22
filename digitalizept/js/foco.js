@@ -18,7 +18,7 @@ const REGRA = [
 const FASE = { ataque: 'Ataque', expansao: 'Expansão', depois: 'Depois' };
 
 const state = {
-    me: null, cfg: null, tab: 'segmentos', contactos: [], todos: false, equipa: [], pessoas: [],
+    me: null, cfg: null, tab: 'segmentos', contactos: [], todos: null, equipa: [], pessoas: [],
     mensagens: [], filtro: { texto: '', estado: '', segmento: '', dono: '' }
 };
 // Pin/chip colour per state: grey = not yet touched, warm = in progress, green = won, red = lost.
@@ -615,11 +615,10 @@ async function carregarHistorico(id, alvo) {
 function atribuir(c) {
     const sel = h('select', { class: 'field-input', onchange: async () => {
         try {
-            await api(`/api/digitalizept/foco/contactos/${c.id}`, { method: 'PATCH', body: { vendedor_id: sel.value } });
+            await api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids: [c.id], vendedor_id: sel.value } });
             toast('Atribuído.');
         } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
-    } }, h('option', { value: '', selected: !c.vendedor_id }, 'Lista comum (ninguém)'),
-    state.pessoas.map((p) => h('option', { value: p.id, selected: p.id === c.vendedor_id }, p.nome)));
+    } }, opcoesPessoas(c.vendedor_id));
     return sel;
 }
 
@@ -652,7 +651,7 @@ function barraFiltros(aoMudar) {
             state.cfg.verticais.filter((v) => v.foco).map((v) => h('option', { value: v.id, selected: f.segmento === v.id }, `${v.foco} · ${v.nome}`)),
             h('option', { value: 'outros', selected: f.segmento === 'outros' }, 'Outros')),
         h('select', { class: 'field-input', onchange: (e) => { f.dono = e.target.value; aoMudar(); } },
-            h('option', { value: '' }, 'Meus + lista comum'),
+            h('option', { value: '' }, state.todos ? 'Todos os donos' : 'Meus + lista comum'),
             h('option', { value: 'meus', selected: f.dono === 'meus' }, `Só os meus (${state.contactos.filter((c) => c.vendedor_id === state.me.id).length})`),
             h('option', { value: 'comum', selected: f.dono === 'comum' }, `Lista comum — por assumir (${state.contactos.filter((c) => !c.vendedor_id).length})`),
             state.todos && state.pessoas.filter((p) => p.id !== state.me.id).map((p) => h('option', { value: p.id, selected: f.dono === p.id }, `Com ${p.nome}`))),
@@ -662,18 +661,66 @@ function barraFiltros(aoMudar) {
     );
 }
 
-function cartaoContacto(c, hoje) {
-    return h('button', { type: 'button', class: 'foco-card', onclick: () => abrirContacto(c) },
+function opcoesPessoas(atual) {
+    return [h('option', { value: '', selected: !atual }, 'Lista comum (ninguém)'),
+        ...state.pessoas.map((p) => h('option', { value: p.id, selected: p.id === atual }, p.nome))];
+}
+
+// Who holds this contact, right on the card: the admin picks anyone, a partner takes it from the shared list.
+function controloDono(c, aoMudar) {
+    const parar = (e) => e.stopPropagation();
+    if (state.me.papel === 'admin') {
+        return h('label', { class: 'foco-dono', onclick: parar }, 'Com ',
+            h('select', { class: 'field-input', onchange: async (e) => {
+                try {
+                    await api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids: [c.id], vendedor_id: e.target.value } });
+                    c.vendedor_id = e.target.value;
+                    c.vendedor = (state.pessoas.find((p) => p.id === c.vendedor_id) || {}).nome || '';
+                    toast(c.vendedor_id ? `Agora com ${c.vendedor}.` : 'Na lista comum.');
+                    aoMudar();
+                } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+            } }, opcoesPessoas(c.vendedor_id)));
+    }
+    if (!c.vendedor_id) {
+        return h('button', { type: 'button', class: 'btn-secondary foco-assumir', onclick: (e) => { parar(e); assumir(c); } }, 'Ficar com este contacto');
+    }
+    return null;
+}
+
+function cartaoContacto(c, hoje, aoMudar) {
+    const dono = c.vendedor_id ? (c.vendedor_id === state.me.id ? 'Meu' : `Com ${c.vendedor}`) : 'Lista comum';
+    return h('div', { class: 'foco-card', role: 'button', tabindex: 0, onclick: () => abrirContacto(c),
+        onkeydown: (e) => { if (e.key === 'Enter') abrirContacto(c); } },
         h('div', { class: 'foco-card-top' },
             h('strong', {}, c.nome),
             h('span', { class: `foco-chip foco-chip-${c.estado}` }, state.cfg.estados[c.estado] || c.estado)
         ),
-        h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, c.vendedor_id ? (c.vendedor_id !== state.me.id ? `com ${c.vendedor}` : '') : 'Lista comum', c.dor && state.cfg.dores[c.dor]].filter(Boolean).join(' · ')),
-        c.voltar_em && h('p', { class: `foco-meta${c.voltar_em <= hoje ? ' foco-hoje' : ''}` }, `Voltar a falar: ${c.voltar_em}`)
+        h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, state.me.papel === 'admin' ? '' : dono, c.dor && state.cfg.dores[c.dor]].filter(Boolean).join(' · ')),
+        c.voltar_em && h('p', { class: `foco-meta${c.voltar_em <= hoje ? ' foco-hoje' : ''}` }, `Voltar a falar: ${c.voltar_em}`),
+        controloDono(c, aoMudar)
     );
 }
 
 const MAX_LISTA = 200;
+
+// Admin: give everything the current filter shows to one person (or back to the shared list).
+function atribuirEmMassa(aoMudar) {
+    const para = h('select', { class: 'field-input' }, opcoesPessoas(null));
+    return h('div', { class: 'foco-massa' },
+        h('span', { class: 'foco-meta' }, 'Atribuir os contactos filtrados a'),
+        para,
+        h('button', { type: 'button', class: 'btn-secondary', onclick: async () => {
+            const ids = filtrados().map((c) => c.id);
+            const nome = para.value ? (state.pessoas.find((p) => p.id === para.value) || {}).nome : 'Lista comum';
+            if (!ids.length || !window.confirm(`Atribuir ${ids.length} contactos a ${nome}?`)) return;
+            try {
+                const { n } = await api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids, vendedor_id: para.value } });
+                toast(`${n} contactos atribuídos a ${nome}.`);
+                await carregarContactos();
+                aoMudar();
+            } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+        } }, 'Atribuir'));
+}
 
 async function renderContactos() {
     await carregarContactos();
@@ -682,7 +729,7 @@ async function renderContactos() {
     const pintar = () => {
         const itens = filtrados();
         listaEl.replaceChildren(...nos([
-            itens.slice(0, MAX_LISTA).map((c) => cartaoContacto(c, hoje)),
+            itens.slice(0, MAX_LISTA).map((c) => cartaoContacto(c, hoje, pintar)),
             itens.length > MAX_LISTA && h('p', { class: 'foco-meta' }, `A mostrar ${MAX_LISTA} de ${itens.length}. Afine o filtro ou use o mapa.`),
             !itens.length && h('p', { class: 'foco-vazio' }, state.contactos.length ? 'Nenhum contacto com este filtro.' : 'Ainda sem contactos. Importe o JSON do crawler ou registe um a partir de um segmento.')
         ]));
@@ -691,6 +738,7 @@ async function renderContactos() {
         h('div', { class: 'foco-acoes' },
             h('button', { type: 'button', class: 'btn-secondary', onclick: abrirImportar }, 'Importar JSON do crawler')),
         barraFiltros(pintar),
+        state.me.papel === 'admin' && atribuirEmMassa(pintar),
         listaEl
     );
     pintar();
@@ -957,6 +1005,8 @@ async function arrancar() {
         state.me = vendedor;
         state.cfg = cfg;
         state.pessoas = pessoas;
+        // The admin works the whole list (same leads as admin → Leads); partners see theirs + the shared list.
+        if (state.todos === null) state.todos = vendedor.papel === 'admin';
     } catch (err) {
         if (err.message !== 'unauthorized') mostrarLogin(err.message);
         return;

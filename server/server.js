@@ -2000,6 +2000,25 @@ app.post('/api/digitalizept/foco/importar', requireDigitalizept, (req, res) => {
     }
 });
 
+// Admin: hand many contacts at once (e.g. everything the current filter shows).
+app.post('/api/digitalizept/foco/atribuir', requireDigitalizeptAdmin, (req, res) => {
+    const db = getDigitalizeptDb();
+    const b = req.body || {};
+    const ids = Array.isArray(b.ids) ? b.ids.map((x) => cleanText(x, 80)).filter(Boolean).slice(0, 5000) : [];
+    const paraId = cleanText(b.vendedor_id, 80);
+    const para = paraId ? db.prepare('SELECT id, nome FROM vendedor WHERE id = ? AND ativo = 1').get(paraId) : { id: '', nome: 'Lista comum' };
+    if (!ids.length || !para) return res.status(400).json({ error: 'Nada para atribuir, ou pessoa não encontrada.' });
+    let n = 0;
+    db.transaction(() => ids.forEach((id) => {
+        const antes = db.prepare('SELECT l.vendedor_id, v.nome FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id WHERE l.id = ?').get(id);
+        if (!antes || antes.vendedor_id === para.id) return;
+        db.prepare('UPDATE lead SET vendedor_id = ? WHERE id = ?').run(para.id, id);
+        digitalizeptLogEvento(db, 'lead', id, 'foco_atribuido', { de: antes.vendedor_id ? antes.nome : 'Lista comum', para: para.nome });
+        n += 1;
+    }))();
+    res.json({ n });
+});
+
 // Take a contact from the shared list. The WHERE makes it first-come: two
 // partners tapping at once, only one UPDATE changes a row.
 app.post('/api/digitalizept/foco/contactos/:id/assumir', requireDigitalizept, (req, res) => {

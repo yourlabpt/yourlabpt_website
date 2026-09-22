@@ -11,11 +11,16 @@ function addMissingColumns(db, table, columns) {
 
 test('owner is created, old leads are theirs, new rows are stamped with whoever is logged in', () => {
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, nome TEXT);
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, nome TEXT, estado TEXT NOT NULL DEFAULT 'novo', processo_estado TEXT NOT NULL DEFAULT '');
         CREATE TABLE evento (id TEXT PRIMARY KEY, tipo TEXT);
-        CREATE TABLE lead_toque (id TEXT PRIMARY KEY, vendedor TEXT NOT NULL DEFAULT '');
-        INSERT INTO lead (id, nome) VALUES ('antigo', 'x');`);
+        CREATE TABLE lead_toque (id TEXT PRIMARY KEY, lead_id TEXT, vendedor TEXT NOT NULL DEFAULT '');
+        INSERT INTO lead (id, nome) VALUES ('antigo', 'x');
+        INSERT INTO lead (id, nome, estado) VALUES ('fechado', 'f', 'fechado');`);
     equipa.instalar(db, addMissingColumns);
+    // Every existing lead becomes a Foco contact, classified by what already happened.
+    const foco = (id) => db.prepare('SELECT foco_estado FROM lead WHERE id = ?').get(id).foco_estado;
+    assert.equal(foco('antigo'), 'por_contactar');
+    assert.equal(foco('fechado'), 'ativou');
     const dono = db.prepare("SELECT * FROM vendedor WHERE utilizador = 'admin'").get();
     assert.equal(db.prepare("SELECT vendedor_id FROM lead WHERE id = 'antigo'").get().vendedor_id, dono.id);
 
@@ -44,6 +49,7 @@ test('owner is created, old leads are theirs, new rows are stamped with whoever 
     // Outside a request nothing is stamped (public routes, imports).
     db.prepare("INSERT INTO lead (id, nome) VALUES ('publico', 'z')").run();
     assert.equal(db.prepare("SELECT vendedor_id FROM lead WHERE id = 'publico'").get().vendedor_id, '');
+    assert.equal(foco('publico'), 'por_contactar'); // leads created later by the admin pages show up too
 
     assert.throws(() => equipa.atualizar(db, dono.id, { ativo: false }), /pelo menos um administrador/);
 });

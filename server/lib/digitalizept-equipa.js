@@ -95,6 +95,17 @@ function instalar(db, addMissingColumns) {
         db.prepare("UPDATE lead SET vendedor_id = ? WHERE vendedor_id = ''").run(id);
     }
 
+    // Every lead is a Foco contact — including the ones the admin pages create
+    // (quick lead, visits, Descobrir, imports): closed → ativou, touched by the
+    // old sequence → contactado, anything else → por contactar.
+    const FOCO_INICIAL = `CASE WHEN l.estado = 'fechado' THEN 'ativou'
+        WHEN l.processo_estado != '' OR EXISTS (SELECT 1 FROM lead_toque t WHERE t.lead_id = l.id) THEN 'contactado'
+        ELSE 'por_contactar' END`;
+    db.exec(`UPDATE lead SET foco_estado = (SELECT ${FOCO_INICIAL} FROM lead l WHERE l.id = lead.id) WHERE foco_estado = ''`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS lead_foco_inicial AFTER INSERT ON lead
+        FOR EACH ROW WHEN NEW.foco_estado = ''
+        BEGIN UPDATE lead SET foco_estado = CASE WHEN NEW.estado = 'fechado' THEN 'ativou' ELSE 'por_contactar' END WHERE id = NEW.id; END;`);
+
     db.function('vendedor_atual', () => (atual() ? atual().id : ''));
     db.function('vendedor_atual_nome', () => (atual() ? atual().nome : ''));
     db.exec(`
