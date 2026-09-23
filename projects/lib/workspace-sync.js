@@ -54,6 +54,12 @@ function createLocalReader(root) {
         return '';
       }
     },
+    async writeFile(relative, content) {
+      const full = inside(relative);
+      await fs.promises.mkdir(path.dirname(full), { recursive: true });
+      await fs.promises.writeFile(full, String(content ?? ''), 'utf8');
+      return full;
+    },
   };
 }
 

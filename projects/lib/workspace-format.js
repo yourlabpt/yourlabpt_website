@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const openspecFormat = require('./openspec-format');
+const { promptDiff } = require('./work-snapshot');
 
 const ROOT = 'yourlab';
 const SPEC_PREFIX = 'openspec/specs/';
@@ -35,6 +36,11 @@ const PHASE_STATUS_WORD = { planned: 'planeada', in_progress: 'em curso', done: 
 const QUESTION_STATE = { aberta: 'open', respondida: 'answered' };
 const QUESTION_AUDIENCE = { cliente: 'client', equipa: 'team' };
 const IDEA_STATE = { nova: 'new', 'a explorar': 'exploring', aceite: 'accepted', rejeitada: 'rejected' };
+
+// The requirement types the platform already works in — same ids as REQUIREMENT_TYPE_META
+// in api.js, which serves their labels and prefixes to the browser. A requirement whose
+// block carries no type= lands in 'undefined', so the gap is visible instead of guessed.
+const REQUIREMENT_TYPES = ['stakeholder', 'functional', 'non_functional', 'test_case', 'undefined', 'out_of_scope'];
 
 // Where each kind of file lives. The guide names every one of these.
 const PATHS = {
@@ -289,16 +295,38 @@ function readMockupScreen(file, content, note) {
   return { file: name, title: title || humanize(baseName(file)), entry: name === 'index.html' };
 }
 
-function readSpec(file, content) {
+function readSpec(file, content, note) {
   const capability = file.match(PATHS.spec)[1];
   const spec = openspecFormat.parseSpec(content, { capability });
+  // parseSpec defaults a typeless requirement to functional. The blocks say what was
+  // actually written, so an untyped one is reported as such rather than assumed.
+  const declaresType = String(content).split(/^### Requirement:/m).slice(1)
+    .map((block) => /<!--\s*yourlab:[^>]*\btype=/.test(block));
+
   return {
     capability: spec.capability || capability,
     title: spec.title || humanize(capability),
-    requirements: spec.requirements.map((requirement) => ({
-      title: clean(requirement.title) || clean(requirement.shall).slice(0, 120),
-      scenarios: Array.isArray(requirement.scenarios) ? requirement.scenarios.length : 0,
-    })),
+    requirements: spec.requirements.map((requirement, index) => {
+      const declared = declaresType[index] === true;
+      const type = declared && REQUIREMENT_TYPES.includes(key(requirement.type)) ? key(requirement.type) : 'undefined';
+      if (!declared) {
+        note(file, 0, 'warning', `«${clean(requirement.title)}» não diz o tipo. Acrescente <!-- yourlab: type=functional --> (ou stakeholder, non_functional, test_case, out_of_scope).`);
+      }
+      return {
+        id: clean(requirement.id),
+        title: clean(requirement.title) || clean(requirement.shall).slice(0, 120),
+        type,
+        module: clean(requirement.module),
+        priority: clean(requirement.priority),
+        shall: clean(requirement.shall),
+        rationale: clean(requirement.rationale),
+        scenarios: (requirement.scenarios || []).map((scenario) => ({
+          title: clean(scenario.title),
+          when: clean(scenario.when),
+          then: clean(scenario.then),
+        })),
+      };
+    }),
   };
 }
 
@@ -308,6 +336,12 @@ function kindOf(filePath) {
   if (filePath === GUIDE_PATH) return 'guide';
   for (const [kind, pattern] of Object.entries(PATHS)) if (pattern.test(filePath)) return kind;
   return '';
+}
+
+/** The one file the platform owns; a person edits everything else. */
+function isWritablePath(filePath) {
+  const kind = kindOf(filePath);
+  return Boolean(kind) && kind !== 'guide';
 }
 
 /** Whether a path is one the platform reads — used to decide what to fetch at all. */
@@ -373,7 +407,7 @@ function readWorkspace(files = []) {
     else if (kind === 'diagram') snapshot.diagrams.push(readDiagram(filePath, content, note));
     else if (kind === 'workflow') snapshot.workflows.push(readWorkflow(filePath, content, note));
     else if (kind === 'mockup') snapshot.mockup.screens.push(readMockupScreen(filePath, content, note));
-    else if (kind === 'spec') snapshot.requirements.push(readSpec(filePath, content));
+    else if (kind === 'spec') snapshot.requirements.push(readSpec(filePath, content, note));
   }
 
   const hasFolder = snapshot.files.some((file) => file.path.startsWith(`${ROOT}/`));
@@ -417,6 +451,63 @@ function readWorkspace(files = []) {
 
   snapshot.contentHash = digest(snapshot.files.map((file) => `${file.path}:${file.sha}`).join('\n'));
   return snapshot;
+}
+
+/* ------------------------------------------------------------------ an edit becomes a task */
+
+// What an edit to each kind of file asks of the code. The artefact side comes from the
+// snapshot's own links; this is the rest.
+const CODE_AREA = {
+  mockup: 'Interface: os ecrãs e a navegação entre eles.',
+  diagram: 'Estrutura dos módulos e as ligações entre eles.',
+  database: 'Modelo de dados e as migrações.',
+  workflow: 'O fluxo descrito neste workflow.',
+};
+
+/**
+ * What else an edit puts in doubt, read from the links the files already declare: a
+ * requirement file is used by the fases whose features name its capability; a fase uses
+ * the capabilities its features name. Nothing is guessed.
+ */
+function impactOfEdit(filePath, snapshot) {
+  const kind = kindOf(filePath);
+  const phases = snapshot?.phases || [];
+  if (kind === 'spec') {
+    const capability = filePath.match(PATHS.spec)[1];
+    return {
+      artefacts: phases.filter((phase) => phase.features.some((feature) => feature.requirements.includes(capability))).map((phase) => phase.file),
+      code: [`Código e testes da capacidade ${capability}.`],
+    };
+  }
+  if (kind === 'phase') {
+    const phase = phases.find((entry) => entry.file === filePath);
+    const capabilities = [...new Set((phase?.features || []).flatMap((feature) => feature.requirements))].sort();
+    return {
+      artefacts: capabilities.map((capability) => `openspec/specs/${capability}/spec.md`),
+      code: capabilities.length ? ['Código das features desta fase.'] : [],
+    };
+  }
+  return { artefacts: [], code: CODE_AREA[kind] ? [CODE_AREA[kind]] : [] };
+}
+
+/**
+ * The task a saved edit leaves behind: the diff, and what it puts in doubt. Null when
+ * the text did not actually change, so saving twice never makes two tasks.
+ */
+function taskFromEdit({ filePath, before, after, snapshot }) {
+  const diff = promptDiff(String(before ?? ''), String(after ?? ''));
+  if (!diff) return null;
+  const impact = impactOfEdit(filePath, snapshot);
+  const lines = [`Alteração guardada em \`${filePath}\`.`, '', '```diff', diff, '```'];
+  if (impact.artefacts.length) lines.push('', 'Artefactos a rever:', ...impact.artefacts.map((entry) => `- \`${entry}\``));
+  if (impact.code.length) lines.push('', 'No código:', ...impact.code.map((entry) => `- ${entry}`));
+  if (!impact.artefacts.length && !impact.code.length) lines.push('', 'Rever se isto muda fases ou requisitos.');
+  return {
+    title: `Aplicar: ${path.posix.basename(filePath)}`,
+    descriptionMarkdown: lines.join('\n'),
+    impact,
+    diff,
+  };
 }
 
 /* ------------------------------------------------------------------ writing the starting folder */
@@ -492,18 +583,64 @@ function serializeQuestions(questions = []) {
   return blocks.length ? `${blocks.join('\n\n')}\n` : '';
 }
 
+// Marks what was read off the code rather than decided by a person.
+const GENERATED_MARK = 'gerado do código, por rever';
+
+function firstParagraph(text) {
+  return String(text || '').split(/\n\s*\n/).map((part) => part.replace(/^#+\s.*$/gm, '').trim()).find(Boolean) || '';
+}
+
+/** What the survey found, as the Contexto of project.md. Facts only. */
+function surveyContext(survey) {
+  const lines = [];
+  if (survey.languages?.length) lines.push(`Linguagens: ${survey.languages.slice(0, 6).map((entry) => `${entry.language} (${entry.files})`).join(', ')}.`);
+  if (survey.packageJson?.dependencies?.length) lines.push(`Pacotes: ${survey.packageJson.dependencies.slice(0, 15).join(', ')}.`);
+  if (survey.modules?.length) lines.push(`Estrutura: ${survey.modules.slice(0, 12).map((entry) => `${entry.name} (${entry.files})`).join(', ')}.`);
+  if (survey.routes?.length) lines.push(`Rotas: ${survey.routes.slice(0, 20).join(', ')}${survey.routes.length > 20 ? `, e mais ${survey.routes.length - 20}` : ''}.`);
+  if (survey.schema?.length) lines.push(`Esquema de dados em: ${survey.schema.slice(0, 6).join(', ')}.`);
+  return lines.join('\n');
+}
+
+/** The top-level modules as a Mermaid flowchart; nesting becomes the only edges. */
+function modulesDiagram(modules) {
+  const names = modules.map((entry) => entry.name);
+  const id = (name) => `m${names.indexOf(name)}`;
+  const lines = ['%% title: Módulos', `%% ${GENERATED_MARK}`, 'flowchart TD'];
+  for (const entry of modules) lines.push(`  ${id(entry.name)}["${entry.name.replace(/"/g, "'")} · ${entry.files} ficheiros"]`);
+  for (const entry of modules) {
+    const parent = entry.name.includes('/') ? entry.name.slice(0, entry.name.lastIndexOf('/')) : '';
+    if (parent && names.includes(parent)) lines.push(`  ${id(parent)} --> ${id(entry.name)}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 /**
- * The files that start a project's folder, from what the platform already holds. Only
+ * The files that start a project's folder, from what the platform already holds.
+ * With a survey of existing code, the gaps are filled from the code instead: the
+ * purpose from the manifest or README, the context from what is actually there, and a
+ * diagram of the modules. Everything taken from the code is marked for review. Only
  * files the repository does not have yet are returned — except GUIDE.md, which the
  * platform owns and always refreshes.
  */
-function skeletonFiles(project = {}, { existing = new Set() } = {}) {
+function skeletonFiles(project = {}, { existing = new Set(), survey = null } = {}) {
   const files = [{ path: GUIDE_PATH, content: guide() }];
   const add = (filePath, content) => {
     if (content && !existing.has(filePath)) files.push({ path: filePath, content });
   };
 
-  add(`${ROOT}/project.md`, serializeProject(project));
+  if (survey) {
+    const projectMd = serializeProject({
+      ...project,
+      type: project.type || 'resgate',
+      stage: project.stage || 'implementation',
+      purpose: clean(project.description) || clean(survey.packageJson?.description) || firstParagraph(survey.readme),
+      context: [clean(project.context), surveyContext(survey)].filter(Boolean).join('\n\n'),
+    });
+    add(`${ROOT}/project.md`, projectMd.replace('---\n\n## Propósito', `---\n\n<!-- ${GENERATED_MARK} -->\n\n## Propósito`));
+    if (survey.modules?.length) add(`${ROOT}/diagrams/modulos.mmd`, modulesDiagram(survey.modules));
+  } else {
+    add(`${ROOT}/project.md`, serializeProject(project));
+  }
 
   const questions = (project.clarificationQuestions || []).map((question) => ({
     question: question.question || question.title,
@@ -532,10 +669,17 @@ module.exports = {
   GUIDE_PATH,
   PATHS,
   STAGES,
+  REQUIREMENT_TYPES,
   guide,
   isReadablePath,
+  isWritablePath,
+  kindOf,
+  fileSha: digest,
   readWorkspace,
+  impactOfEdit,
+  taskFromEdit,
   skeletonFiles,
+  GENERATED_MARK,
   serializeProject,
   serializePhase,
   serializeQuestions,

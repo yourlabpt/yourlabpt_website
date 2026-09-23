@@ -1528,6 +1528,7 @@
           </section>
         ` : ''}
         ${!isCoordination ? executionSettingsMarkup : ''}
+        ${!isCoordination && !children.length && editable && item.id !== '__new__' ? `<section class="ado-editor-section" data-split-task="${escapeHtml(item.id)}"><div class="ado-action-bar"><button type="button" class="ado-action-ghost" data-split-ask>Dividir em tarefas pequenas</button></div><div data-split-result></div></section>` : ''}
 
         <div class="ado-task-meta">
           <div class="ado-meta-status-row">

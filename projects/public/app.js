@@ -18,27 +18,22 @@ const NAV_GROUPS = [
     items: [
       { id: 'hoje', label: 'Hoje', icon: 'tray', partnerOnly: true },
       { id: 'projetos', label: 'Projetos', icon: 'folder' },
-      { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
     ],
   },
   {
-    // One project's work, in the order it actually happens. Resumo opens the project:
-    // where it stands, what is running, what failed. Then refine the intention, plan it,
-    // cut it into tasks, review what came back, show the client. Everything else is real
-    // but occasional, and lives behind «Mais».
+    // The loop, and nothing else: where the project stands, the artefacts it is written
+    // in, the requirements those artefacts hold, and the work that comes out of editing
+    // them. Everything else is real but occasional, and lives behind «Mais».
     id: 'work',
     label: 'Trabalho',
     requiresProject: true,
     items: [
       { id: 'projeto', label: 'Resumo', icon: 'gauge' },
-      // Camada 0 comes first because it comes first: the intention is refined against
-      // something you can look at before any of the rest has anything to work from.
-      { id: 'camada0', label: 'Intenção', icon: 'bolt' },
-      // Camadas 1-3 read as one plan getting smaller, so they share a screen.
-      { id: 'plano', label: 'Plano', icon: 'plan' },
+      // The project written down: intenção, plano, requisitos, diagramas, mockup — the
+      // files in yourlab/, edited here and written straight to the repository.
+      { id: 'plano', label: 'Artefactos', icon: 'doc' },
+      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'tarefas', label: 'Tarefas', icon: 'list' },
-      // Carries a count when something has moved since this device last looked.
-      { id: 'decisoes', label: 'Decisões', icon: 'branch' },
     ],
   },
   {
@@ -47,9 +42,9 @@ const NAV_GROUPS = [
     requiresProject: true,
     collapsible: true,
     items: [
-      // Requisitos is the detail behind Plano — reached when you need a specific
-      // requirement, not on the way past.
-      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
+      { id: 'camada0', label: 'Intenção', icon: 'bolt' },
+      { id: 'decisoes', label: 'Decisões', icon: 'branch' },
+      { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
       { id: 'documentos', label: 'Documentos', icon: 'doc' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
       { id: 'gerar', label: 'Gerar', icon: 'sparkle' },
@@ -1240,8 +1235,9 @@ function navIconSvg(iconKey) {
   return window.IosIcons?.svg(iconKey, { className: 'nav-rail-icon' }) || '';
 }
 
-// Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client sees Projetos and a read-only Resumo.
-const CLIENT_VISIBLE_TABS = new Set(['projetos', 'projeto']);
+// Mirrors lib/project-access.js CLIENT_VISIBLE_TABS — a client sees Projetos, a read-only
+// Resumo, and their own Conta.
+const CLIENT_VISIBLE_TABS = new Set(['projetos', 'projeto', 'conta']);
 
 function isNavItemVisible(item) {
   if (item.superAdminOnly && !isSuperAdmin()) return false;
@@ -1348,7 +1344,7 @@ window.refreshNavBadges = refreshNavBadges;
 
 // The collapsed rail carries the way in and the work sequence, nothing else. Adding
 // another icon here is how a quick nav stops being quick.
-const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'camada0', 'plano', 'tarefas', 'decisoes'];
+const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'plano', 'requisitos', 'tarefas'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -1403,11 +1399,13 @@ function renderNavRail() {
     if (group.id === 'system') html += '<div class="nav-rail-spacer"></div>';
 
     if (group.collapsible && expanded) {
+      const items = group.items.map((item) => renderNavItem(item)).join('');
+      if (!items.trim()) continue;
       const open = moreOpen || activeInMore;
       html += `<details class="nav-rail-group" ${open ? 'open' : ''} data-nav-group="more">
         <summary class="nav-rail-group-summary nav-rail-item">${navIconSvg('more')}<span class="nav-rail-label">${escapeHtml(group.label)}</span></summary>
         <div class="nav-rail-group-items">
-          ${group.items.map((item) => renderNavItem(item)).join('')}
+          ${items}
         </div>
       </details>`;
       continue;
@@ -1521,7 +1519,6 @@ function renderMobileChrome() {
   const agentesTab = document.querySelector('[data-mobile-tab="agentes"]');
   if (agentesTab) agentesTab.hidden = !isSuperAdmin();
   const definicoesTab = document.querySelector('[data-mobile-tab="definicoes"]');
-  if (definicoesTab) definicoesTab.hidden = isClientUser();
 
   let backTo = '';
   let backLabel = '';
@@ -1580,6 +1577,8 @@ function renderActiveTab(project, tabId) {
       renderClarificationQuestions(project);
       break;
     case 'requisitos':
+      // The repository's requirements, by type. The platform's own editor is below it.
+      window.WorkspaceUI?.renderRequisitos?.(project);
       // If this is an overview-only payload, load requirements first before rendering.
       if (project.hasHeavyData && !(Array.isArray(project.requirements) && project.requirements.length)) {
         renderRequirementModuleControls(project);
@@ -1607,8 +1606,8 @@ function renderActiveTab(project, tabId) {
       window.Camada0UI?.render?.(project.id);
       break;
     case 'plano':
-      // Propósito, fases, riscos and assunções — read from the repository's yourlab/.
-      window.WorkspaceUI?.renderPlano?.(project);
+      // The repository's yourlab/ files, listed and editable.
+      window.WorkspaceUI?.renderArtefactos?.(project);
       break;
     case 'decisoes':
       // Reading the log clears its own badge.
@@ -3281,6 +3280,7 @@ async function bootstrapAppAfterLogin() {
   window.PdosUI?.wireTraceEvents();
   initNavRail();
   switchToTab(state.selectedProject || !isNavPageRequiresProject(state.activeTab) ? state.activeTab : defaultLandingTab());
+  window.HelpUI?.openFirstUse?.(state.user);
 }
 
 async function handleLogout() {

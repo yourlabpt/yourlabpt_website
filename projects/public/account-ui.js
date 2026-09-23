@@ -116,6 +116,16 @@
 
       <section class="ios-section">
         <div class="ios-list">
+          <button type="button" class="ios-row" data-account-action="help">
+            <span class="ios-row-icon">${icon('help', 22)}</span>
+            <span class="ios-row-main"><span class="ios-row-title">Primeiros passos</span><span class="ios-row-sub">Como funciona a plataforma para a sua conta</span></span>
+            ${k.icon('chevron', 14, 'ios-chevron')}
+          </button>
+        </div>
+      </section>
+
+      <section class="ios-section">
+        <div class="ios-list">
           <button type="button" class="ios-row is-destructive" data-account-action="logout">
             <span class="ios-row-icon">${icon('logout', 22)}</span>
             <span class="ios-row-main"><span class="ios-row-title">Terminar sessão</span></span>
@@ -190,6 +200,7 @@
       return;
     }
     if (event.target?.closest?.('[data-account-action="logout"]')) window.logout?.();
+    if (event.target?.closest?.('[data-account-action="help"]')) window.HelpUI?.openPlatformHelp?.();
   });
 
   window.AccountUI = { render };

@@ -166,16 +166,33 @@ A `#` title, then numbered steps. Prose around them is kept.
 
 ## openspec/specs/<capability>/spec.md
 
-Requirements, in the OpenSpec format:
+Requirements, in the OpenSpec format. The comment line is what tells the platform which
+kind of requirement it is — without it the requirement shows up under **Não Definido**:
 
 ```markdown
 ## Requirements
 ### Requirement: Iniciar sessão
+<!-- yourlab: id=FR-01; type=functional; module=Backend; priority=high -->
+
 The system SHALL let a client sign in with email and password.
 
 #### Scenario: Password certa
 - **WHEN** the client submits a correct email and password
 - **THEN** the client sees their coupons
 ```
+
+`type` is one of:
+
+| type | Means |
+|---|---|
+| `stakeholder` | what someone needs (STK) |
+| `functional` | what the app does (FR) |
+| `non_functional` | how well it must do it — speed, security, limits (RNF) |
+| `test_case` | an acceptance case (TC) |
+| `undefined` | not decided yet (UQ) |
+| `out_of_scope` | deliberately not doing it (OOS) |
+
+`module` and `priority` are optional. Scenarios under a requirement are its acceptance
+cases — they are what tests get written from.
 
 One folder per capability, and a fase's features point at those folder names.

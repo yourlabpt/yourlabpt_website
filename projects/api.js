@@ -46,6 +46,7 @@ const { registerMockupRoutes } = require('./lib/mockup-routes');
 const { registerEpicRoutes } = require('./lib/epic-routes');
 const ears = require('./lib/ears');
 const { createMockupRunner } = require('./lib/mockup-runner');
+const { createPackRunner } = require('./lib/prompt-packs');
 const { registerOrchestrationRoutes } = require('./lib/orchestration-routes');
 const { createDriver } = require('./lib/orchestration-driver');
 
@@ -4168,6 +4169,12 @@ function registerRequirementsPlatform(app, options) {
     appendActivity,
     dataDir,
     loadProject: ensureProjectLoaded,
+    runPack: options.packRunner || createPackRunner({
+      dataDir,
+      runtime: createAgentRuntimeClient(),
+      connectorStore,
+      agentConnectionMode,
+    }),
   });
 
   registerOpenspecRoutes(app, {

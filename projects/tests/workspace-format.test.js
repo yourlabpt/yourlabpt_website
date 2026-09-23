@@ -253,3 +253,139 @@ test('without a working copy it reads through the git provider, at the default b
   assert.deepEqual(calls.map((c) => c[2]), ['main', 'main']);
   assert.equal(snapshot.contentHash, format.readWorkspace(FILES).contentHash);
 });
+
+test(`only the folder own files are writable, and never the guide`, () => {
+  assert.equal(format.isWritablePath('yourlab/project.md'), true);
+  assert.equal(format.isWritablePath('openspec/specs/authentication/spec.md'), true);
+  assert.equal(format.isWritablePath('yourlab/GUIDE.md'), false);
+  assert.equal(format.isWritablePath('yourlab/Notas.txt'), false);
+  assert.equal(format.isWritablePath('package.json'), false);
+});
+
+test('the working copy is written in place, and only inside itself', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yourlab-write-'));
+  const reader = sync.createLocalReader(root);
+
+  await reader.writeFile('yourlab/phases/01-mvp.md', '---\ntitle: MVP\n---\n');
+  assert.equal(fs.readFileSync(path.join(root, 'yourlab/phases/01-mvp.md'), 'utf8'), '---\ntitle: MVP\n---\n');
+  assert.equal(format.fileSha(await reader.readFile('yourlab/phases/01-mvp.md')), format.fileSha('---\ntitle: MVP\n---\n'));
+
+  await assert.rejects(() => reader.writeFile('../escapou.md', 'x'), /fora do repositório/);
+});
+
+test('a requirement carries its type, and one without the meta line lands in Não Definido', () => {
+  const spec = [
+    '## Requirements',
+    '### Requirement: Responder depressa',
+    '<!-- yourlab: id=RNF-01; type=non_functional; module=Backend -->',
+    '',
+    'O sistema SHALL responder em 2s.',
+    '',
+    '#### Scenario: Página inicial',
+    '- **WHEN** o cliente abre a app',
+    '- **THEN** vê os cupões em 2s',
+    '',
+    '### Requirement: Sem meta',
+    'O sistema SHALL fazer algo.',
+    '',
+  ].join('\n');
+  const snapshot = format.readWorkspace([{ path: 'openspec/specs/desempenho/spec.md', content: spec }]);
+  const [first, second] = snapshot.requirements[0].requirements;
+
+  assert.deepEqual(
+    { id: first.id, type: first.type, module: first.module, scenarios: first.scenarios.length },
+    { id: 'RNF-01', type: 'non_functional', module: 'Backend', scenarios: 1 },
+  );
+  assert.equal(first.scenarios[0].then, 'vê os cupões em 2s');
+  assert.equal(second.type, 'undefined');
+  assert.ok(snapshot.findings.some((finding) => /não diz o tipo/.test(finding.message)));
+});
+
+test('the guide names every requirement type the reader knows', () => {
+  const guide = format.guide();
+  for (const type of format.REQUIREMENT_TYPES) assert.ok(guide.includes(`\`${type}\``), `GUIDE.md does not list type ${type}`);
+});
+
+test('a saved edit becomes one task with the diff, and an unchanged save makes none', () => {
+  const snapshot = format.readWorkspace(FILES);
+  const before = FILES.find((f) => f.path === 'openspec/specs/authentication/spec.md').content;
+  const after = before.replace('sees their coupons', 'sees their coupons and their plan');
+
+  const draft = format.taskFromEdit({ filePath: 'openspec/specs/authentication/spec.md', before, after, snapshot });
+  assert.equal(draft.title, 'Aplicar: spec.md');
+  assert.match(draft.descriptionMarkdown, /```diff/);
+  assert.match(draft.descriptionMarkdown, /\+ - \*\*THEN\*\* the client sees their coupons and their plan/);
+  // The fase whose feature names this capability is put in doubt, and so is its code.
+  assert.deepEqual(draft.impact.artefacts, ['yourlab/phases/01-mvp.md']);
+  assert.deepEqual(draft.impact.code, ['Código e testes da capacidade authentication.']);
+
+  assert.equal(format.taskFromEdit({ filePath: 'yourlab/project.md', before: 'x', after: 'x', snapshot }), null);
+});
+
+test('a fase edit points at the requirement files its features use', () => {
+  const snapshot = format.readWorkspace(FILES);
+  assert.deepEqual(format.impactOfEdit('yourlab/phases/01-mvp.md', snapshot), {
+    artefacts: ['openspec/specs/authentication/spec.md', 'openspec/specs/payments/spec.md'],
+    code: ['Código das features desta fase.'],
+  });
+  assert.deepEqual(format.impactOfEdit('yourlab/mockup/index.html', snapshot).code, ['Interface: os ecrãs e a navegação entre eles.']);
+});
+
+test('the task the route builds survives normalisation as a waiting, platform-made task', () => {
+  const workItems = require('../lib/work-items');
+  const record = workItems.normalizeWorkItem({
+    id: 'witem_test',
+    title: 'Aplicar: spec.md',
+    descriptionMarkdown: 'diff',
+    complexity: 'medium',
+    status: 'waiting_review',
+    origin: 'platform',
+    executorMode: 'both',
+    deliveryStageId: 'unclassified',
+    sourceRefs: [{ type: 'artifact', id: 'openspec/specs/authentication/spec.md', label: 'openspec/specs/authentication/spec.md' }],
+  }, { project: { id: 'p', requirements: [] }, actorUserId: 'u', nowIso: () => '2026-09-23T10:00:00.000Z' });
+
+  assert.equal(record.status, 'waiting_review');
+  assert.equal(record.origin, 'platform');
+  assert.ok(record.sourceRefs.some((ref) => ref.type === 'artifact' && ref.id === 'openspec/specs/authentication/spec.md'));
+  // It is what Hoje counts as waiting for a person.
+  assert.equal(workItems.executionStatusChip(record).tone, 'review');
+});
+
+const SURVEY = {
+  fileCount: 42,
+  languages: [{ language: 'JavaScript', files: 30 }, { language: 'SQL', files: 2 }],
+  modules: [{ name: 'src', files: 20 }, { name: 'src/routes', files: 6 }, { name: 'migrations', files: 2 }],
+  routes: ['/api/coupons', '/api/login'],
+  schema: ['migrations/001_init.sql'],
+  packageJson: { name: 'citypass', description: 'Cupões de desconto para restaurantes.', scripts: ['start'], dependencies: ['express', 'pg'] },
+  readme: '# City Pass\n\nUm primeiro parágrafo do README.\n\nMais texto.',
+};
+
+test('a project that already has code starts from what the survey found, marked for review', () => {
+  const files = format.skeletonFiles({ name: 'City Pass', clientName: 'Impakta' }, { survey: SURVEY });
+  assert.deepEqual(files.map((f) => f.path), ['yourlab/GUIDE.md', 'yourlab/diagrams/modulos.mmd', 'yourlab/project.md']);
+
+  const projectMd = files.find((f) => f.path === 'yourlab/project.md').content;
+  assert.match(projectMd, /<!-- gerado do código, por rever -->/);
+
+  const snapshot = format.readWorkspace(files);
+  assert.equal(snapshot.project.type, 'resgate');
+  assert.equal(snapshot.project.stage, 'implementation');
+  assert.equal(snapshot.project.purpose, 'Cupões de desconto para restaurantes.');
+  assert.match(snapshot.project.context, /Rotas: \/api\/coupons, \/api\/login/);
+  assert.match(snapshot.project.context, /Pacotes: express, pg/);
+  // Nesting in the folders is the only edge drawn; nothing else is inferred.
+  const diagram = snapshot.diagrams[0];
+  assert.equal(diagram.title, 'Módulos');
+  assert.match(diagram.source, /m0 --> m1/);
+  assert.doesNotMatch(diagram.source, /m0 --> m2/);
+  assert.equal(snapshot.findings.filter((f) => f.level !== 'info').length, 0);
+});
+
+test('without a manifest description the purpose comes from the README, and a platform description wins over both', () => {
+  const fromReadme = format.readWorkspace(format.skeletonFiles({ name: 'X' }, { survey: { ...SURVEY, packageJson: null } }));
+  assert.equal(fromReadme.project.purpose, 'Um primeiro parágrafo do README.');
+  const fromPlatform = format.readWorkspace(format.skeletonFiles({ name: 'X', description: 'Escrito por uma pessoa.' }, { survey: SURVEY }));
+  assert.equal(fromPlatform.project.purpose, 'Escrito por uma pessoa.');
+});

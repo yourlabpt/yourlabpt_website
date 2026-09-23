@@ -306,8 +306,6 @@
     host.classList.toggle('ios-home-client', client);
     host.innerHTML = `
       ${header(project, entry, stage)}
-      ${stageTrack(project, stage)}
-      ${client ? '' : executionCard()}
       <div class="ios-home-aside">
         ${client ? '' : attention(entry)}
         ${window.WorkspaceUI?.statusCard?.(project) || ''}
@@ -344,10 +342,8 @@
     state.project = project;
     paint();
     window.WorkspaceUI?.load?.(project.id);
-    if (window.isClientUser?.() !== true) {
-      loadOrchestration(project.id);
-      window.ResumeUI?.load?.();
-    }
+    // The persona chain is on hold; Resumo no longer reads the orchestration.
+    if (window.isClientUser?.() !== true) window.ResumeUI?.load?.();
   }
 
   document.addEventListener('click', (event) => {

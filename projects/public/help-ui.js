@@ -1,13 +1,8 @@
 /**
- * Ajuda contextual — conceitos da plataforma (topbar) e por fase (Linha de Entrega).
+ * Ajuda: primeiros passos por tipo de conta (topbar «?», e Conta no telemóvel), e a
+ * ajuda por fase que o ecrã antigo de entrega ainda usa.
  */
 (function () {
-  const PLATFORM_INTRO = [
-    'Selecciona um projecto e trabalha na Linha de Entrega, fase a fase.',
-    'Requisitos, documentos e atas ficam ligados à fase onde os criaste.',
-    'Usa os contadores e cartões para abrir detalhes — a ajuda completa está aqui.',
-  ];
-
   const CONCEPT_LINKS = {
     capability: { tab: 'deliveryos', label: 'Ver funcionalidades na Linha de Entrega' },
     cluster: { tab: 'deliveryos', label: 'Ver grupos na Linha de Entrega' },
@@ -69,39 +64,75 @@
       </details>`;
   }
 
-  function renderPlatformHelp() {
-    const concepts = getConcepts();
-    const explore = [
-      { tab: 'projetos', label: 'Projectos', hint: 'Escolher ou criar projecto' },
-      { tab: 'deliveryos', label: 'Linha de entrega', hint: 'Fases e conteúdo do projecto' },
-      { tab: 'requisitos', label: 'Requisitos', hint: 'Lista completa agrupada' },
-      { tab: 'definicoes', label: 'Definições', hint: 'Utilizadores e configuração avançada' },
-    ];
+  /**
+   * First steps, one walkthrough per kind of login. Each step says what to do and where,
+   * and its button goes there. Written for someone opening the platform for the first
+   * time; it opens by itself once, and stays under «?» (and under Conta on a phone).
+   */
+  const FIRST_STEPS = {
+    super_admin: {
+      role: 'Administrador',
+      lead: 'Tem acesso a tudo: a plataforma, todos os projectos e as ferramentas de engenharia.',
+      steps: [
+        { title: 'Ligar a plataforma', text: 'Em Definições da plataforma: ligue a conta GitHub, active um modelo e, se quiser, a entrada com Google.', tab: 'definicoesPlataforma' },
+        { title: 'Criar um projecto', text: 'Em Projetos → Novo projecto. Depois, em Definições do projecto, ligue o repositório — de preferência com cópia local.', tab: 'projetos' },
+        { title: 'Pôr o projecto no repositório', text: 'Em Resumo, cartão Documentação: se já há código, «Levantar o código»; depois «Criar pasta yourlab». O yourlab/GUIDE.md explica a qualquer IA como escrever os ficheiros.', tab: 'projeto' },
+        { title: 'Escrever os artefactos', text: 'Em Artefactos: escolha um ficheiro, edite e Guardar. Fica no repositório e deixa uma tarefa. «Analisar impacto com IA» diz o que mais foi afectado.', tab: 'plano' },
+        { title: 'Dos requisitos ao código', text: 'Em Requisitos, arrumados por tipo. Num requisito: «Gerar testes» → escrever → «Gerar o código» → escrever → «Os artefactos ainda dizem o mesmo?». Nada é escrito sem carregar em escrever.', tab: 'requisitos' },
+        { title: 'Trabalhar as tarefas', text: 'Em Tarefas. Uma tarefa grande de mais: «Dividir em tarefas pequenas».', tab: 'tarefas' },
+        { title: 'Todos os dias: Hoje', text: 'O que espera por si em todos os projectos — tarefas a rever e o que falhou.', tab: 'hoje' },
+        { title: 'Dar acesso a pessoas', text: 'Contas novas, incluindo as de Google, aparecem em Definições da plataforma → Contas. O acesso a cada projecto dá-se em Definições do projecto → Quem pode aceder.', tab: 'definicoesPlataforma' },
+      ],
+      note: 'Os botões de IA precisam do Agent Runtime ligado e de um modelo activo (Definições da plataforma).',
+    },
+    partner: {
+      role: 'Parceiro',
+      lead: 'Trabalha nos projectos a que tem acesso: artefactos, requisitos, testes, código e tarefas.',
+      steps: [
+        { title: 'Os seus projectos', text: 'Em Projetos vê os projectos a que o administrador lhe deu acesso.', tab: 'projetos' },
+        { title: 'Todos os dias: Hoje', text: 'O que espera por si — tarefas a rever e o que falhou.', tab: 'hoje' },
+        { title: 'Escrever os artefactos', text: 'Em Artefactos: escolha um ficheiro, edite e Guardar. Fica no repositório e deixa uma tarefa. «Analisar impacto com IA» diz o que mais foi afectado.', tab: 'plano' },
+        { title: 'Dos requisitos ao código', text: 'Em Requisitos, por tipo: «Gerar testes» → «Gerar o código» → «Os artefactos ainda dizem o mesmo?». Nada é escrito sem carregar em escrever.', tab: 'requisitos' },
+        { title: 'Trabalhar as tarefas', text: 'Em Tarefas. Uma tarefa grande de mais: «Dividir em tarefas pequenas».', tab: 'tarefas' },
+        { title: 'A sua conta', text: 'Em Conta: os seus dados e a sua password.', tab: 'conta' },
+      ],
+      note: 'Ligar repositórios, criar a pasta yourlab e as definições da plataforma são do administrador.',
+    },
+    client: {
+      role: 'Cliente',
+      lead: 'Acompanha os seus projectos: onde estão, para que servem e como vão ficar.',
+      steps: [
+        { title: 'Os seus projectos', text: 'Em Projetos vê os projectos a que tem acesso. Se entrou com Google pela primeira vez e não vê nenhum, o administrador ainda lhe vai dar acesso.', tab: 'projetos' },
+        { title: 'O resumo de cada projecto', text: 'Em que etapa está, para que serve a aplicação, as fases e as perguntas que esperam uma resposta sua.', tab: 'projeto' },
+        { title: 'Ver o mockup', text: 'No Resumo, «Ver mockup» mostra os ecrãs da aplicação como vão ficar.', tab: 'projeto' },
+        { title: 'A sua conta', text: 'Em Conta: os seus dados e a sua password. No telemóvel, está no separador Definições.', tab: 'conta' },
+      ],
+      note: 'Tem uma resposta ou uma dúvida sobre o projecto? Fale com o seu contacto na YourLab.',
+    },
+  };
 
+  function firstStepsFor(role) {
+    return FIRST_STEPS[role] || FIRST_STEPS.client;
+  }
+
+  function renderPlatformHelp() {
+    const guide = firstStepsFor(window.state?.user?.role);
     return `
       <section class="help-section">
-        <h3 class="help-section-title">Como funciona</h3>
-        <ul class="help-bullets">${PLATFORM_INTRO.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-      </section>
-      <section class="help-section">
-        <h3 class="help-section-title">Conceitos da plataforma</h3>
-        <p class="help-section-lead">Clique num conceito para ler a explicação completa e ir ao sítio certo.</p>
-        <div class="help-concept-list">
-          ${Object.entries(concepts).map(([key, c]) => renderConceptBlock(key, c)).join('')}
+        <p class="help-section-lead">${escapeHtml(guide.lead)}</p>
+        <div class="ios-list">
+          ${guide.steps.map((step, index) => `
+            <div class="ios-row is-static">
+              <span class="ios-row-index">${index + 1}</span>
+              <span class="ios-row-main">
+                <span class="ios-row-title">${escapeHtml(step.title)}</span>
+                <span class="ios-row-sub ios-wrap">${escapeHtml(step.text)}</span>
+              </span>
+              ${step.tab ? `<button type="button" class="btn tiny help-goto" data-help-tab="${escapeHtml(step.tab)}">Ir</button>` : ''}
+            </div>`).join('')}
         </div>
-      </section>
-      <section class="help-section">
-        <h3 class="help-section-title">Explorar</h3>
-        <div class="help-link-grid">
-          ${explore.map((item) => `
-            <button type="button" class="help-link-card help-goto" data-help-tab="${escapeHtml(item.tab)}">
-              <strong>${escapeHtml(item.label)}</strong>
-              <span>${escapeHtml(item.hint)}</span>
-            </button>
-          `).join('')}
-        </div>
-      </section>
-    `;
+        ${guide.note ? `<p class="ios-footnote">${escapeHtml(guide.note)}</p>` : ''}
+      </section>`;
   }
 
   function getStageLabel(stageId, project) {
@@ -192,6 +223,10 @@
         const stage = btn.dataset.helpStage || '';
         const view = btn.dataset.helpView || '';
         closeHelpDrawer();
+        if (!stage && !view) {
+          window.switchToTab?.(tab);
+          return;
+        }
         if (stage) window.state.deliverySelectedStageId = stage;
         if (tab === 'deliveryos') {
           window.switchToTab?.('deliveryos');
@@ -231,10 +266,23 @@
 
   function openPlatformHelp() {
     openHelpDrawer({
-      eyebrow: 'YourLab',
-      title: 'Ajuda da plataforma',
+      eyebrow: firstStepsFor(window.state?.user?.role).role,
+      title: 'Primeiros passos',
       html: renderPlatformHelp(),
     });
+  }
+
+  /** Opens the first steps once per person, on their first login in this browser. */
+  function openFirstUse(user) {
+    if (!user?.id) return;
+    const key = `yourlab-first-use:${user.id}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, new Date().toISOString());
+    } catch {
+      return; // no storage: better never than every time
+    }
+    openPlatformHelp();
   }
 
   function openPhaseHelp(project) {
@@ -260,6 +308,7 @@
   window.HelpUI = {
     helpIconSvg,
     openPlatformHelp,
+    openFirstUse,
     openPhaseHelp,
     closeHelpDrawer,
     wireHelpEvents,

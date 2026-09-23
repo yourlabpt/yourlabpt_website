@@ -57,3 +57,7 @@ server/data/digitalizept.db
 server/data/digitalizept.db-*
 server/data/digitalizept-contracts/
 server/data/digitalizept-work/
+
+# Agent skills installed per-repo (npx skills add) — not ours to commit
+projects/.agents/
+projects/.claude/skills/
