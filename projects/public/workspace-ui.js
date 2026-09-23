@@ -46,7 +46,6 @@
       try { listener(); } catch { /* one screen failing must not stop the others */ }
     });
     paintArtefactos();
-    paintRequisitos();
   }
 
   /* ------------------------------------------------------------ reading */
@@ -55,6 +54,8 @@
     if (!projectId) return;
     if (state.projectId !== projectId) {
       Object.assign(state, { projectId, data: null, error: '', changeRequestUrl: '', surveyed: null });
+      Object.assign(view, { sel: '', newPath: '', isNew: false, mode: 'view', lastEdit: null, adding: '' });
+      steps.outcome = null;
     }
     if (state.loading) return;
     state.loading = true;
@@ -280,32 +281,27 @@
       </section>`;
   }
 
-  /* ------------------------------------------------------------ the Plano page */
-
-  function prose(text) {
-    return text ? `<p class="ios-prose">${esc(text)}</p>` : '';
-  }
-
-  function staticRows(items) {
-    return items.map((item) => `
-      <div class="ios-row is-static"><span class="ios-row-main"><span class="ios-row-title ios-wrap">${esc(item)}</span></span></div>`).join('');
-  }
-
   /* ------------------------------------------------------------ Artefactos */
 
-  // Where each file shows up in the list. Order is the order of the page.
+  // The list, in the order of the page. `kind` is what «+» creates in that group.
   const GROUPS = [
-    { label: 'Intenção', match: (p) => p === 'yourlab/project.md' || p === 'yourlab/ideas.md' },
-    { label: 'Perguntas', match: (p) => p === 'yourlab/questions.md' },
-    { label: 'Plano', match: (p) => p.startsWith('yourlab/phases/') },
-    { label: 'Requisitos', match: (p) => p.startsWith('openspec/specs/') },
-    { label: 'Arquitectura', match: (p) => p.startsWith('yourlab/diagrams/') },
-    { label: 'Base de dados', match: (p) => p === 'yourlab/database.md' },
-    { label: 'Workflows', match: (p) => p.startsWith('yourlab/workflows/') },
-    { label: 'Mockup', match: (p) => p.startsWith('yourlab/mockup/') },
+    { key: 'intent', label: 'Intenção', kind: 'ideas' },
+    { key: 'phase', label: 'Plano', kind: 'phase', noun: 'fase' },
+    { key: 'spec', label: 'Requisitos', kind: 'spec', noun: 'capacidade' },
+    { key: 'diagram', label: 'Arquitectura', kind: 'diagram', noun: 'diagrama' },
+    { key: 'database', label: 'Base de dados', kind: 'database', noun: 'entidade' },
+    { key: 'workflow', label: 'Workflows', kind: 'workflow', noun: 'workflow' },
+    { key: 'mockup', label: 'Mockup', kind: 'mockup', noun: 'ecrã' },
+    { key: 'questions', label: 'Perguntas', kind: 'questions', noun: 'pergunta' },
   ];
+  const ADD_WORD = { ideas: 'ideia', phase: 'fase', spec: 'capacidade', diagram: 'diagrama', database: 'entidade', workflow: 'workflow', mockup: 'ecrã', questions: 'pergunta' };
 
-  const editor = { path: '', content: '', sha: '', loading: false, saving: false };
+  // What is open on the right. `sel` is a file path, '@requisitos', or '@group:<kind>'.
+  const view = {
+    sel: '', mode: 'view', loading: false, content: '', sha: '', saved: null, live: null,
+    saving: false, pane: 'text', isNew: false, newPath: '', adding: '', aiNote: null,
+    ask: { open: false, running: false }, lastEdit: null, previewSeq: 0, showDiff: false,
+  };
   let previewTimer = null;
 
   // The draft lives in this browser until Guardar writes the file.
@@ -321,194 +317,345 @@
     } catch { /* private window: the editor still works, the draft just does not survive */ }
   }
 
-  function fileLabel(filePath) {
-    const spec = filePath.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
-    if (spec) return spec[1];
-    return filePath.split('/').pop();
+  function hasFile(filePath) {
+    return (snapshot()?.files || []).some((file) => file.path === filePath);
+  }
+  function capabilities() {
+    return (snapshot()?.requirements || []).map((spec) => spec.capability);
   }
 
-  async function openFile(filePath) {
-    if (editor.path === filePath) return;
-    Object.assign(editor, { path: filePath, content: '', sha: '', loading: true });
+  /** The rows of one group, from the snapshot. A group with nothing still has a row. */
+  function groupRows(group, snap) {
+    const k = kit();
+    const rows = [];
+    if (group.key === 'intent') {
+      rows.push({ target: 'yourlab/project.md', title: 'Propósito', sub: snap.project ? '' : 'Por escrever', missing: !snap.project });
+      rows.push({ target: 'yourlab/ideas.md', title: 'Ideias', sub: snap.ideas.length ? `${snap.ideas.length}` : 'Nenhuma', missing: !hasFile('yourlab/ideas.md') });
+    } else if (group.key === 'phase') {
+      for (const phase of snap.phases) {
+        rows.push({ target: phase.file, title: `${phase.number}. ${phase.title}`, sub: phase.weeks ? `${phase.weeks} sem.` : '', badge: phase.status === 'in_progress' ? k.badge('green', 'Em curso') : '' });
+      }
+    } else if (group.key === 'spec') {
+      const total = snap.requirements.reduce((sum, spec) => sum + spec.requirements.length, 0);
+      if (snap.requirements.length) rows.push({ target: '@requisitos', title: 'Por tipo', sub: `${total}` });
+      for (const spec of snap.requirements) {
+        const untyped = spec.requirements.filter((requirement) => requirement.type === 'undefined').length;
+        rows.push({ target: `openspec/specs/${spec.capability}/spec.md`, title: spec.title || spec.capability, sub: `${spec.requirements.length}`, badge: untyped ? k.badge('amber', `${untyped} UQ`) : '' });
+      }
+    } else if (group.key === 'diagram') {
+      for (const diagram of snap.diagrams) rows.push({ target: diagram.file, title: diagram.title });
+    } else if (group.key === 'database') {
+      const count = snap.database?.entities?.length || 0;
+      rows.push({ target: 'yourlab/database.md', title: 'Entidades', sub: count ? `${count}` : 'Nenhuma', missing: !hasFile('yourlab/database.md') });
+    } else if (group.key === 'workflow') {
+      for (const workflow of snap.workflows) rows.push({ target: workflow.file, title: workflow.title, sub: `${workflow.steps.length} passos` });
+    } else if (group.key === 'mockup') {
+      for (const screen of snap.mockup.screens) rows.push({ target: `yourlab/mockup/${screen.file}`, title: screen.title, sub: screen.entry ? 'primeiro ecrã' : '' });
+    } else if (group.key === 'questions') {
+      const open = snap.questions.filter((question) => question.state !== 'answered').length;
+      rows.push({ target: 'yourlab/questions.md', title: 'Perguntas', sub: snap.questions.length ? `${snap.questions.length}` : 'Nenhuma', badge: open ? k.badge('amber', `${open} em aberto`) : '', missing: !hasFile('yourlab/questions.md') });
+    }
+    // A file created here but not saved yet sits in its group, marked.
+    if (view.newPath && groupOf(view.newPath) === group.key && !rows.some((row) => row.target === view.newPath)) {
+      rows.push({ target: view.newPath, title: titleOf(view.newPath), badge: k.badge('amber', 'novo') });
+    }
+    if (!rows.length) rows.push({ target: `@group:${group.kind}`, title: 'Ainda vazio', missing: true });
+    return rows;
+  }
+
+  function groupOf(filePath) {
+    const kind = filePath.startsWith('openspec/specs/') ? 'spec'
+      : /^yourlab\/phases\//.test(filePath) ? 'phase'
+        : /^yourlab\/diagrams\//.test(filePath) ? 'diagram'
+          : /^yourlab\/workflows\//.test(filePath) ? 'workflow'
+            : /^yourlab\/mockup\//.test(filePath) ? 'mockup'
+              : filePath === 'yourlab/database.md' ? 'database'
+                : filePath === 'yourlab/questions.md' ? 'questions' : 'intent';
+    return kind;
+  }
+
+  function titleOf(target) {
+    if (target === '@requisitos') return 'Requisitos por tipo';
+    if (target.startsWith('@group:')) return GROUPS.find((group) => group.kind === target.slice(7))?.label || 'Artefacto';
+    const snap = snapshot();
+    const phase = snap?.phases.find((entry) => entry.file === target);
+    if (phase) return `Fase ${phase.number} · ${phase.title}`;
+    const spec = target.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
+    if (spec) return snap?.requirements.find((entry) => entry.capability === spec[1])?.title || spec[1];
+    const named = [...(snap?.diagrams || []), ...(snap?.workflows || [])].find((entry) => entry.file === target);
+    if (named) return named.title;
+    const fixed = { 'yourlab/project.md': 'Propósito', 'yourlab/ideas.md': 'Ideias', 'yourlab/database.md': 'Base de dados', 'yourlab/questions.md': 'Perguntas' }[target];
+    if (fixed) return fixed;
+    // A file not saved yet: its own title as the draft reads, or its name made readable.
+    const live = target === view.sel ? view.live?.piece : null;
+    if (live?.title) return live.title;
+    const base = target.replace(/\/spec\.md$/, '').split('/').pop().replace(/\.[a-z]+$/, '').replace(/^\d{2}-/, '').replace(/-/g, ' ');
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
+
+  function artefactList(snap) {
+    return GROUPS.map((group) => `
+      <section class="ios-section av-group">
+        <div class="av-group-head">
+          <h2 class="ios-group-label">${esc(group.label)}</h2>
+          ${canSync() ? `<button type="button" class="av-add" data-ws-add="${group.kind}" aria-label="Nova ${esc(ADD_WORD[group.kind])}">${icon('plus', 16)}</button>` : ''}
+        </div>
+        ${view.adding === group.kind ? `
+          <form class="av-add-form" data-ws-add-form="${group.kind}">
+            <input class="ios-input" name="name" placeholder="Nome d${ADD_WORD[group.kind] === 'workflow' || ADD_WORD[group.kind] === 'diagrama' ? 'o' : 'a'} ${esc(ADD_WORD[group.kind])}" autocomplete="off" required />
+            <button type="submit" class="btn primary">Criar</button>
+            <button type="button" class="btn" data-ws-action="add-cancel">Cancelar</button>
+          </form>` : ''}
+        <div class="ios-list">
+          ${groupRows(group, snap).map((row) => `
+            <button type="button" class="ios-row ${row.target === view.sel ? 'is-selected' : ''} ${row.missing ? 'is-muted' : ''}" data-ws-file="${esc(row.target)}">
+              <span class="ios-row-main"><span class="ios-row-title">${esc(row.title)}</span></span>
+              ${readDraft(row.target) !== null && !row.target.startsWith('@') ? kit().badge('amber', 'não guardado') : (row.badge || '')}
+              ${row.sub ? `<span class="ios-row-meta">${esc(row.sub)}</span>` : ''}
+              ${icon('chevron', 14, 'ios-chevron')}
+            </button>`).join('')}
+        </div>
+      </section>`).join('');
+  }
+
+  /* ------------------------------------------------------------ opening one */
+
+  async function select(target) {
+    if (!target) return;
+    const keepNew = target === view.newPath;
+    Object.assign(view, {
+      sel: target, mode: 'view', loading: false, content: '', sha: '', saved: null, live: null,
+      aiNote: null, ask: { open: false, running: false }, isNew: keepNew && !hasFile(target), showDiff: false,
+    });
+    if (!keepNew) view.newPath = '';
+    if (target.startsWith('@') || view.isNew) {
+      if (view.isNew) { view.mode = 'edit'; previewDraft(); }
+      paintArtefactos();
+      return;
+    }
+    view.loading = true;
     paintArtefactos();
     try {
-      const file = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file?path=${encodeURIComponent(filePath)}`);
-      editor.content = file.content;
-      editor.sha = file.sha;
+      const file = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file?path=${encodeURIComponent(target)}`);
+      if (view.sel !== target) return;
+      Object.assign(view, { content: file.content, sha: file.sha, saved: file.view });
+      // Coming back to an unsaved draft goes straight to editing it.
+      if (readDraft(target) !== null) { view.mode = 'edit'; previewDraft(); }
     } catch (error) {
       window.showToast?.(error.message, 'error');
-      editor.path = '';
     } finally {
-      editor.loading = false;
+      if (view.sel === target) view.loading = false;
       paintArtefactos();
     }
   }
 
+  function currentText() {
+    const draft = readDraft(view.sel);
+    return draft === null ? view.content : draft;
+  }
+
+  /** The formatted view of the draft, read on the server like everything else. */
+  function previewDraft() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      const seq = ++view.previewSeq;
+      const target = view.sel;
+      try {
+        const result = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/preview`, {
+          method: 'POST',
+          body: { path: target, content: currentText() },
+        });
+        if (seq !== view.previewSeq || view.sel !== target) return;
+        view.live = result;
+        paintLive();
+      } catch { /* the text is still there; the view catches up on the next keystroke */ }
+    }, 350);
+  }
+
+  function paintLive() {
+    const live = document.getElementById('artefactLive');
+    if (live) {
+      live.innerHTML = view.live ? window.ArtefactViews.render(view.live, { capabilities: capabilities(), hideFindings: true }) : '<p class="av-empty">A preparar a vista…</p>';
+      window.ArtefactViews.hydrate(live);
+    }
+    const findings = document.getElementById('artefactFindings');
+    if (findings) findings.innerHTML = window.ArtefactViews.findingsBanner(view.live?.findings || []);
+  }
+
+  /* ------------------------------------------------------------ editing and saving */
+
+  function startEdit() {
+    if (!canSync() || view.sel.startsWith('@')) return;
+    view.mode = 'edit';
+    view.live = view.saved;
+    paintArtefactos();
+    document.getElementById('artefactText')?.focus();
+  }
+
   async function saveFile() {
     const field = document.getElementById('artefactText');
-    if (!editor.path || editor.saving || !field) return;
+    if (!view.sel || view.saving || !field) return;
     const content = field.value;
-    editor.saving = true;
+    const target = view.sel;
+    view.saving = true;
     paintArtefactos();
     try {
       const response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file`, {
         method: 'PUT',
-        body: { path: editor.path, content, previousSha: editor.sha },
+        body: { path: target, content, previousSha: view.isNew ? '' : view.sha },
       });
-      editor.content = content;
-      editor.sha = response.sha;
-      editor.lastEdit = { path: editor.path, diff: response.diff || '', task: response.task || null, ai: null, running: false };
-      writeDraft(editor.path, null);
+      writeDraft(target, null);
       state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
+      view.lastEdit = { path: target, diff: response.diff || '', task: response.task || null, ai: null, running: false };
+      view.newPath = '';
       const where = response.changeRequest ? 'Pedido de alteração aberto no repositório.' : 'Guardado no repositório.';
       window.showToast?.(response.task ? `${where} Tarefa criada em Tarefas.` : where, 'ok');
       if (response.task) window.ResumeUI?.refresh?.();
+      view.saving = false;
+      notifyOthers();
+      await select(target);
+      view.lastEdit = { ...view.lastEdit };
+      paintArtefactos();
     } catch (error) {
       window.showToast?.(error.message, 'error');
-    } finally {
-      editor.saving = false;
-      notify();
+      view.saving = false;
+      paintArtefactos();
     }
   }
 
   function cancelEdit() {
-    writeDraft(editor.path, null);
+    writeDraft(view.sel, null);
+    if (view.isNew) {
+      Object.assign(view, { sel: '', newPath: '', isNew: false, mode: 'view' });
+    } else {
+      Object.assign(view, { mode: 'view', live: null, aiNote: null });
+    }
     paintArtefactos();
   }
 
-  function artefactList(snap) {
-    const k = kit();
-    const paths = (snap?.files || []).map((file) => file.path).filter((filePath) => filePath !== 'yourlab/GUIDE.md');
-    return GROUPS.map((group) => {
-      const files = paths.filter(group.match);
-      if (!files.length) return '';
-      return `
-        <section class="ios-section">
-          <h2 class="ios-group-label">${esc(group.label)}</h2>
-          <div class="ios-list">
-            ${files.map((filePath) => `
-              <button type="button" class="ios-row ${filePath === editor.path ? 'is-selected' : ''}" data-ws-file="${esc(filePath)}">
-                <span class="ios-row-main">
-                  <span class="ios-row-title">${esc(fileLabel(filePath))}</span>
-                  <span class="ios-row-sub">${esc(filePath)}</span>
-                </span>
-                ${readDraft(filePath) === null ? '' : k.badge('amber', 'não guardado')}
-              </button>`).join('')}
-          </div>
-        </section>`;
-    }).join('');
-  }
+  const DIRTY_NOTE = 'Não guardado — o ficheiro só muda ao Guardar.';
 
-  function editorPane() {
-    const k = kit();
-    if (!editor.path) return '<div class="ios-card"><p class="ios-empty">Escolha um artefacto à esquerda.</p></div>';
-    if (editor.loading) return '<div class="ios-card"><p class="ios-empty">A ler…</p></div>';
-    const draft = readDraft(editor.path);
-    const value = draft === null ? editor.content : draft;
-    const dirty = value !== editor.content;
+  function editPane() {
+    const text = currentText();
+    const dirty = text !== view.content || view.isNew;
     return `
-      <section class="ios-card ios-editor">
-        <div class="ios-docs-head">
-          <span class="ios-row-main">
-            <span class="ios-card-title">${esc(fileLabel(editor.path))}</span>
-            <span class="ios-row-sub">${esc(editor.path)}</span>
-          </span>
-          ${dirty ? k.badge('amber', 'não guardado') : ''}
+      ${view.aiNote ? `<div class="av-ai-note">${icon('sparkle', 16)}<span><strong>Proposta da IA — reveja e Guardar.</strong> ${esc(view.aiNote)}</span></div>` : ''}
+      <div class="ios-segmented av-seg" role="tablist">
+        <button type="button" class="ios-segment ${view.pane === 'text' ? 'is-active' : ''}" data-ws-pane="text">Texto</button>
+        <button type="button" class="ios-segment ${view.pane === 'view' ? 'is-active' : ''}" data-ws-pane="view">Vista</button>
+      </div>
+      <div class="av-edit" data-pane="${view.pane}">
+        <div class="av-edit-text">
+          <textarea id="artefactText" class="ios-editor-text" spellcheck="false">${esc(text)}</textarea>
+          <div id="artefactFindings">${window.ArtefactViews.findingsBanner(view.live?.findings || [])}</div>
         </div>
-        <textarea id="artefactText" class="ios-editor-text" spellcheck="false" ${canSync() ? '' : 'readonly'}>${esc(value)}</textarea>
-        <div class="ios-card-actions">
-          <button type="button" class="btn primary" data-ws-action="save" ${editor.saving || !dirty ? 'disabled' : ''}>${editor.saving ? 'A guardar…' : 'Guardar'}</button>
-          <button type="button" class="btn" data-ws-action="cancel" ${dirty ? '' : 'disabled'}>Cancelar</button>
-        </div>
-      </section>`;
+        <div class="av-edit-live" id="artefactLive"></div>
+      </div>
+      <div class="av-edit-bar">
+        <span class="ios-footnote" id="artefactDirty">${dirty ? DIRTY_NOTE : 'Sem alterações.'}</span>
+        <button type="button" class="btn" data-ws-action="cancel">${dirty ? 'Descartar' : 'Fechar'}</button>
+        <button type="button" class="btn primary" data-ws-action="save" ${view.saving || !dirty ? 'disabled' : ''}>${view.saving ? 'A guardar…' : 'Guardar'}</button>
+      </div>`;
   }
 
-  /**
-   * What the text looks like. A diagram renders with Mermaid, a mockup screen renders in
-   * a sandbox with no scripts and nothing loaded from this page — the same rule the
-   * served mockup follows. Both show the text being edited, saved or not.
-   */
-  function previewPane() {
-    const filePath = editor.path;
-    if (!filePath) return '';
-    const isDiagram = filePath.endsWith('.mmd');
-    const isScreen = filePath.endsWith('.html');
-    if (!isDiagram && !isScreen) return '';
-    return `
-      <section class="ios-card ios-preview">
-        <div class="ios-docs-head">
-          <span class="ios-card-title">Pré-visualização</span>
-          ${isScreen && snapshot()?.mockup?.screens?.length ? `<button type="button" class="btn" data-ws-action="mockup" data-ws-screen="${esc(filePath.split('/').pop())}">Abrir em grande</button>` : ''}
-        </div>
-        ${isDiagram
-    ? '<div class="ios-preview-body" id="artefactDiagram">A desenhar…</div>'
-    : '<iframe class="ios-preview-frame" id="artefactScreen" sandbox="" referrerpolicy="no-referrer" title="Ecrã"></iframe>'}
-      </section>`;
-  }
+  /* ------------------------------------------------------------ new files */
 
-  /** Draws the preview after the pane exists, from whatever the editor is showing. */
-  function paintPreview() {
-    const filePath = editor.path;
-    if (!filePath) return;
-    const draft = readDraft(filePath);
-    const text = draft === null ? editor.content : draft;
-
-    const screen = document.getElementById('artefactScreen');
-    if (screen) {
-      screen.srcdoc = text;
-      return;
+  async function createFile(kind, name) {
+    try {
+      const template = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/template?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`);
+      view.adding = '';
+      if (template.append) {
+        // A new section of a file that holds many: added to the end of its draft.
+        let base = '';
+        if (hasFile(template.path)) {
+          const file = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file?path=${encodeURIComponent(template.path)}`);
+          base = file.content;
+        }
+        const current = readDraft(template.path) ?? base;
+        writeDraft(template.path, `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${template.content}`);
+        if (!hasFile(template.path)) view.newPath = template.path;
+        await select(template.path);
+      } else {
+        writeDraft(template.path, template.content);
+        view.newPath = template.path;
+        await select(template.path);
+      }
+      document.getElementById('artefactText')?.focus();
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
     }
-    const host = document.getElementById('artefactDiagram');
-    if (!host) return;
-    window.ensureMermaidLoaded?.().then((mermaid) => {
-      // Mermaid throws on a half-written diagram; that is normal while typing.
-      mermaid.render(`artefact-diagram-${Date.now()}`, text.trim())
-        .then(({ svg }) => { host.innerHTML = svg; })
-        .catch((error) => { host.innerHTML = `<p class="ios-empty">${esc(String(error.message || error).split('\n')[0])}</p>`; });
-    }).catch(() => { host.innerHTML = '<p class="ios-empty">Mermaid não disponível.</p>'; });
   }
 
-  /** After a save: the task it left, and — on request — what the AI says it affects. */
+  /* ------------------------------------------------------------ asking the AI for a change */
+
+  async function askAi() {
+    const field = document.querySelector('[data-ws-ask-text]');
+    const request = field?.value?.trim() || '';
+    if (!request || view.ask.running) return;
+    const target = view.sel;
+    view.ask = { open: true, running: true, text: request };
+    paintArtefactos();
+    try {
+      const outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/edit_artefact`, {
+        method: 'POST',
+        body: { path: target, request },
+      });
+      if (view.sel !== target) return;
+      if (!outcome.result?.file) {
+        window.showToast?.('A IA não devolveu um ficheiro utilizável. Reformule o pedido.', 'error');
+        view.ask = { open: true, running: false, text: request };
+      } else {
+        writeDraft(target, outcome.result.file.content);
+        Object.assign(view, { mode: 'edit', live: outcome.result.file.view, aiNote: outcome.result.summary || 'Alteração proposta.', ask: { open: false, running: false } });
+      }
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+      view.ask = { open: true, running: false, text: request };
+    } finally {
+      paintArtefactos();
+    }
+  }
+
+  /* ------------------------------------------------------------ after a save: impact */
+
   function impactPane() {
     const k = kit();
-    const last = editor.lastEdit;
-    if (!last || last.path !== editor.path) return '';
+    const last = view.lastEdit;
+    if (!last || last.path !== view.sel || view.mode !== 'view') return '';
     const result = last.ai?.result;
     const rows = result ? [
       ...result.artefacts.map((entry) => `
         <button type="button" class="ios-row" data-ws-file="${esc(entry.path)}">
-          <span class="ios-row-main"><span class="ios-row-title">${esc(entry.path)}</span><span class="ios-row-sub ios-wrap">${esc(entry.why)}</span></span>
+          <span class="ios-row-main"><span class="ios-row-title">${esc(titleOf(entry.path))}</span><span class="ios-row-sub ios-wrap">${esc(entry.why)}</span></span>
           ${k.icon('chevron', 14, 'ios-chevron')}
         </button>`),
       ...result.codeAreas.map((entry) => `
         <div class="ios-row is-static"><span class="ios-row-main"><span class="ios-row-title">${esc(entry.area)}</span><span class="ios-row-sub ios-wrap">${esc(entry.why)}</span></span>${k.badge('gray', 'código')}</div>`),
     ].join('') : '';
     return `
-      <section class="ios-card">
+      <section class="ios-card av-after">
         <div class="ios-docs-head">
           <span class="ios-row-main">
-            <span class="ios-card-title">Impacto desta alteração</span>
+            <span class="ios-card-title">Guardado</span>
             <span class="ios-row-sub">${last.task ? `Tarefa criada: ${esc(last.task.title)}` : 'Sem tarefa: o texto não mudou.'}</span>
           </span>
-          ${result ? k.badge('gray', 'IA · não aplicado') : ''}
+          ${last.diff && canSync() ? `<button type="button" class="btn" data-ws-action="impact" ${last.running ? 'disabled' : ''}>${last.running ? 'A analisar…' : (result ? 'Analisar de novo' : 'O que mais muda?')}</button>` : ''}
         </div>
         ${result ? `
           ${result.summary ? `<p class="ios-card-body">${esc(result.summary)}</p>` : ''}
-          ${rows ? `<div class="ios-list">${rows}</div>` : '<p class="ios-footnote">A IA não vê mais nada afectado.</p>'}
-          ${last.ai.dropped ? `<p class="ios-footnote">${last.ai.dropped} caminho(s) inventado(s) foram descartados.</p>` : ''}` : ''}
-        ${last.diff && canSync() ? `<div class="ios-card-actions"><button type="button" class="btn" data-ws-action="impact" ${last.running ? 'disabled' : ''}>${last.running ? 'A analisar…' : (result ? 'Analisar de novo' : 'Analisar impacto com IA')}</button></div>` : ''}
+          ${rows ? `<div class="ios-list">${rows}</div>` : '<p class="ios-footnote">A IA não vê mais nada afectado.</p>'}` : ''}
       </section>`;
   }
 
   async function runImpact() {
-    const last = editor.lastEdit;
+    const last = view.lastEdit;
     if (!last?.diff || last.running) return;
     last.running = true;
     paintArtefactos();
     try {
       last.ai = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/impact`, {
         method: 'POST',
-        body: { path: last.path, diff: last.diff },
+        body: { path: last.path, diff: last.diff, taskId: last.task?.id || '' },
       });
     } catch (error) {
       window.showToast?.(error.message, 'error');
@@ -518,65 +665,66 @@
     }
   }
 
-  /* ------------------------------------------------------------ artefacts from code, step by step */
+  /* ------------------------------------------------------------ artefacts from code, inside each artefact */
 
   const steps = { creating: false, running: '', writing: false, outcome: null };
 
-  function stepsCard() {
-    const k = kit();
+  /** The AI steps that write the artefact (or group) being looked at. */
+  function stepsFor(target) {
     const list = state.data?.aiSteps || [];
-    if (!canSync() || !list.length) return '';
-    const hasTasks = list.some((step) => step.task);
-    const done = list.filter((step) => step.task?.status === 'completed').length;
-    const outcome = steps.outcome;
-    const rows = list.map((step, index) => {
-      const isDone = step.task?.status === 'completed';
-      const isOpen = outcome?.key === step.key;
-      const running = steps.running === step.key;
-      const files = isOpen ? outcome.result.files : [];
-      return `
-        <div class="ios-row is-static">
-          <span class="ios-row-main">
-            <span class="ios-row-title">${index + 1}. ${esc(step.title)}</span>
-            <span class="ios-row-sub">${esc(step.target)}</span>
-          </span>
-          ${isDone ? k.badge('green', 'Feito') : ''}
-          ${hasTasks ? `<button type="button" class="btn tiny${isDone ? '' : ' primary'}" data-ws-step="${esc(step.key)}" ${steps.running ? 'disabled' : ''}>${running ? 'A ler o código…' : (isDone ? 'Refazer' : 'Executar com IA')}</button>` : ''}
-        </div>
-        ${isOpen ? `
-          <div class="ios-fold-body">
-            ${outcome.result.summary ? `<p class="ios-card-body">${esc(outcome.result.summary)}</p>` : ''}
-            ${files.length ? `<div class="ios-list ios-fold-list">${files.map((file) => `
-              <details class="ios-fold" ${files.length === 1 ? 'open' : ''}>
-                <summary class="ios-row"><span class="ios-row-main"><span class="ios-row-title">${esc(file.path)}</span><span class="ios-row-sub">${file.exists ? 'altera o que existe' : 'novo'}${file.findings.length ? ` · ${file.findings.length} reparo(s)` : ''}</span></span></summary>
-                <div class="ios-fold-body">
-                  ${file.findings.length ? `<ul class="ios-footnote">${file.findings.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
-                  ${file.exists && file.diff ? `<h3 class="ios-group-label">O que muda</h3><pre class="ios-code">${esc(file.diff)}</pre>` : ''}
-                  <h3 class="ios-group-label">Ficheiro completo</h3><pre class="ios-code">${esc(file.content)}</pre>
-                </div>
-              </details>`).join('')}</div>` : '<p class="ios-footnote">A IA não devolveu um ficheiro utilizável para este passo.</p>'}
-            ${outcome.dropped ? `<p class="ios-footnote">${outcome.dropped} ficheiro(s) fora do formato foram descartados.</p>` : ''}
-            <div class="ios-card-actions">
-              ${files.length ? `<button type="button" class="btn primary" data-ws-action="step-write" ${steps.writing ? 'disabled' : ''}>${steps.writing ? 'A escrever…' : `Escrever ${files.length === 1 ? 'no repositório' : `${files.length} ficheiros`}`}</button>` : ''}
-              <button type="button" class="btn" data-ws-action="step-discard">Descartar</button>
-            </div>
-          </div>` : ''}`;
-    }).join('');
+    return list.filter((step) => {
+      if (step.kind === 'spec') return target === '@requisitos' || target === '@group:spec' || target.startsWith('openspec/');
+      if (step.target.endsWith('/')) return target.startsWith(step.target) || target === `@group:${step.kind}`;
+      return target === step.target || (step.kind === 'diagram' && (target === '@group:diagram' || target.startsWith('yourlab/diagrams/')));
+    });
+  }
+
+  function stepsBlock(target) {
+    const k = kit();
+    const list = canSync() ? stepsFor(target) : [];
+    if (!list.length) return '';
     return `
-      <section class="ios-card">
+      <section class="ios-card av-steps-card">
         <div class="ios-docs-head">
           <span class="ios-row-main">
-            <span class="ios-card-title">Preencher a partir do código</span>
-            <span class="ios-row-sub">Um artefacto de cada vez, pela ordem. A IA lê só a parte do código desse passo; nada é escrito sem carregar em Escrever.</span>
+            <span class="ios-card-title">A partir do código</span>
+            <span class="ios-row-sub">A IA lê só a parte do código deste passo. Mostra a proposta já formatada; nada é escrito sem Escrever.</span>
           </span>
-          ${hasTasks ? k.badge(done === list.length ? 'green' : 'gray', `${done}/${list.length}`) : ''}
         </div>
-        ${hasTasks ? '' : `
-          <div class="ios-card-actions">
-            <button type="button" class="btn primary" data-ws-action="steps-create" ${steps.creating ? 'disabled' : ''}>${steps.creating ? 'A criar…' : `Criar ${list.length} tarefas de IA`}</button>
-          </div>`}
-        <div class="ios-list">${rows}</div>
+        <div class="ios-list">${list.map((step) => {
+    const done = step.task?.status === 'completed';
+    return `
+          <div class="ios-row is-static">
+            <span class="ios-row-main"><span class="ios-row-title">${esc(step.title)}</span><span class="ios-row-sub">${esc(step.target)}</span></span>
+            ${done ? k.badge('green', 'Feito') : ''}
+            <button type="button" class="btn${done ? '' : ' primary'}" data-ws-step="${esc(step.key)}" ${steps.running ? 'disabled' : ''}>${steps.running === step.key ? 'A ler o código…' : (done ? 'Refazer' : 'Gerar com IA')}</button>
+          </div>`;
+  }).join('')}</div>
       </section>`;
+  }
+
+  function proposalPane() {
+    const k = kit();
+    const outcome = steps.outcome;
+    const files = outcome.result.files;
+    return `
+      <div class="av-ai-note">${icon('sparkle', 16)}<span><strong>Proposta da IA · por rever.</strong> ${esc(outcome.result.summary || '')}</span></div>
+      ${files.length ? files.map((file) => `
+        <section class="av-proposal">
+          <div class="av-proposal-head">
+            <span class="ios-row-main"><span class="ios-row-title">${esc(titleOf(file.path))}</span><span class="ios-row-sub">${esc(file.path)}</span></span>
+            ${k.badge(file.exists ? 'amber' : 'green', file.exists ? 'altera' : 'novo')}
+          </div>
+          ${view.showDiff && file.exists
+    ? `<pre class="ios-code">${esc(file.diff)}</pre>`
+    : `<div class="av-proposal-view">${window.ArtefactViews.render(file.view, { capabilities: capabilities() })}</div>`}
+        </section>`).join('') : '<p class="av-empty">A IA não devolveu um ficheiro utilizável para este passo.</p>'}
+      ${outcome.dropped ? `<p class="ios-footnote">${outcome.dropped} ficheiro(s) fora do formato foram descartados.</p>` : ''}
+      <div class="av-edit-bar">
+        ${files.some((file) => file.exists) ? `<button type="button" class="btn" data-ws-action="step-diff">${view.showDiff ? 'Ver formatado' : 'Ver diferenças'}</button>` : ''}
+        <button type="button" class="btn" data-ws-action="step-discard">Descartar</button>
+        ${files.length ? `<button type="button" class="btn primary" data-ws-action="step-write" ${steps.writing ? 'disabled' : ''}>${steps.writing ? 'A escrever…' : 'Escrever no repositório'}</button>` : ''}
+      </div>`;
   }
 
   async function createSteps() {
@@ -599,6 +747,7 @@
     if (steps.running) return;
     steps.running = key;
     steps.outcome = null;
+    view.showDiff = false;
     paintArtefactos();
     try {
       steps.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/ai-steps/run`, { method: 'POST', body: { key } });
@@ -629,18 +778,103 @@
       steps.outcome = null;
       window.showToast?.(response?.changeRequest ? 'Pedido de alteração aberto no repositório.' : 'Escrito no repositório.', 'ok');
       window.ResumeUI?.refresh?.();
+      notifyOthers();
+      await select(outcome.result.files[0].path);
     } catch (error) {
       window.showToast?.(error.message, 'error');
     } finally {
       steps.writing = false;
-      notify();
+      paintArtefactos();
     }
+  }
+
+  /* ------------------------------------------------------------ the viewer */
+
+  function proposalShown(target) {
+    return Boolean(steps.outcome) && stepsFor(target).some((step) => step.key === steps.outcome.key);
+  }
+
+  function viewerHead() {
+    const k = kit();
+    const target = view.sel;
+    const isFile = !target.startsWith('@');
+    const generated = view.saved?.generated;
+    const actions = [];
+    if (isFile && canSync() && view.mode === 'view' && !view.loading && !proposalShown(target)) {
+      actions.push(`<button type="button" class="btn primary" data-ws-action="edit">Editar</button>`);
+      actions.push(`<button type="button" class="btn" data-ws-action="ask">${icon('sparkle', 15)}Pedir à IA</button>`);
+      const spec = target.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
+      if (spec && view.content) actions.push(`<button type="button" class="btn" data-ws-tests="${esc(spec[1])}">Gerar testes</button>`);
+    }
+    if (target.startsWith('yourlab/mockup/') && view.content) {
+      actions.push(`<button type="button" class="btn" data-ws-action="mockup" data-ws-screen="${esc(target.split('/').pop())}">Abrir em grande</button>`);
+    }
+    return `
+      <header class="av-viewer-head">
+        <button type="button" class="av-back" data-ws-action="back">${icon('chevronLeft', 18)}Artefactos</button>
+        <div class="av-viewer-title">
+          <h2>${esc(titleOf(target))}</h2>
+          <p>${esc(isFile ? target : '')}</p>
+        </div>
+        <div class="av-viewer-actions">${generated ? k.badge('amber', 'gerado · por rever') : ''}${actions.join('')}</div>
+      </header>
+      ${view.ask.open ? `
+        <form class="av-ask" data-ws-ask-form>
+          <input class="ios-input" data-ws-ask-text placeholder="O que mudar, numa frase — ex.: acrescenta um risco sobre RGPD" value="${esc(view.ask.text || '')}" ${view.ask.running ? 'disabled' : ''} autocomplete="off" />
+          <button type="submit" class="btn primary" ${view.ask.running ? 'disabled' : ''}>${view.ask.running ? 'A pedir…' : 'Pedir'}</button>
+          <button type="button" class="btn" data-ws-action="ask-close">Cancelar</button>
+        </form>` : ''}`;
+  }
+
+  function viewerBody(snap) {
+    const target = view.sel;
+    const opts = { capabilities: capabilities() };
+    if (proposalShown(target)) return proposalPane();
+    if (target === '@requisitos') {
+      return `${syncCard()}${codeCard()}${testsCard()}${window.ArtefactViews.requirementsOverview(snap)}${stepsBlock(target)}`;
+    }
+    if (target.startsWith('@group:')) {
+      const kind = target.slice(7);
+      return `
+        <div class="av-empty-state">
+          <p>Ainda não há ${esc(GROUPS.find((group) => group.kind === kind)?.label.toLowerCase() || 'nada')} neste projecto.</p>
+          ${canSync() ? `<button type="button" class="btn primary" data-ws-add="${esc(kind)}">Criar ${esc(ADD_WORD[kind] || '')}</button>` : ''}
+        </div>
+        ${stepsBlock(target)}`;
+    }
+    if (view.mode === 'edit') return editPane();
+    if (view.loading) return '<p class="av-empty">A ler…</p>';
+    const specHere = /^openspec\//.test(target) ? `${syncCard()}${codeCard()}${testsCard()}` : '';
+    if (!view.content) {
+      return `
+        <div class="av-empty-state">
+          <p>Este ficheiro ainda não existe.</p>
+          ${canSync() && ADD_WORD[groupOf(target) === 'intent' ? 'ideas' : groupOf(target)] && target !== 'yourlab/project.md'
+    ? `<button type="button" class="btn primary" data-ws-add="${esc(target === 'yourlab/ideas.md' ? 'ideas' : groupOf(target))}">Criar</button>` : ''}
+        </div>
+        ${stepsBlock(target)}`;
+    }
+    return `${specHere}${impactPane()}${window.ArtefactViews.render(view.saved, opts)}${stepsBlock(target)}`;
+  }
+
+  function progressLine() {
+    const list = state.data?.aiSteps || [];
+    if (!canSync() || !list.length) return '';
+    const hasTasks = list.some((step) => step.task);
+    const done = list.filter((step) => step.task?.status === 'completed').length;
+    return `
+      <div class="av-progress">
+        ${icon('sparkle', 16)}
+        <span>${hasTasks ? `Preenchido a partir do código: <strong>${done}/${list.length}</strong>` : `${list.length} passos para preencher a partir do código`}</span>
+        ${hasTasks ? `<span class="av-progress-bar"><span style="width:${Math.round((done / list.length) * 100)}%"></span></span>`
+    : `<button type="button" class="btn" data-ws-action="steps-create" ${steps.creating ? 'disabled' : ''}>${steps.creating ? 'A criar…' : 'Criar as tarefas'}</button>`}
+      </div>`;
   }
 
   function paintArtefactos() {
     const host = document.getElementById('planoWorkspace');
     const project = state.planoProject;
-    if (!host || !project || !kit()) return;
+    if (!host || !project || !kit() || !window.ArtefactViews) return;
     const snap = forProject(project.id);
     const current = workspace();
 
@@ -659,15 +893,27 @@
       host.innerHTML = `${head}${statusCard()}`;
       return;
     }
+    // Keep the caret where it was when only the page around the editor is redrawn.
+    const field = document.getElementById('artefactText');
+    const caret = field ? [field.selectionStart, field.selectionEnd, field.scrollTop] : null;
     host.innerHTML = `
       ${head}
-      ${stepsCard()}
-      <div class="ios-artefacts">
-        <div class="ios-artefacts-list">${artefactList(snap)}</div>
-        <div class="ios-artefacts-editor">${editorPane()}${impactPane()}${previewPane()}</div>
-      </div>
-      <p class="ios-footnote">Guardar escreve o ficheiro no repositório. As regras do formato estão em yourlab/GUIDE.md.</p>`;
-    paintPreview();
+      ${progressLine()}
+      <div class="av-layout ${view.sel ? 'has-selection' : ''}">
+        <nav class="av-list" aria-label="Artefactos">${artefactList(snap)}</nav>
+        <div class="av-viewer">${view.sel ? `${viewerHead()}<div class="av-viewer-body">${viewerBody(snap)}</div>` : '<p class="av-empty av-pick">Escolha um artefacto.</p>'}</div>
+      </div>`;
+    const again = document.getElementById('artefactText');
+    if (again && caret) { [again.selectionStart, again.selectionEnd, again.scrollTop] = caret; }
+    if (view.mode === 'edit') paintLive();
+    window.ArtefactViews.hydrate(host.querySelector('.av-viewer-body'));
+  }
+
+  // Resumo and the Documentação card read the same snapshot.
+  function notifyOthers() {
+    listeners.forEach((listener) => {
+      try { listener(); } catch { /* one screen failing must not stop the others */ }
+    });
   }
 
   function renderArtefactos(project) {
@@ -675,57 +921,6 @@
     state.planoProject = project;
     paintArtefactos();
     load(project.id);
-  }
-
-  /* ------------------------------------------------------------ Requisitos */
-
-  // Labels and prefixes come from the platform config (REQUIREMENT_TYPE_META), which is
-  // the one place they are defined; this is only the order and the fallback.
-  const TYPE_FALLBACK = {
-    stakeholder: { prefix: 'STK', label: 'Stakeholder' },
-    functional: { prefix: 'FR', label: 'Funcional' },
-    non_functional: { prefix: 'RNF', label: 'Não Funcional' },
-    test_case: { prefix: 'TC', label: 'Teste / Aceite' },
-    undefined: { prefix: 'UQ', label: 'Não Definido' },
-    out_of_scope: { prefix: 'OOS', label: 'Fora de Escopo' },
-  };
-
-  function requirementTypes() {
-    const fromConfig = window.state?.config?.types;
-    return fromConfig && typeof fromConfig === 'object' ? fromConfig : TYPE_FALLBACK;
-  }
-
-  function requirementFold(entry) {
-    const k = kit();
-    const { requirement, capability } = entry;
-    const meta = [capability, requirement.module, requirement.priority].filter(Boolean).join(' · ');
-    const scenarios = requirement.scenarios.map((scenario) => `
-      <div class="ios-row is-static">
-        <span class="ios-row-main">
-          <span class="ios-row-title ios-wrap">${esc(scenario.title)}</span>
-          <span class="ios-row-sub ios-wrap">${esc([scenario.when && `QUANDO ${scenario.when}`, scenario.then && `ENTÃO ${scenario.then}`].filter(Boolean).join(' · '))}</span>
-        </span>
-      </div>`).join('');
-    return `
-      <details class="ios-fold">
-        <summary class="ios-row">
-          ${requirement.id ? `<span class="ios-chip">${esc(requirement.id)}</span>` : ''}
-          <span class="ios-row-main">
-            <span class="ios-row-title">${esc(requirement.title)}</span>
-            <span class="ios-row-sub">${esc(meta)}</span>
-          </span>
-          ${requirement.scenarios.length ? k.badge('gray', `${requirement.scenarios.length} cenário${requirement.scenarios.length === 1 ? '' : 's'}`) : ''}
-        </summary>
-        <div class="ios-fold-body">
-          ${requirement.shall ? `<p class="ios-prose">${esc(requirement.shall)}</p>` : ''}
-          ${requirement.rationale ? `<p class="ios-footnote">Porque: ${esc(requirement.rationale)}</p>` : ''}
-          ${scenarios ? `<h3 class="ios-group-label">Cenários de aceitação</h3><div class="ios-list ios-sublist">${scenarios}</div>` : ''}
-          <div class="ios-card-actions">
-            <button type="button" class="btn" data-ws-edit="${esc(entry.path)}">Editar ${esc(capability)}</button>
-            ${canSync() ? `<button type="button" class="btn" data-ws-tests="${esc(capability)}">Gerar testes de ${esc(capability)}</button>` : ''}
-          </div>
-        </div>
-      </details>`;
   }
 
   /* ------------------------------------------------------------ tests from requirements */
@@ -766,7 +961,7 @@
   async function runTests(capability) {
     if (!capability || testsDraft.running) return;
     Object.assign(testsDraft, { capability, running: true, outcome: null });
-    paintRequisitos();
+    paintArtefactos();
     try {
       testsDraft.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/tests_from_artefacts`, {
         method: 'POST',
@@ -776,7 +971,7 @@
       window.showToast?.(error.message, 'error');
     } finally {
       testsDraft.running = false;
-      paintRequisitos();
+      paintArtefactos();
     }
   }
 
@@ -784,7 +979,7 @@
     const files = testsDraft.outcome?.result?.files;
     if (!files?.length || testsDraft.writing) return;
     testsDraft.writing = true;
-    paintRequisitos();
+    paintArtefactos();
     try {
       const response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/repository/tests`, {
         method: 'POST',
@@ -799,7 +994,7 @@
       window.showToast?.(error.message, 'error');
     } finally {
       testsDraft.writing = false;
-      paintRequisitos();
+      paintArtefactos();
     }
   }
 
@@ -848,7 +1043,7 @@
     if (!codeDraft.testPaths.length || codeDraft.running) return;
     const failure = document.querySelector('[data-code-failure]')?.value || '';
     codeDraft.running = true;
-    paintRequisitos();
+    paintArtefactos();
     try {
       codeDraft.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/code_from_tests`, {
         method: 'POST',
@@ -858,7 +1053,7 @@
       window.showToast?.(error.message, 'error');
     } finally {
       codeDraft.running = false;
-      paintRequisitos();
+      paintArtefactos();
     }
   }
 
@@ -866,7 +1061,7 @@
     const files = codeDraft.outcome?.result?.files;
     if (!files?.length || codeDraft.writing) return;
     codeDraft.writing = true;
-    paintRequisitos();
+    paintArtefactos();
     try {
       const response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/repository/code`, {
         method: 'POST',
@@ -881,7 +1076,7 @@
       window.showToast?.(error.message, 'error');
     } finally {
       codeDraft.writing = false;
-      paintRequisitos();
+      paintArtefactos();
     }
   }
 
@@ -928,7 +1123,7 @@
   async function runSyncBack() {
     if (!syncDraft.changes.length || syncDraft.running) return;
     syncDraft.running = true;
-    paintRequisitos();
+    paintArtefactos();
     try {
       syncDraft.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/sync_back`, {
         method: 'POST',
@@ -938,81 +1133,16 @@
       window.showToast?.(error.message, 'error');
     } finally {
       syncDraft.running = false;
-      paintRequisitos();
+      paintArtefactos();
     }
   }
 
-  function paintRequisitos() {
-    const host = document.getElementById('requisitosWorkspace');
-    const project = state.requisitosProject;
-    if (!host || !project || !kit()) return;
-    const snap = forProject(project.id);
-    const current = workspace();
-
-    const head = `
-      <header class="ios-page-head">
-        <div>
-          <h1 class="ios-large-title">Requisitos</h1>
-          <p class="ios-subtitle">${esc(snap?.initialized
-    ? `De openspec/specs/ no repositório · lido ${kit().ago(current?.syncedAt)}`
-    : 'Os requisitos vivem em openspec/specs/ no repositório.')}</p>
-        </div>
-        <div class="ios-page-actions">${snap?.initialized ? syncButton() : ''}</div>
-      </header>`;
-
-    if (!snap?.initialized) {
-      host.innerHTML = `${head}${statusCard()}`;
-      return;
-    }
-
-    // Flat list first: one requirement is one row, wherever its capability file is.
-    const all = [];
-    for (const spec of snap.requirements || []) {
-      for (const requirement of spec.requirements) {
-        all.push({ requirement, capability: spec.capability, path: `openspec/specs/${spec.capability}/spec.md` });
-      }
-    }
-
-    const types = requirementTypes();
-    const sections = Object.entries(types).map(([id, meta]) => {
-      const entries = all.filter((entry) => entry.requirement.type === id);
-      if (!entries.length) return '';
-      return `
-        <section class="ios-section">
-          <div class="ios-section-head">
-            <h2 class="ios-section-title">${esc(meta.label)} <span class="ios-count">${entries.length}</span></h2>
-            <span class="ios-row-meta">${esc(meta.prefix)}</span>
-          </div>
-          <div class="ios-list ios-fold-list">${entries.map(requirementFold).join('')}</div>
-        </section>`;
-    }).join('');
-
-    host.innerHTML = `
-      ${head}
-      ${syncCard()}
-      ${codeCard()}
-      ${testsCard()}
-      ${all.length ? sections : '<div class="ios-list"><div class="ios-row is-static"><span class="ios-row-sub ios-wrap">Ainda sem requisitos. Cada capacidade é uma pasta em openspec/specs/ — ver GUIDE.md.</span></div></div>'}
-      <p class="ios-footnote">O tipo vem da linha <code>&lt;!-- yourlab: type=… --&gt;</code> de cada requisito. Sem ela, o requisito aparece em Não Definido.</p>`;
+  /** Anything outside Artefactos that opens an artefact: Resumo rows, links, cards. */
+  function openArtefact(target) {
+    if (!target) return;
+    if (window.state?.activeTab !== 'plano') window.switchToTab?.('plano');
+    select(target);
   }
-
-  /** Opens one file in Artefactos, from wherever the person was. */
-  function openArtefact(filePath) {
-    window.switchToTab?.('plano');
-    openFile(filePath);
-  }
-
-  function renderRequisitos(project) {
-    if (!project) return;
-    state.requisitosProject = project;
-    paintRequisitos();
-    load(project.id);
-  }
-
-  /* ------------------------------------------------------------ splitting a task */
-
-  // Proposals per task id, so re-drawing the task editor does not lose them.
-  const splits = new Map();
 
   function projectIdNow() {
     return window.state?.selectedProject?.id || state.projectId;
@@ -1109,14 +1239,20 @@
       else if (name === 'tests-write') writeTests();
       else if (name === 'code-run') runCode();
       else if (name === 'sync-run') runSyncBack();
-      else if (name === 'sync-close') { Object.assign(syncDraft, { changes: [], outcome: null }); paintRequisitos(); }
+      else if (name === 'sync-close') { Object.assign(syncDraft, { changes: [], outcome: null }); paintArtefactos(); }
       else if (name === 'code-write') writeCode();
-      else if (name === 'code-discard') { codeDraft.outcome = null; paintRequisitos(); }
-      else if (name === 'code-close') { Object.assign(codeDraft, { testPaths: [], outcome: null }); paintRequisitos(); }
-      else if (name === 'tests-discard') { testsDraft.outcome = null; paintRequisitos(); }
+      else if (name === 'code-discard') { codeDraft.outcome = null; paintArtefactos(); }
+      else if (name === 'code-close') { Object.assign(codeDraft, { testPaths: [], outcome: null }); paintArtefactos(); }
+      else if (name === 'tests-discard') { testsDraft.outcome = null; paintArtefactos(); }
       else if (name === 'steps-create') createSteps();
       else if (name === 'step-write') writeStep();
       else if (name === 'step-discard') { steps.outcome = null; paintArtefactos(); }
+      else if (name === 'step-diff') { view.showDiff = !view.showDiff; paintArtefactos(); }
+      else if (name === 'edit') startEdit();
+      else if (name === 'ask') { view.ask = { open: true, running: false }; paintArtefactos(); document.querySelector('[data-ws-ask-text]')?.focus(); }
+      else if (name === 'ask-close') { view.ask = { open: false, running: false }; paintArtefactos(); }
+      else if (name === 'back') { view.sel = ''; paintArtefactos(); }
+      else if (name === 'add-cancel') { view.adding = ''; paintArtefactos(); }
       else if (name === 'mockup') openMockup(action.dataset.wsScreen);
       return;
     }
@@ -1128,10 +1264,21 @@
     if (step) { runStep(step.dataset.wsStep); return; }
     const tests = target?.closest?.('[data-ws-tests]');
     if (tests) { runTests(tests.dataset.wsTests); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-    const edit = target?.closest?.('[data-ws-edit]');
-    if (edit) { openArtefact(edit.dataset.wsEdit); return; }
+    const open = target?.closest?.('[data-ws-open], [data-ws-edit]');
+    if (open) { openArtefact(open.dataset.wsOpen || open.dataset.wsEdit); return; }
     const file = target?.closest?.('[data-ws-file]');
-    if (file) { openFile(file.dataset.wsFile); return; }
+    if (file) { select(file.dataset.wsFile); return; }
+    const add = target?.closest?.('[data-ws-add]');
+    if (add) {
+      view.adding = add.dataset.wsAdd;
+      paintArtefactos();
+      document.querySelector(`[data-ws-add-form="${view.adding}"] input`)?.focus();
+      return;
+    }
+    const pane = target?.closest?.('[data-ws-pane]');
+    if (pane) { view.pane = pane.dataset.wsPane; paintArtefactos(); return; }
+    const line = target?.closest?.('[data-av-line]');
+    if (line) { goToLine(Number(line.dataset.avLine)); return; }
     const screen = target?.closest?.('[data-ws-screen]');
     if (screen) { openMockup(screen.dataset.wsScreen); return; }
     const go = target?.closest?.('[data-ws-go]');
@@ -1139,15 +1286,43 @@
     if (target?.closest?.('[data-ws-close]') || target?.classList?.contains('ios-sheet-backdrop')) closeSheet();
   });
 
+  document.addEventListener('submit', (event) => {
+    const addForm = event.target?.closest?.('[data-ws-add-form]');
+    if (addForm) {
+      event.preventDefault();
+      const name = addForm.querySelector('input')?.value?.trim();
+      if (name) createFile(addForm.dataset.wsAddForm, name);
+      return;
+    }
+    if (event.target?.closest?.('[data-ws-ask-form]')) {
+      event.preventDefault();
+      askAi();
+    }
+  });
+
+  /** A format problem's line, in the text: select it so the person sees where. */
+  function goToLine(line) {
+    const field = document.getElementById('artefactText');
+    if (!field || !line) return;
+    if (view.pane !== 'text') { view.pane = 'text'; paintArtefactos(); }
+    const text = document.getElementById('artefactText');
+    const lines = text.value.split('\n');
+    const start = lines.slice(0, line - 1).reduce((sum, entry) => sum + entry.length + 1, 0);
+    text.focus();
+    text.setSelectionRange(start, start + (lines[line - 1] || '').length);
+  }
+
   // Typing only touches the draft: the file is written on Guardar and nowhere else.
   document.addEventListener('input', (event) => {
     if (event.target?.id !== 'artefactText') return;
-    writeDraft(editor.path, event.target.value);
-    const dirty = event.target.value !== editor.content;
+    writeDraft(view.sel, event.target.value);
+    const dirty = event.target.value !== view.content || view.isNew;
     document.querySelector('[data-ws-action="save"]')?.toggleAttribute('disabled', !dirty);
-    document.querySelector('[data-ws-action="cancel"]')?.toggleAttribute('disabled', !dirty);
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(paintPreview, 400);
+    const cancel = document.querySelector('.av-edit-bar [data-ws-action="cancel"]');
+    if (cancel) cancel.textContent = dirty ? 'Descartar' : 'Fechar';
+    const note = document.getElementById('artefactDirty');
+    if (note) note.textContent = dirty ? DIRTY_NOTE : 'Sem alterações.';
+    previewDraft();
   });
 
   document.addEventListener('keydown', (event) => {
@@ -1162,8 +1337,9 @@
     stageOf,
     statusCard,
     renderArtefactos,
-    renderRequisitos,
+    renderRequisitos: (project) => { renderArtefactos(project); select('@requisitos'); },
     openArtefact,
+    select,
     openMockup,
     subscribe: (listener) => {
       listeners.add(listener);

@@ -17,7 +17,7 @@ const llmCall = require('./llm-call');
 const skills = require('./skills');
 const openspecFormat = require('./openspec-format');
 const aiSteps = require('./ai-steps');
-const { REQUIREMENT_TYPES } = require('./workspace-format');
+const { REQUIREMENT_TYPES, kindOf } = require('./workspace-format');
 const { normalizeRepoPath, buildScope, isInScope } = require('./agent-code-commit');
 const posix = require('path').posix;
 
@@ -57,6 +57,7 @@ function knownPaths(snapshot) {
 
 const PACKS = {
   impact: {
+    label: 'Analisar impacto',
     // Our own packs live under skills/_packs/, apart from the vendored persona skills.
     skill: '_packs/impact',
     // Whose engine settings the call borrows. Personas are on hold; this is plumbing.
@@ -92,6 +93,7 @@ const PACKS = {
   },
 
   split_task: {
+    label: 'Dividir tarefa',
     skill: '_packs/split-task',
     sliceLabel: 'A tarefa:',
     // The task itself is the slice: nothing else is needed to cut it.
@@ -128,6 +130,7 @@ const PACKS = {
  * by the route (only from an area the survey found), not by the model.
  */
 PACKS.artefacts_from_code = {
+  label: 'Requisitos a partir do código',
   skill: '_packs/artefacts-from-code',
   sliceLabel: 'O código desta parte:',
   needsCode: true,
@@ -181,6 +184,7 @@ PACKS.artefacts_from_code = {
  * says which kind of file and which sources; the route reads the sources, not the model.
  */
 PACKS.artefact_from_code = {
+  label: 'Artefacto a partir do código',
   skill: '_packs/artefact-from-code',
   sliceLabel: 'O que o código mostra:',
   slice: ({ step, sources, snapshot }) => [
@@ -207,6 +211,38 @@ PACKS.artefact_from_code = {
   inputError: ({ step }) => (!step || step.kind === 'spec' ? 'Passo desconhecido.' : ''),
 };
 
+/**
+ * One artefact changed the way a person asked in a sentence. The route reads the file;
+ * the answer is the whole file, which opens as a draft — Guardar is still the person's.
+ */
+PACKS.edit_artefact = {
+  label: 'Editar artefacto',
+  skill: '_packs/edit-artefact',
+  needsFile: true,
+  sliceLabel: 'O ficheiro, como está agora:',
+  slice: ({ input, current }) => `${input.path}\n\n${current || '(ainda vazio)'}`,
+  change: ({ input }) => [
+    `O pedido: ${input.request}`,
+    'Formato obrigatório (de yourlab/GUIDE.md):',
+    aiSteps.guideSection(kindOf(input.path)) || '(siga o formato que o ficheiro já tem)',
+  ].join('\n\n'),
+  contract: [
+    'Responda APENAS com este JSON, sem texto antes ou depois:',
+    '{"content":"<o ficheiro inteiro, já alterado>","summary":"<uma frase: o que mudou>"}',
+  ].join('\n'),
+  validate(answer, { input }) {
+    const [file] = aiSteps.checkFiles({ kind: kindOf(input.path) }, [{ path: input.path, content: answer?.content }]);
+    return {
+      result: { file: file || null, summary: String(answer?.summary || '').slice(0, 300) },
+      dropped: file ? 0 : 1,
+    };
+  },
+  inputError: ({ input }) => {
+    if (!kindOf(input?.path)) return 'Escolha um artefacto.';
+    return String(input?.request || '').length < 3 ? 'Diga numa frase o que mudar.' : '';
+  },
+};
+
 // Where a test file may live. Anything else a pack returns is not a test and is dropped.
 const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/.+\.[a-z]+$|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$|_test\.(go|py)$/i;
 const MAX_TEST_FILE_CHARS = 20000;
@@ -221,6 +257,7 @@ function testPath(raw) {
 const TEST_FRAMEWORKS = ['vitest', 'jest', 'mocha', 'ava', 'tap', '@playwright/test', 'cypress', 'supertest'];
 
 PACKS.tests_from_artefacts = {
+  label: 'Testes a partir dos requisitos',
   skill: '_packs/tests-from-artefacts',
   sliceLabel: 'Os requisitos a testar:',
   needsTestContext: true,
@@ -305,6 +342,7 @@ function codeScopeFor(targets) {
 }
 
 PACKS.code_from_tests = {
+  label: 'Código a partir dos testes',
   skill: '_packs/code-from-tests',
   sliceLabel: 'Os testes e o código que eles usam:',
   needsTestsAndCode: true,
@@ -350,6 +388,7 @@ PACKS.code_from_tests = {
  * and saving it leaves a task like any other edit.
  */
 PACKS.sync_back = {
+  label: 'Os artefactos ainda dizem o mesmo?',
   skill: '_packs/sync-back',
   slice: ({ snapshot }) => projectOutline(snapshot),
   change: ({ input }) => (input.changes || []).slice(0, 4)

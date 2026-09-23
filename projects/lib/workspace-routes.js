@@ -25,6 +25,7 @@ const workspaceSync = require('./workspace-sync');
 const workItems = require('./work-items');
 const promptPacks = require('./prompt-packs');
 const aiSteps = require('./ai-steps');
+const aiRuns = require('./ai-runs');
 const { promptDiff } = require('./work-snapshot');
 const { RENDER_HEADERS } = require('./mockup-routes');
 
@@ -133,6 +134,11 @@ function registerWorkspaceRoutes(app, deps) {
     });
   }
 
+  const capabilitiesOf = (project) => (project.workspace?.snapshot?.requirements || []).map((spec) => spec.capability);
+
+  // Every AI request leaves a performed task (lib/ai-runs.js).
+  const recordAiRun = (projectId, actorUserId, run) => aiRuns.recordAiRun({ updateStore, appendActivity }, projectId, actorUserId, run);
+
   app.get('/api/projects/:projectId/workspace', authMiddleware, loadProjectForUser, async (req, res) => {
     const project = req.loadedProject;
     return res.json({
@@ -167,7 +173,31 @@ function registerWorkspaceRoutes(app, deps) {
       if (!repository) return noRepository(res);
       const reader = await workspaceSync.pickReader(repository, { remoteClient });
       const content = await reader.readFile(filePath);
-      return res.json({ path: filePath, content, sha: workspaceFormat.fileSha(content) });
+      return res.json({
+        path: filePath,
+        content,
+        sha: workspaceFormat.fileSha(content),
+        view: content ? workspaceFormat.pieceOf(filePath, content, { capabilities: capabilitiesOf(req.loadedProject) }) : null,
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // The formatted view of text not saved yet (a draft, a proposal). Reads, never writes.
+  app.post('/api/projects/:projectId/workspace/preview', authMiddleware, loadProjectForUser, (req, res) => {
+    const filePath = String(req.body?.path || '');
+    const content = String(req.body?.content ?? '');
+    if (!workspaceFormat.isWritablePath(filePath)) return res.status(400).json({ message: 'Ficheiro fora do formato yourlab/. Ver GUIDE.md.' });
+    if (content.length > 200000) return res.status(413).json({ message: 'Texto grande de mais para pré-visualizar.' });
+    return res.json(workspaceFormat.pieceOf(filePath, content, { capabilities: capabilitiesOf(req.loadedProject) }));
+  });
+
+  // A new artefact, from the GUIDE.md shapes. Nothing is written: it opens as a draft.
+  app.get('/api/projects/:projectId/workspace/template', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, (req, res) => {
+    try {
+      const paths = (req.loadedProject.workspace?.snapshot?.files || []).map((file) => file.path);
+      return res.json(workspaceFormat.templateFor(String(req.query?.kind || ''), String(req.query?.name || ''), paths));
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -287,7 +317,17 @@ function registerWorkspaceRoutes(app, deps) {
       failure: String(req.body?.failure || '').slice(0, 3000),
       changes: (Array.isArray(req.body?.changes) ? req.body.changes : []).slice(0, 4)
         .map((change) => ({ path: String(change?.path || '').slice(0, 300), diff: String(change?.diff || '').slice(0, 4000) })),
+      request: String(req.body?.request || '').trim().slice(0, 1000),
     };
+    let current = '';
+    if (promptPacks.PACKS[req.params.packId]?.needsFile) {
+      // The file is read here, never taken from the browser.
+      if (!workspaceFormat.isWritablePath(input.path)) return res.status(400).json({ message: 'Ficheiro fora do formato yourlab/.' });
+      const repository = gitRepositories.normalizeProjectRepository(req.loadedProject.repository);
+      if (!repository) return noRepository(res);
+      const reader = await workspaceSync.pickReader(repository, { remoteClient });
+      current = await reader.readFile(input.path).catch(() => '');
+    }
     let testsAndCode = {};
     if (promptPacks.PACKS[req.params.packId]?.needsTestsAndCode) {
       const repository = gitRepositories.normalizeProjectRepository(req.loadedProject.repository);
@@ -322,6 +362,7 @@ function registerWorkspaceRoutes(app, deps) {
       code,
       framework,
       existingTests,
+      current,
       ...testsAndCode,
       input,
     });
@@ -330,13 +371,15 @@ function registerWorkspaceRoutes(app, deps) {
     if (testsAndCode.reader && Array.isArray(outcome.result?.files)) {
       for (const file of outcome.result.files) file.diff = promptDiff(await testsAndCode.reader.readFile(file.path), file.content);
     }
-    await updateStore(async (store) => {
-      appendActivity(store, {
-        projectId: req.params.projectId,
-        actorUserId: req.auth.user.id,
-        action: 'prompt_pack_run',
-        details: { packId: req.params.packId, costUsd: outcome.costUsd, llmOptionId: outcome.llmOptionId, dropped: outcome.dropped },
-      });
+    if (outcome.result?.file) {
+      outcome.result.file.view = workspaceFormat.pieceOf(outcome.result.file.path, outcome.result.file.content, { capabilities: capabilitiesOf(req.loadedProject) });
+    }
+    outcome.taskId = await recordAiRun(req.params.projectId, req.auth.user.id, {
+      title: promptPacks.PACKS[req.params.packId].label || req.params.packId,
+      request: input.request,
+      target: input.path || input.capability || input.area || (input.testPaths || []).join(', '),
+      outcome,
+      taskId: input.taskId,
     });
     return res.json(outcome);
   });
@@ -525,14 +568,14 @@ function registerWorkspaceRoutes(app, deps) {
         file.exists = Boolean(before);
         file.sha = workspaceFormat.fileSha(before);
         file.diff = promptDiff(before, file.content);
+        file.view = workspaceFormat.pieceOf(file.path, file.content, { capabilities: capabilitiesOf(project) });
       }
-      await updateStore(async (store) => {
-        appendActivity(store, {
-          projectId: req.params.projectId,
-          actorUserId: req.auth.user.id,
-          action: 'ai_step_run',
-          details: { key: step.key, costUsd: outcome.costUsd, model: outcome.model, files: outcome.result.files.length },
-        });
+      const stepTask = workItems.findBySourceRef(workItems.getWorkItems(project), stepRef(step.key));
+      await recordAiRun(req.params.projectId, req.auth.user.id, {
+        title: step.title,
+        target: step.target,
+        outcome,
+        taskId: stepTask?.id || '',
       });
       return res.json({ key: step.key, ...outcome });
     } catch (error) {

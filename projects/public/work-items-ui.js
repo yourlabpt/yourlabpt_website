@@ -863,6 +863,7 @@
           <option value="human" ${state.filters.origin === 'human' ? 'selected' : ''}>Humana</option>
           <option value="agent" ${state.filters.origin === 'agent' ? 'selected' : ''}>Agente</option>
           <option value="platform" ${state.filters.origin === 'platform' ? 'selected' : ''}>Plataforma</option>
+          <option value="ai" ${state.filters.origin === 'ai' ? 'selected' : ''}>IA</option>
         </select>
         <select class="ado-field-inline" data-ado-filter="status" aria-label="Filtrar por estado">
           <option value="">Estado: todos</option>

@@ -19,6 +19,10 @@ const GUIDE_HEADING = {
   diagram: 'diagrams/name.mmd',
   database: 'database.md',
   workflow: 'workflows/name.md',
+  ideas: 'ideas.md',
+  questions: 'questions.md',
+  mockup: 'mockup/*.html',
+  spec: 'openspec/specs/<capability>/spec.md',
 };
 const MAX_MODULES = 8;
 const MAX_SOURCE_CHARS = 4000;

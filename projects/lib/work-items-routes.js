@@ -96,7 +96,9 @@ function applyListFilters(items, query) {
   const clientVisible = textOr(query.clientVisible);
   const q = textOr(query.q).toLowerCase();
 
-  if (origin) list = list.filter((item) => item.origin === origin);
+  // «IA»: what the AI was asked to do — its runs and the steps that fill artefacts from code.
+  if (origin === 'ai') list = list.filter((item) => workItems.ensureArray(item.sourceRefs).some((ref) => ref.type === 'ai_run' || ref.type === 'ai_step'));
+  else if (origin) list = list.filter((item) => item.origin === origin);
   if (status) list = list.filter((item) => item.status === workItems.normalizeStatus(status));
   if (stage) list = list.filter((item) => item.deliveryStageId === stage);
   if (complexity) list = list.filter((item) => item.complexity === complexity);
@@ -459,7 +461,8 @@ function registerWorkItemRoutes(app, deps) {
     let list = acceptedVisibleItems(project, user);
     list = applyTransitionListFilters(list, req.query || {}, agentRequests.getAgentRequests(project));
     list = applyListFilters(list, req.query || {});
-    if (req.query?.showCompleted !== 'true') list = list.filter((item) => !workItems.isTerminalStatus(item.status));
+    // AI runs are performed as they are recorded; hiding completed ones would hide them all.
+    if (req.query?.showCompleted !== 'true' && req.query?.origin !== 'ai') list = list.filter((item) => !workItems.isTerminalStatus(item.status));
     if (req.query?.view === 'prioritized' || !req.query?.view) list = workItems.sortPrioritized(list);
 
     const total = list.length;

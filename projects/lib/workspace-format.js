@@ -141,7 +141,8 @@ function bulletsOf(lines = []) {
 }
 
 function listOf(value) {
-  return String(value || '').split(',').map((entry) => openspecFormat.slugify(clean(entry))).filter(Boolean);
+  // slugify('') falls back to a default name; an empty entry is no capability at all.
+  return String(value || '').split(',').map(clean).filter(Boolean).map((entry) => openspecFormat.slugify(entry));
 }
 
 /* ------------------------------------------------------------------ one reader per kind */
@@ -578,9 +579,113 @@ function serializeQuestions(questions = []) {
       `- Estado: ${answered ? 'respondida' : 'aberta'}`,
     ];
     if (answered) lines.push(`- Resposta: ${clean(entry.answer).replace(/\s*\n\s*/g, ' ')}`);
+    // Prose under a question is part of it; an edit that rewrites the file keeps it.
+    if (clean(entry.notes)) lines.push(clean(entry.notes));
     return lines.join('\n');
   });
   return blocks.length ? `${blocks.join('\n\n')}\n` : '';
+}
+
+/* ------------------------------------------------------------------ one file, for the viewer */
+
+/**
+ * One file as the viewer draws it: the same reader as a sync, applied to the text being
+ * looked at (saved, a draft, or an AI proposal), so what is previewed is what will be read.
+ */
+function pieceOf(filePath, content, { capabilities = [] } = {}) {
+  const kind = kindOf(filePath);
+  if (!kind || kind === 'guide') return { kind: '', piece: null, findings: [] };
+  const snap = readWorkspace([{ path: filePath, content }]);
+  // Read alone, a fase cannot see the other files: links to capabilities that do exist
+  // in the project are not broken.
+  const known = new Set(capabilities);
+  const findings = snap.findings.filter((finding) => finding.file === filePath && finding.level !== 'info'
+    && !known.has(finding.message.match(/^Requisitos: (\S+) não existe/)?.[1]));
+  const piece = {
+    project: snap.project,
+    ideas: snap.ideas,
+    questions: snap.questions,
+    database: snap.database,
+    phase: snap.phases[0],
+    diagram: snap.diagrams[0],
+    workflow: snap.workflows[0],
+    spec: snap.requirements[0] ? { ...snap.requirements[0], file: filePath } : null,
+    mockup: { file: path.posix.basename(filePath), html: String(content) },
+  }[kind] || null;
+  return { kind, piece, findings, generated: String(content).includes(GENERATED_MARK) };
+}
+
+/**
+ * A new file, or a new section for a file that holds many, written the way GUIDE.md says.
+ * `append` means the content goes at the end of the existing file instead of a new one.
+ */
+function templateFor(kind, name, existingPaths = []) {
+  const title = clean(name);
+  if (!title) throw new Error('Dê um nome.');
+  const slug = openspecFormat.slugify(title).slice(0, 40).replace(/-+$/, '');
+  if (!slug) throw new Error('O nome precisa de letras ou números.');
+  const existing = new Set(existingPaths);
+  const fresh = (filePath, content) => {
+    if (existing.has(filePath)) throw new Error(`${filePath} já existe.`);
+    return { path: filePath, content, append: false };
+  };
+  if (kind === 'phase') {
+    const numbers = existingPaths.map((p) => p.match(PATHS.phase)).filter(Boolean).map((m) => Number(m[1]));
+    const next = String((numbers.length ? Math.max(...numbers) : 0) + 1).padStart(2, '0');
+    return fresh(`${ROOT}/phases/${next}-${slug}.md`, serializePhase({
+      title,
+      features: [{ title: 'Nome da feature', text: 'O que faz, em duas ou três linhas.' }],
+      deliverables: ['O que o cliente recebe'],
+    }));
+  }
+  if (kind === 'diagram') return fresh(`${ROOT}/diagrams/${slug}.mmd`, `%% title: ${title}
+flowchart LR
+  A[Início] --> B[Fim]
+`);
+  if (kind === 'workflow') return fresh(`${ROOT}/workflows/${slug}.md`, `# ${title}
+1. Primeiro passo.
+2. Segundo passo.
+`);
+  if (kind === 'mockup') {
+    return fresh(`${ROOT}/mockup/${slug}.html`, `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 24px; }
+</style>
+</head>
+<body>
+<h1>${title}</h1>
+</body>
+</html>
+`);
+  }
+  if (kind === 'spec') {
+    return fresh(`${SPEC_PREFIX}${slug}/spec.md`, openspecFormat.serializeSpec({
+      capability: slug,
+      title,
+      purpose: 'O que esta parte da aplicação faz, numa frase.',
+      requirements: [{ title: 'Primeiro requisito', type: 'undefined', shall: 'O sistema SHALL …' }],
+    }));
+  }
+  if (kind === 'ideas') return { path: `${ROOT}/ideas.md`, content: `## ${title}
+- Estado: nova
+Porque pode importar, em poucas linhas.
+`, append: true };
+  if (kind === 'questions') return { path: `${ROOT}/questions.md`, content: `## ${title}
+- Para: cliente
+- Estado: aberta
+`, append: true };
+  if (kind === 'database') {
+    return { path: `${ROOT}/database.md`, content: `## Entidade: ${title}
+| Campo | Tipo | Notas |
+|---|---|---|
+| id | uuid | |
+`, append: true };
+  }
+  throw new Error('Este tipo de artefacto não se cria assim.');
 }
 
 // Marks what was read off the code rather than decided by a person.
@@ -679,6 +784,8 @@ module.exports = {
   impactOfEdit,
   taskFromEdit,
   skeletonFiles,
+  pieceOf,
+  templateFor,
   GENERATED_MARK,
   serializeProject,
   serializePhase,

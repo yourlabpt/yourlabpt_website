@@ -5,6 +5,7 @@
  * in `agent-tools.js` since before anything implemented them — something real behind the
  * name.
  */
+const aiRuns = require('./ai-runs');
 const crypto = require('crypto');
 const mockupSessions = require('./mockup-sessions');
 const secretBox = require('./secret-box');
@@ -192,6 +193,11 @@ function registerMockupRoutes(app, deps) {
       // The body is written only once the record that points at it exists, so a failed
       // write cannot leave an iteration referring to nothing.
       await mockupSessions.saveIterationHtml(blobDeps, req.params.projectId, iterationId, produced.html);
+      await aiRuns.recordAiRun({ updateStore, appendActivity }, req.params.projectId, req.auth.user.id, {
+        title: 'Mockup da intenção',
+        request: String(req.body?.requestText || session.promptText || '').slice(0, 1000),
+        outcome: { costUsd: produced.costUsd, model: produced.llmOptionId, summary: `Ecrã gerado (iteração ${iterationId}).` },
+      });
       return res.json({ session: view });
     } catch (error) {
       return res.status(400).json({ message: error.message });

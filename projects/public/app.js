@@ -31,8 +31,8 @@ const NAV_GROUPS = [
       { id: 'projeto', label: 'Resumo', icon: 'gauge' },
       // The project written down: intenção, plano, requisitos, diagramas, mockup — the
       // files in yourlab/, edited here and written straight to the repository.
+      // Requisitos is one of them (its «Por tipo» view); old links still reach it.
       { id: 'plano', label: 'Artefactos', icon: 'doc' },
-      { id: 'requisitos', label: 'Requisitos', icon: 'list' },
       { id: 'tarefas', label: 'Tarefas', icon: 'list' },
     ],
   },
@@ -1343,7 +1343,7 @@ window.refreshNavBadges = refreshNavBadges;
 
 // The collapsed rail carries the way in and the work sequence, nothing else. Adding
 // another icon here is how a quick nav stops being quick.
-const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'plano', 'requisitos', 'tarefas'];
+const COLLAPSED_QUICK_NAV = ['hoje', 'projetos', 'projeto', 'plano', 'tarefas'];
 
 function findNavItem(pageId) {
   for (const group of NAV_GROUPS) {
@@ -3047,6 +3047,9 @@ function switchToTab(tabId) {
   // navigation still arrive with the old names.
   if (target === 'fases') target = 'plano';
   if (target === 'deliveryos') target = 'projeto';
+  // Requisitos lives inside Artefactos now, as its «Por tipo» view.
+  const openRequirements = target === 'requisitos';
+  if (openRequirements) target = 'plano';
   if (target === 'hoje' && !canSeeHoje()) target = 'projetos';
   if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'projeto';
   if (target === 'tarefas') {
@@ -3105,6 +3108,7 @@ function switchToTab(tabId) {
     window.PlatformSettingsUI?.render?.();
       window.GoogleSignInUI?.renderSettings?.();
   }
+  if (openRequirements && state.activeTab === 'plano') window.WorkspaceUI?.select?.('@requisitos');
   persistNavigationState();
 }
 

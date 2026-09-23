@@ -217,7 +217,7 @@
     const snap = window.WorkspaceUI?.forProject?.(project.id);
     // The repository's fases when it has them; the platform's older record otherwise.
     const list = snap?.phases?.length
-      ? snap.phases.map((phase) => ({ name: phase.title, weeks: phase.weeks, status: phase.status }))
+      ? snap.phases.map((phase) => ({ name: phase.title, weeks: phase.weeks, status: phase.status, file: phase.file }))
       : (project.phases || []).map((phase, index) => ({
         name: String(phase.name || '').replace(/^\s*fase\s*\d+\s*[-–·:]\s*/i, '').trim() || `Fase ${index + 1}`,
         weeks: Number(phase.durationWeeks) || 0,
@@ -229,14 +229,41 @@
       <section class="ios-section">
         <div class="ios-section-head">
           <h2 class="ios-section-title">Fases</h2>
-          <button type="button" class="btn ghost" data-nav-go="plano">Ver plano</button>
+
         </div>
         <div class="ios-list">
           ${list.map((phase, index) => `
-            <button type="button" class="ios-row" data-nav-go="plano">
+            <button type="button" class="ios-row" ${phase.file ? `data-ws-open="${k.escapeHtml(phase.file)}"` : 'data-nav-go="plano"'}>
               <span class="ios-row-index">${index + 1}</span>
               <span class="ios-row-main"><span class="ios-row-title">${k.escapeHtml(phase.name)}</span></span>
               ${badges[phase.status] || (phase.weeks ? `<span class="ios-row-meta">${phase.weeks} semana${phase.weeks === 1 ? '' : 's'}</span>` : '')}
+              ${k.icon('chevron', 14, 'ios-chevron')}
+            </button>`).join('')}
+        </div>
+      </section>`;
+  }
+
+  /**
+   * Every artefact, one row each, straight into its formatted view. Fases and Perguntas
+   * have their own sections here, so they are not listed twice.
+   */
+  function artefacts(project) {
+    const k = kit();
+    if (window.isClientUser?.() === true || !window.ArtefactViews) return '';
+    const snap = window.WorkspaceUI?.forProject?.(project.id);
+    if (!snap?.initialized) return '';
+    const rows = window.ArtefactViews.summaries(snap).filter((row) => row.key !== 'phases' && row.key !== 'questions');
+    return `
+      <section class="ios-section">
+        <h2 class="ios-group-label">Artefactos</h2>
+        <div class="ios-list">
+          ${rows.map((row) => `
+            <button type="button" class="ios-row" data-ws-open="${k.escapeHtml(row.target)}">
+              <span class="ios-tile">${k.icon(row.icon, 16)}</span>
+              <span class="ios-row-main">
+                <span class="ios-row-title">${k.escapeHtml(row.label)}</span>
+                <span class="ios-row-sub">${k.escapeHtml(row.sub)}</span>
+              </span>
               ${k.icon('chevron', 14, 'ios-chevron')}
             </button>`).join('')}
         </div>
@@ -255,13 +282,14 @@
         <h2 class="ios-group-label">Perguntas em aberto · ${open.length}</h2>
         <div class="ios-list">
           ${open.map((question) => `
-            <div class="ios-row is-static">
+            <${client ? 'div class="ios-row is-static"' : 'button type="button" class="ios-row" data-ws-open="yourlab/questions.md"'}>
               <span class="ios-tile">${k.icon('help', 16)}</span>
               <span class="ios-row-main">
                 <span class="ios-row-title ios-wrap">${k.escapeHtml(question.question)}</span>
                 <span class="ios-row-sub">${question.audience === 'client' ? 'Para o cliente' : 'Para a equipa'}</span>
               </span>
-            </div>`).join('')}
+              ${client ? '' : k.icon('chevron', 14, 'ios-chevron')}
+            </${client ? 'div' : 'button'}>`).join('')}
         </div>
       </section>`;
   }
@@ -309,6 +337,7 @@
       <div class="ios-home-aside">
         ${client ? '' : attention(entry)}
         ${window.WorkspaceUI?.statusCard?.(project) || ''}
+        ${artefacts(project)}
         ${openQuestions(project)}
         ${phases(project)}
       </div>
