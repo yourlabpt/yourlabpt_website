@@ -21,6 +21,7 @@ function registerLlmProviderRoutes(app, deps) {
       const body = req.body || {};
       const patch = {};
       if (body.apiBaseUrl !== undefined) patch.apiBaseUrl = body.apiBaseUrl;
+      if (body.model !== undefined) patch.model = body.model;
       // Only touch the credential when the caller actually sent the field, so saving
       // the base URL alone never clears a stored key.
       if (body.apiKey !== undefined) patch.apiKey = body.apiKey;

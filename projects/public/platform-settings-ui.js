@@ -157,41 +157,48 @@
    * because "saved" and "actually works" are different claims and the operator should
    * never have to guess which one is true.
    */
+  // Suggestions only — any DeepInfra model id can be typed.
+  const DEEPINFRA_MODELS = [
+    'deepseek-ai/DeepSeek-V3',
+    'deepseek-ai/DeepSeek-R1',
+    'Qwen/Qwen2.5-Coder-32B-Instruct',
+    'meta-llama/Meta-Llama-3.1-70B-Instruct',
+  ];
+
   function llmProviderView(settings) {
     if (!settings) return '<p class="muted-text">Não foi possível ler as credenciais.</p>';
-    const providers = Object.values(settings.providers || {});
-    if (!providers.length) return '<p class="muted-text">Nenhum fornecedor conhecido.</p>';
-    return providers.map((p) => {
-      const badge = p.lastError
-        ? '<span class="section-badge badge-red">Falhou</span>'
-        : p.verifiedAt
-          ? '<span class="section-badge badge-green">Testado</span>'
-          : p.ready
-            ? '<span class="section-badge badge-amber">Por testar</span>'
-            : '<span class="section-badge badge-gray">Sem chave</span>';
-      const keyField = p.needsApiKey ? `
-        <label>Chave da API
-          <input data-llm-provider-field="apiKey" type="password" autocomplete="off"
-            placeholder="${p.hasApiKey ? `Guardada — impressão ${escapeHtml(p.apiKeyFingerprint)}` : 'cole a chave aqui'}" />
-        </label>` : '';
-      return `
-      <div class="llm-provider-card" data-llm-provider="${escapeHtml(p.id)}">
+    const p = settings.providers?.deepinfra;
+    if (!p) return '<p class="muted-text">DeepInfra indisponível.</p>';
+    const badge = p.lastError
+      ? '<span class="section-badge badge-red">Falhou</span>'
+      : p.verifiedAt
+        ? '<span class="section-badge badge-green">Testado</span>'
+        : p.ready
+          ? '<span class="section-badge badge-amber">Por testar</span>'
+          : '<span class="section-badge badge-gray">Sem chave</span>';
+    return `
+      <div class="llm-provider-card" data-llm-provider="deepinfra">
         <div class="llm-provider-card-head">
-          <strong>${escapeHtml(p.label)}</strong>
+          <strong>DeepInfra</strong>
           ${badge}
         </div>
         <div class="form-grid compact mt-8">
-          <label>URL base<input data-llm-provider-field="apiBaseUrl" value="${escapeHtml(p.apiBaseUrl)}" /></label>
-          ${keyField}
+          <label>Chave da API
+            <input data-llm-provider-field="apiKey" type="password" autocomplete="off"
+              placeholder="${p.hasApiKey ? `Guardada — impressão ${escapeHtml(p.apiKeyFingerprint)}` : 'cole a chave aqui'}" />
+          </label>
+          <label>Modelo
+            <input data-llm-provider-field="model" list="deepinfraModels" value="${escapeHtml(p.model || '')}" />
+            <datalist id="deepinfraModels">${DEEPINFRA_MODELS.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('')}</datalist>
+          </label>
         </div>
-        ${p.verifiedAt ? `<p class="muted-text">Testado em ${escapeHtml(when(p.verifiedAt))}${p.verifiedModel ? ` — respondeu com <code>${escapeHtml(p.verifiedModel)}</code>` : ''}.</p>` : ''}
+        ${p.verifiedAt ? `<p class="muted-text">Testado em ${escapeHtml(when(p.verifiedAt))}.</p>` : ''}
         ${p.lastError ? `<p class="muted-text"><span class="section-badge badge-red">Erro</span> ${escapeHtml(p.lastError)}</p>` : ''}
         <div class="ado-action-bar mt-8">
-          <button type="button" class="btn tiny primary" data-llm-provider-save="${escapeHtml(p.id)}">Guardar e testar</button>
-          ${p.hasApiKey ? `<button type="button" class="btn tiny ghost" data-llm-provider-clear="${escapeHtml(p.id)}">Remover chave</button>` : ''}
+          <button type="button" class="btn tiny primary" data-llm-provider-save="deepinfra">Guardar e testar</button>
+          ${p.hasApiKey ? '<button type="button" class="btn tiny ghost" data-llm-provider-clear="deepinfra">Remover chave</button>' : ''}
         </div>
       </div>`;
-    }).join('');
   }
 
   function paint() {
@@ -224,15 +231,6 @@
       state.settings = payload.settings;
     } catch (error) {
       state.settings = null;
-      window.showToast?.(error.message, 'error');
-    }
-    try {
-      const agents = await apiRequest('/agent-platform/settings');
-      state.agentSettings = agents.settings;
-      state.modelProfiles = agents.modelProfiles;
-      state.llmWarnings = agents.llmWarnings || {};
-    } catch (error) {
-      state.agentSettings = null;
       window.showToast?.(error.message, 'error');
     }
     try {
@@ -336,7 +334,7 @@
     const saveProviderId = event.target?.getAttribute?.('data-llm-provider-save');
     if (saveProviderId) {
       const card = event.target.closest('[data-llm-provider]');
-      const apiBaseUrl = card?.querySelector('[data-llm-provider-field="apiBaseUrl"]')?.value?.trim() || '';
+      const model = card?.querySelector('[data-llm-provider-field="model"]')?.value?.trim() || '';
       const apiKeyInput = card?.querySelector('[data-llm-provider-field="apiKey"]');
       // A blank key field means "keep the one already stored" — the operator should
       // never have to retype a secret just to re-run the test.
@@ -344,13 +342,13 @@
       runQuiet(async () => {
         await apiRequest(`/llm-provider/settings/${encodeURIComponent(saveProviderId)}`, {
           method: 'PATCH',
-          body: { apiBaseUrl, ...(typedKey ? { apiKey: typedKey } : {}) },
+          body: { ...(model ? { model } : {}), ...(typedKey ? { apiKey: typedKey } : {}) },
         });
         const result = await apiRequest(`/llm-provider/settings/${encodeURIComponent(saveProviderId)}/verify`, {
           method: 'POST',
           body: {},
         });
-        window.showToast?.(`Ligação válida${result.sampleModel ? ` — ${result.sampleModel}` : ''}.`, 'ok');
+        window.showToast?.(`Chave válida — ${result.modelCount || 0} modelos disponíveis.`, 'ok');
       });
       return;
     }

@@ -21,12 +21,14 @@ const PROVIDER_DEFS = {
     needsApiKey: true,
     // Hosted OpenAI-compatible APIs expose /models; Ollama exposes /api/tags instead.
     healthPath: '/models',
+    defaultModel: 'deepseek-ai/DeepSeek-V3',
   },
   ollama: {
     label: 'Ollama (local)',
     defaultApiBaseUrl: 'http://127.0.0.1:11434/v1',
     needsApiKey: false,
     healthPath: '/api/tags',
+    defaultModel: 'llama3.1:8b',
   },
 };
 
@@ -49,6 +51,7 @@ function normalizeProviderEntry(providerId, raw = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
   return {
     apiBaseUrl: text(src.apiBaseUrl, def.defaultApiBaseUrl),
+    model: text(src.model, def.defaultModel),
     apiKey: src.apiKey && typeof src.apiKey === 'object' ? src.apiKey : null,
     verifiedAt: text(src.verifiedAt),
     verifiedModel: text(src.verifiedModel),
@@ -108,6 +111,7 @@ async function writeProviderSettings(dataDir, providerId, patch = {}, actorUserI
   const nextEntry = normalizeProviderEntry(id, {
     ...current.providers[id],
     ...(src.apiBaseUrl !== undefined ? { apiBaseUrl: src.apiBaseUrl } : {}),
+    ...(src.model !== undefined ? { model: src.model } : {}),
     apiKey,
     ...(credentialChanged ? { verifiedAt: '', verifiedModel: '', lastError: '' } : {}),
     updatedAt: new Date().toISOString(),
@@ -144,6 +148,7 @@ function publicSettings(settings, dataDir) {
       label: def.label,
       needsApiKey: def.needsApiKey,
       apiBaseUrl: entry.apiBaseUrl,
+      model: entry.model,
       hasApiKey,
       apiKeyFingerprint: text(entry.apiKey?.fingerprint),
       verifiedAt: entry.verifiedAt,
@@ -168,7 +173,7 @@ async function resolveProviderCredential(dataDir, providerId) {
   const entry = settings.providers[id];
   const apiKey = entry.apiKey?.data ? secretBox.decryptSecret(dataDir, entry.apiKey) : '';
   if (def.needsApiKey && !apiKey) return null;
-  return { provider: id, apiBaseUrl: entry.apiBaseUrl || def.defaultApiBaseUrl, apiKey };
+  return { provider: id, apiBaseUrl: entry.apiBaseUrl || def.defaultApiBaseUrl, apiKey, model: entry.model || def.defaultModel };
 }
 
 /**

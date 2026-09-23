@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Projects – YourLab</title>
   <link rel="stylesheet" href="/projects/static/styles.css?v=105" />
-  <link rel="stylesheet" href="/projects/static/ios.css?v=11" />
+  <link rel="stylesheet" href="/projects/static/ios.css?v=12" />
 </head>
 <body>
   <div class="page-bg"></div>
@@ -773,7 +773,7 @@
                 <div>
                   <span class="settings-scope" data-ios-icon="gear" data-ios-icon-size="14">Toda a plataforma</span>
                   <h1 class="ios-large-title">Definições da plataforma</h1>
-                  <p class="ios-subtitle">Aplica-se a todos os projectos e a todas as pessoas: contas, GitHub, modelos e o Agent Runtime.</p>
+                  <p class="ios-subtitle">Aplica-se a todos os projectos e a todas as pessoas: contas, GitHub e a chave de IA.</p>
                 </div>
               </header>
               <section class="panel section-panel" id="platformSettingsRoot">
@@ -803,48 +803,9 @@
                   </div>
                 </section>
                 <section class="settings-section mt-12" id="agentSetupSection">
-                  <div class="panel-title-row">
-                    <div>
-                      <h4>Ligar os agentes</h4>
-                      <p class="muted-text">Quatro passos, por ordem: a chave do motor, o modelo, o Agent Runtime emparelhado, e um teste que confirma que uma execução real chegaria ao fim.</p>
-                    </div>
-                  </div>
-
-                  <div class="agent-setup-step">
-                    <h5>1. Motor de IA — credenciais</h5>
-                    <p class="muted-text">A chave fica guardada e cifrada na plataforma — nada de editar <code>.env</code> na máquina do Agent Runtime.</p>
-                    <div id="llmProviderPanel" class="mt-8"></div>
-                  </div>
-
-                  <div class="agent-setup-step">
-                    <h5>2. Modelos</h5>
-                    <p class="muted-text">Os motores que as personas podem usar. A persona é sempre a mesma; o modelo é o que muda em cada execução.</p>
-                    <div id="llmOptionsPanel" class="mt-8"></div>
-                    <div class="settings-save-row mt-8">
-                      <button type="button" class="btn ghost" id="llmAddBtn">Adicionar modelo</button>
-                      <button type="button" class="btn primary" id="llmSaveBtn">Guardar modelos</button>
-                    </div>
-                  </div>
-
-                  <div class="agent-setup-step">
-                    <h5>3. Emparelhar o Agent Runtime</h5>
-                    <p class="muted-text">O Agent Runtime liga-se à plataforma por HTTPS. A plataforma nunca abre uma ligação à máquina onde ele corre.</p>
-                    <div id="agentConnectorList" class="simple-list mt-8"></div>
-                    <form id="agentPairingForm" class="form-grid compact mt-8">
-                      <label>Password actual
-                        <input id="agentPairingPassword" type="password" autocomplete="current-password" required />
-                      </label>
-                      <button class="btn primary" type="submit">Criar código de emparelhamento</button>
-                    </form>
-                    <div id="agentPairingResult" class="hidden mt-8"></div>
-                  </div>
-
-                  <div class="agent-setup-step">
-                    <h5>4. Testar a ligação</h5>
-                    <p class="muted-text">Confirma os três passos anteriores de uma vez, sem gastar uma execução real.</p>
-                    <button type="button" class="btn primary" id="agentSetupTestBtn">Testar ligação</button>
-                    <div id="agentSetupTestResult" class="mt-8"></div>
-                  </div>
+                  <h4>IA · DeepInfra</h4>
+                  <p class="muted-text">Uma chave e um modelo. Todos os pedidos de IA da plataforma usam-nos. A chave fica cifrada na plataforma.</p>
+                  <div id="llmProviderPanel" class="mt-8"></div>
                 </section>
                 <section class="settings-section mt-12">
                   <h4>Entrar com Google</h4>
@@ -1450,11 +1411,11 @@
   <script src="/projects/static/mermaid-loader.js?v=1" defer></script>
   <script src="/projects/static/phase-content-client.js?v=3" defer></script>
   <script src="/projects/static/phase-sync-client.js?v=1" defer></script>
-  <script src="/projects/static/help-ui.js?v=4" defer></script>
+  <script src="/projects/static/help-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-downloads-ui.js?v=5" defer></script>
   <script src="/projects/static/proposal-configurator-ui.js?v=3" defer></script>
   <script src="/projects/static/ios-icons.js?v=2" defer></script>
-  <script src="/projects/static/app.js?v=63" defer></script>
+  <script src="/projects/static/app.js?v=64" defer></script>
   <script src="/projects/static/requirements-map-ui.js?v=14" defer></script>
   <script src="/projects/static/requirements-ui.js?v=17" defer></script>
   <script src="/projects/static/documents-ui.js?v=5" defer></script>
@@ -1465,14 +1426,14 @@
   <script src="/projects/static/work-items-markdown.js?v=3" defer></script>
   <script src="/projects/static/work-items-ui.js?v=36" defer></script>
   <script src="/projects/static/agents-admin-ui.js?v=7" defer></script>
-  <script src="/projects/static/platform-settings-ui.js?v=2" defer></script>
+  <script src="/projects/static/platform-settings-ui.js?v=3" defer></script>
   <script src="/projects/static/project-repository-ui.js?v=4" defer></script>
   <script src="/projects/static/delivery-os-platform-ui.js?v=6" defer></script>
   <script src="/projects/static/client-portal-ui.js?v=11" defer></script>
   <script src="/projects/static/resume-ui.js?v=4" defer></script>
-  <script src="/projects/static/workspace-ui.js?v=13" defer></script>
+  <script src="/projects/static/workspace-ui.js?v=14" defer></script>
   <script src="/projects/static/project-home-ui.js?v=4" defer></script>
-  <script src="/projects/static/account-ui.js?v=3" defer></script>
+  <script src="/projects/static/account-ui.js?v=4" defer></script>
   <script src="/projects/static/google-signin-ui.js?v=1" defer></script>
   <script src="/projects/static/intake-ui.js?v=2" defer></script>
   <script src="/projects/static/camada0-ui.js?v=1" defer></script>

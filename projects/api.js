@@ -4131,15 +4131,8 @@ function registerRequirementsPlatform(app, options) {
     dataDir,
     readJson,
     writeJson,
-    // The generator is a seam: the default talks to the paired Agent Runtime, and a
-    // host can supply its own. Camada 0 is the one agent call that does not go through
-    // startAgentRun — see lib/mockup-runner.js for why.
-    startMockupRun: options.mockupRunner || createMockupRunner({
-      dataDir,
-      runtime: createAgentRuntimeClient(),
-      connectorStore,
-      agentConnectionMode,
-    }),
+    // The generator is a seam: the default calls DeepInfra directly, a host can supply its own.
+    startMockupRun: options.mockupRunner || createMockupRunner({ dataDir }),
   });
 
   registerEpicRoutes(app, {
@@ -4169,12 +4162,7 @@ function registerRequirementsPlatform(app, options) {
     appendActivity,
     dataDir,
     loadProject: ensureProjectLoaded,
-    runPack: options.packRunner || createPackRunner({
-      dataDir,
-      runtime: createAgentRuntimeClient(),
-      connectorStore,
-      agentConnectionMode,
-    }),
+    runPack: options.packRunner || createPackRunner({ dataDir }),
   });
 
   registerOpenspecRoutes(app, {

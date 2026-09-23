@@ -6,7 +6,7 @@
  *
  *   Conta                     this person: what describes them and how they sign in
  *   Definições do projecto    one project: what it is, who reaches it, where its code is
- *   Definições da plataforma  everyone: accounts, GitHub, models, the Agent Runtime
+ *   Definições da plataforma  everyone: accounts, GitHub, the DeepInfra key
  *
  * On a phone the Definições tab lands here, so this page also leads to the other two.
  */
@@ -63,9 +63,8 @@
         tab: 'definicoesPlataforma',
         iconName: 'gear',
         title: 'Definições da plataforma',
-        sub: 'Para todos: contas, GitHub, modelos e Agent Runtime',
+        sub: 'Para todos: contas, GitHub e a chave de IA',
       }) : '',
-      isAdmin ? linkRow({ tab: 'agentes', iconName: 'bolt', title: 'Agentes', sub: 'Personas, modelos e execuções' }) : '',
     ].join('');
 
     host.innerHTML = `

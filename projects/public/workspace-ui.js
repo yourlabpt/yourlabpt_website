@@ -122,7 +122,8 @@
     try {
       const response = await window.apiRequest(`/${encodeURIComponent(projectId)}/survey`, { method: 'POST', body: {} });
       state.surveyed = response.survey;
-      state.data = { ...(state.data || {}), surveyModules: (response.survey.modules || []).map((entry) => entry.name) };
+      const fresh = await window.apiRequest(`/${encodeURIComponent(projectId)}/workspace`);
+      state.data = { ...(state.data || {}), surveyModules: fresh.surveyModules, aiSteps: fresh.aiSteps };
       window.showToast?.(`Código levantado: ${response.survey.fileCount} ficheiros, ${response.survey.routes.length} rotas. Agora crie a pasta.`, 'ok');
     } catch (error) {
       window.showToast?.(error.message, 'error');
@@ -517,6 +518,125 @@
     }
   }
 
+  /* ------------------------------------------------------------ artefacts from code, step by step */
+
+  const steps = { creating: false, running: '', writing: false, outcome: null };
+
+  function stepsCard() {
+    const k = kit();
+    const list = state.data?.aiSteps || [];
+    if (!canSync() || !list.length) return '';
+    const hasTasks = list.some((step) => step.task);
+    const done = list.filter((step) => step.task?.status === 'completed').length;
+    const outcome = steps.outcome;
+    const rows = list.map((step, index) => {
+      const isDone = step.task?.status === 'completed';
+      const isOpen = outcome?.key === step.key;
+      const running = steps.running === step.key;
+      const files = isOpen ? outcome.result.files : [];
+      return `
+        <div class="ios-row is-static">
+          <span class="ios-row-main">
+            <span class="ios-row-title">${index + 1}. ${esc(step.title)}</span>
+            <span class="ios-row-sub">${esc(step.target)}</span>
+          </span>
+          ${isDone ? k.badge('green', 'Feito') : ''}
+          ${hasTasks ? `<button type="button" class="btn tiny${isDone ? '' : ' primary'}" data-ws-step="${esc(step.key)}" ${steps.running ? 'disabled' : ''}>${running ? 'A ler o código…' : (isDone ? 'Refazer' : 'Executar com IA')}</button>` : ''}
+        </div>
+        ${isOpen ? `
+          <div class="ios-fold-body">
+            ${outcome.result.summary ? `<p class="ios-card-body">${esc(outcome.result.summary)}</p>` : ''}
+            ${files.length ? `<div class="ios-list ios-fold-list">${files.map((file) => `
+              <details class="ios-fold" ${files.length === 1 ? 'open' : ''}>
+                <summary class="ios-row"><span class="ios-row-main"><span class="ios-row-title">${esc(file.path)}</span><span class="ios-row-sub">${file.exists ? 'altera o que existe' : 'novo'}${file.findings.length ? ` · ${file.findings.length} reparo(s)` : ''}</span></span></summary>
+                <div class="ios-fold-body">
+                  ${file.findings.length ? `<ul class="ios-footnote">${file.findings.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+                  ${file.exists && file.diff ? `<h3 class="ios-group-label">O que muda</h3><pre class="ios-code">${esc(file.diff)}</pre>` : ''}
+                  <h3 class="ios-group-label">Ficheiro completo</h3><pre class="ios-code">${esc(file.content)}</pre>
+                </div>
+              </details>`).join('')}</div>` : '<p class="ios-footnote">A IA não devolveu um ficheiro utilizável para este passo.</p>'}
+            ${outcome.dropped ? `<p class="ios-footnote">${outcome.dropped} ficheiro(s) fora do formato foram descartados.</p>` : ''}
+            <div class="ios-card-actions">
+              ${files.length ? `<button type="button" class="btn primary" data-ws-action="step-write" ${steps.writing ? 'disabled' : ''}>${steps.writing ? 'A escrever…' : `Escrever ${files.length === 1 ? 'no repositório' : `${files.length} ficheiros`}`}</button>` : ''}
+              <button type="button" class="btn" data-ws-action="step-discard">Descartar</button>
+            </div>
+          </div>` : ''}`;
+    }).join('');
+    return `
+      <section class="ios-card">
+        <div class="ios-docs-head">
+          <span class="ios-row-main">
+            <span class="ios-card-title">Preencher a partir do código</span>
+            <span class="ios-row-sub">Um artefacto de cada vez, pela ordem. A IA lê só a parte do código desse passo; nada é escrito sem carregar em Escrever.</span>
+          </span>
+          ${hasTasks ? k.badge(done === list.length ? 'green' : 'gray', `${done}/${list.length}`) : ''}
+        </div>
+        ${hasTasks ? '' : `
+          <div class="ios-card-actions">
+            <button type="button" class="btn primary" data-ws-action="steps-create" ${steps.creating ? 'disabled' : ''}>${steps.creating ? 'A criar…' : `Criar ${list.length} tarefas de IA`}</button>
+          </div>`}
+        <div class="ios-list">${rows}</div>
+      </section>`;
+  }
+
+  async function createSteps() {
+    if (steps.creating) return;
+    steps.creating = true;
+    paintArtefactos();
+    try {
+      const response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/ai-steps`, { method: 'POST', body: {} });
+      state.data = { ...(state.data || {}), aiSteps: response.aiSteps };
+      window.showToast?.(`${response.created} tarefa(s) criada(s) em Tarefas.`, 'ok');
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    } finally {
+      steps.creating = false;
+      paintArtefactos();
+    }
+  }
+
+  async function runStep(key) {
+    if (steps.running) return;
+    steps.running = key;
+    steps.outcome = null;
+    paintArtefactos();
+    try {
+      steps.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/ai-steps/run`, { method: 'POST', body: { key } });
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    } finally {
+      steps.running = '';
+      paintArtefactos();
+    }
+  }
+
+  /** Same save as any artefact; the step's task is closed instead of a new one opened. */
+  async function writeStep() {
+    const outcome = steps.outcome;
+    if (!outcome || steps.writing) return;
+    steps.writing = true;
+    paintArtefactos();
+    try {
+      let response = null;
+      for (const file of outcome.result.files) {
+        response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file`, {
+          method: 'PUT',
+          body: { path: file.path, content: file.content, previousSha: file.sha, aiStep: outcome.key },
+        });
+      }
+      const fresh = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace`);
+      state.data = { ...(state.data || {}), ...fresh };
+      steps.outcome = null;
+      window.showToast?.(response?.changeRequest ? 'Pedido de alteração aberto no repositório.' : 'Escrito no repositório.', 'ok');
+      window.ResumeUI?.refresh?.();
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    } finally {
+      steps.writing = false;
+      notify();
+    }
+  }
+
   function paintArtefactos() {
     const host = document.getElementById('planoWorkspace');
     const project = state.planoProject;
@@ -541,6 +661,7 @@
     }
     host.innerHTML = `
       ${head}
+      ${stepsCard()}
       <div class="ios-artefacts">
         <div class="ios-artefacts-list">${artefactList(snap)}</div>
         <div class="ios-artefacts-editor">${editorPane()}${impactPane()}${previewPane()}</div>
@@ -605,102 +726,6 @@
           </div>
         </div>
       </details>`;
-  }
-
-  /* ------------------------------------------------------------ requirements from code */
-
-  const fromCode = { area: '', running: false, saving: false, outcome: null };
-
-  function fromCodeCard(snap) {
-    const k = kit();
-    const areas = state.data?.surveyModules || [];
-    if (!canSync() || !areas.length) return '';
-    const outcome = fromCode.outcome;
-    const result = outcome?.result;
-    const exists = result && (snap?.files || []).some((file) => file.path === result.path);
-    const types = requirementTypes();
-    const grouped = result ? Object.entries(types).map(([id, meta]) => {
-      const entries = result.requirements.filter((requirement) => requirement.type === id);
-      if (!entries.length) return '';
-      return `
-        <h3 class="ios-group-label">${esc(meta.label)} · ${entries.length}</h3>
-        <div class="ios-list ios-sublist">${entries.map((requirement) => `
-          <div class="ios-row is-static">
-            <span class="ios-row-main">
-              <span class="ios-row-title ios-wrap">${esc(requirement.title)}</span>
-              <span class="ios-row-sub ios-wrap">${esc(requirement.shall)}${requirement.scenarios.length ? ` · ${requirement.scenarios.length} cenário(s)` : ''}</span>
-            </span>
-          </div>`).join('')}</div>`;
-    }).join('') : '';
-
-    return `
-      <section class="ios-card">
-        <div class="ios-docs-head">
-          <span class="ios-row-main">
-            <span class="ios-card-title">Requisitos a partir do código</span>
-            <span class="ios-row-sub">Uma parte de cada vez. A IA escreve o que o código já faz; nada é guardado sem si.</span>
-          </span>
-          ${result ? k.badge('gray', 'IA · por rever') : ''}
-        </div>
-        <div class="ios-card-actions">
-          <select class="ios-select" data-fromcode-area>
-            ${areas.map((area) => `<option value="${esc(area)}" ${area === fromCode.area ? 'selected' : ''}>${esc(area)}</option>`).join('')}
-          </select>
-          <button type="button" class="btn" data-ws-action="fromcode" ${fromCode.running ? 'disabled' : ''}>${fromCode.running ? 'A ler o código…' : 'Gerar requisitos desta parte'}</button>
-        </div>
-        ${result ? `
-          ${result.summary ? `<p class="ios-card-body">${esc(result.summary)}</p>` : ''}
-          ${grouped || '<p class="ios-footnote">A IA não encontrou comportamento claro nesta parte.</p>'}
-          ${outcome.dropped ? `<p class="ios-footnote">${outcome.dropped} requisito(s) incompleto(s) foram descartados.</p>` : ''}
-          <div class="ios-card-actions">
-            ${exists
-    ? `<button type="button" class="btn" data-ws-edit="${esc(result.path)}">${esc(result.path)} já existe — abrir em Artefactos</button>`
-    : (result.requirements.length ? `<button type="button" class="btn primary" data-ws-action="fromcode-save" ${fromCode.saving ? 'disabled' : ''}>${fromCode.saving ? 'A guardar…' : `Guardar em ${esc(result.path)}`}</button>` : '')}
-            <button type="button" class="btn" data-ws-action="fromcode-discard">Descartar</button>
-          </div>` : ''}
-      </section>`;
-  }
-
-  async function runFromCode() {
-    const select = document.querySelector('[data-fromcode-area]');
-    fromCode.area = select?.value || fromCode.area;
-    if (!fromCode.area || fromCode.running) return;
-    fromCode.running = true;
-    paintRequisitos();
-    try {
-      fromCode.outcome = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/packs/artefacts_from_code`, {
-        method: 'POST',
-        body: { area: fromCode.area },
-      });
-    } catch (error) {
-      window.showToast?.(error.message, 'error');
-    } finally {
-      fromCode.running = false;
-      paintRequisitos();
-    }
-  }
-
-  /** Saving goes through the same save as any artefact: local or PR, and one task. */
-  async function saveFromCode() {
-    const result = fromCode.outcome?.result;
-    if (!result || fromCode.saving) return;
-    fromCode.saving = true;
-    paintRequisitos();
-    try {
-      const response = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file`, {
-        method: 'PUT',
-        body: { path: result.path, content: result.spec, previousSha: '' },
-      });
-      state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
-      fromCode.outcome = null;
-      window.showToast?.(`${result.path} guardado. Tarefa criada para o rever.`, 'ok');
-      if (response.task) window.ResumeUI?.refresh?.();
-    } catch (error) {
-      window.showToast?.(error.message, 'error');
-    } finally {
-      fromCode.saving = false;
-      notify();
-    }
   }
 
   /* ------------------------------------------------------------ tests from requirements */
@@ -967,7 +992,6 @@
       ${syncCard()}
       ${codeCard()}
       ${testsCard()}
-      ${fromCodeCard(snap)}
       ${all.length ? sections : '<div class="ios-list"><div class="ios-row is-static"><span class="ios-row-sub ios-wrap">Ainda sem requisitos. Cada capacidade é uma pasta em openspec/specs/ — ver GUIDE.md.</span></div></div>'}
       <p class="ios-footnote">O tipo vem da linha <code>&lt;!-- yourlab: type=… --&gt;</code> de cada requisito. Sem ela, o requisito aparece em Não Definido.</p>`;
   }
@@ -1082,7 +1106,6 @@
       else if (name === 'impact') runImpact();
       else if (name === 'initialize') initialize();
       else if (name === 'survey') survey();
-      else if (name === 'fromcode') runFromCode();
       else if (name === 'tests-write') writeTests();
       else if (name === 'code-run') runCode();
       else if (name === 'sync-run') runSyncBack();
@@ -1091,8 +1114,9 @@
       else if (name === 'code-discard') { codeDraft.outcome = null; paintRequisitos(); }
       else if (name === 'code-close') { Object.assign(codeDraft, { testPaths: [], outcome: null }); paintRequisitos(); }
       else if (name === 'tests-discard') { testsDraft.outcome = null; paintRequisitos(); }
-      else if (name === 'fromcode-save') saveFromCode();
-      else if (name === 'fromcode-discard') { fromCode.outcome = null; paintRequisitos(); }
+      else if (name === 'steps-create') createSteps();
+      else if (name === 'step-write') writeStep();
+      else if (name === 'step-discard') { steps.outcome = null; paintArtefactos(); }
       else if (name === 'mockup') openMockup(action.dataset.wsScreen);
       return;
     }
@@ -1100,6 +1124,8 @@
     if (splitHost && target.closest('[data-split-ask]')) { askSplit(splitHost); return; }
     if (splitHost && target.closest('[data-split-apply]')) { applySplit(splitHost); return; }
     if (splitHost && target.closest('[data-split-discard]')) { splits.delete(splitHost.dataset.splitTask); paintSplit(splitHost); return; }
+    const step = target?.closest?.('[data-ws-step]');
+    if (step) { runStep(step.dataset.wsStep); return; }
     const tests = target?.closest?.('[data-ws-tests]');
     if (tests) { runTests(tests.dataset.wsTests); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     const edit = target?.closest?.('[data-ws-edit]');

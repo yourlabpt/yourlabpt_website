@@ -44,7 +44,6 @@ const NAV_GROUPS = [
     items: [
       { id: 'camada0', label: 'Intenção', icon: 'bolt' },
       { id: 'decisoes', label: 'Decisões', icon: 'branch' },
-      { id: 'agentes', label: 'Agentes', icon: 'bolt', superAdminOnly: true },
       { id: 'documentos', label: 'Documentos', icon: 'doc' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
       { id: 'gerar', label: 'Gerar', icon: 'sparkle' },
@@ -1517,7 +1516,8 @@ function renderMobileChrome() {
   const hojeTab = document.querySelector('[data-mobile-tab="hoje"]');
   if (hojeTab) hojeTab.hidden = !canSeeHoje();
   const agentesTab = document.querySelector('[data-mobile-tab="agentes"]');
-  if (agentesTab) agentesTab.hidden = !isSuperAdmin();
+  // Personas are on hold; the tab stays in the markup for when they return.
+  if (agentesTab) agentesTab.hidden = true;
   const definicoesTab = document.querySelector('[data-mobile-tab="definicoes"]');
 
   let backTo = '';

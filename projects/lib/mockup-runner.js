@@ -12,9 +12,7 @@
  * exactly what the render sandbox allows, so the two agree by construction rather than
  * by discipline.
  */
-const agentPersonas = require('./agent-personas');
-const agentPlatformSettings = require('./agent-platform-settings');
-const llmOptions = require('./llm-options');
+const llmCall = require('./llm-call');
 
 const MOCKUP_CAMADA = 0;
 
@@ -68,68 +66,25 @@ function extractHtml(raw) {
   return '';
 }
 
-/**
- * Builds the runner the routes call.
- *
- * Returns `{ error, status }` rather than throwing when the platform simply is not
- * connected to anything — that is a state the operator can fix, and it deserves a
- * sentence saying where, not a stack trace.
- */
+/** Builds the runner the routes call. `complete` is injectable for tests. */
 function createMockupRunner(deps) {
-  const { dataDir, runtime, connectorStore, agentConnectionMode } = deps;
+  const { dataDir, complete = llmCall.complete } = deps;
 
   return async function startMockupRun({ session, requestText, previousHtml }) {
-    if (agentConnectionMode === 'disabled') {
-      return { error: 'Execução por agente desactivada nesta instalação.', status: 503 };
-    }
-    if (agentConnectionMode === 'remote_pull' && !connectorStore?.activeConnector()) {
-      return {
-        error: 'Nenhum Agent Runtime emparelhado. Empareleie um em Definições → Agent Runtime antes de gerar mockups.',
-        status: 409,
-      };
-    }
-
-    const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
-    const persona = agentPersonas.resolvePersona('ux', settings.personas);
-    // Camada 0 is refinement: the routing rule already sends camada <= 2 to the cheap
-    // engine, so this asks the same question every other dispatch asks.
-    const routed = agentPlatformSettings.routeForPersona(settings, {
-      personaId: 'ux',
-      camada: MOCKUP_CAMADA,
-    });
-    if (!routed.option) {
-      return {
-        error: 'Nenhum modelo activo. Active um em Definições da plataforma → Modelos.',
-        status: 409,
-      };
-    }
-
     try {
-      const created = await runtime.createJob({
-        agentId: persona.id,
-        agentType: persona.taskTypes[0],
-        instructions: instructionsFor({ session, requestText, previousHtml }),
-        llm: llmOptions.wireSpec(routed.option),
-        options: {
-          modelProfileId: routed.profileId,
-          llmOptionId: routed.option.id,
-          // One screen, one pass. A mockup that needs planning waves is not a mockup.
-          planningWaveSize: 1,
-          enableWebSearch: false,
-        },
+      const reply = await complete({
+        dataDir,
+        prompt: instructionsFor({ session, requestText, previousHtml }),
+        maxTokens: 8000,
       });
-      const html = extractHtml(created?.output ?? created?.result ?? created?.text);
+      if (reply.error) return reply;
+      const html = extractHtml(reply.text);
       if (!html) {
-        return { error: 'O agente não devolveu um ecrã HTML utilizável.', status: 502 };
+        return { error: 'O modelo não devolveu um ecrã HTML utilizável.', status: 502 };
       }
-      return {
-        html,
-        summary: String(created?.summary || '').slice(0, 400),
-        costUsd: Math.max(0, Number(created?.costUsed) || 0),
-        llmOptionId: routed.option.id,
-      };
+      return { html, summary: '', costUsd: Math.max(0, Number(reply.costUsd) || 0), llmOptionId: reply.model };
     } catch (error) {
-      return { error: `O Agent Runtime não respondeu: ${error.message}`, status: 502 };
+      return { error: `A DeepInfra não respondeu: ${error.message}`, status: 502 };
     }
   };
 }

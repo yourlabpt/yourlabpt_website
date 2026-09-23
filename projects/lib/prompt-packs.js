@@ -10,14 +10,13 @@
  *
  * One job per call, never a chain. The answer is checked against the project before it
  * is shown (a named file must exist), and nothing is ever applied: a person reads it and
- * decides. Same runtime contract as lib/mockup-runner.js — no work item, no persona
+ * decides. Same call as lib/mockup-runner.js (lib/llm-call.js) — no work item, no persona
  * history.
  */
-const agentPersonas = require('./agent-personas');
-const agentPlatformSettings = require('./agent-platform-settings');
-const llmOptions = require('./llm-options');
+const llmCall = require('./llm-call');
 const skills = require('./skills');
 const openspecFormat = require('./openspec-format');
+const aiSteps = require('./ai-steps');
 const { REQUIREMENT_TYPES } = require('./workspace-format');
 const { normalizeRepoPath, buildScope, isInScope } = require('./agent-code-commit');
 const posix = require('path').posix;
@@ -61,8 +60,6 @@ const PACKS = {
     // Our own packs live under skills/_packs/, apart from the vendored persona skills.
     skill: '_packs/impact',
     // Whose engine settings the call borrows. Personas are on hold; this is plumbing.
-    personaId: 'module_architect',
-    camada: 2,
     slice: ({ snapshot }) => projectOutline(snapshot),
     change: ({ input }) => `Ficheiro alterado: ${input.path}\n\n${input.diff}`,
     contract: [
@@ -97,8 +94,6 @@ const PACKS = {
   split_task: {
     skill: '_packs/split-task',
     sliceLabel: 'A tarefa:',
-    personaId: 'module_architect',
-    camada: 3,
     // The task itself is the slice: nothing else is needed to cut it.
     slice: ({ task }) => [
       `Título: ${task.title}`,
@@ -136,8 +131,6 @@ PACKS.artefacts_from_code = {
   skill: '_packs/artefacts-from-code',
   sliceLabel: 'O código desta parte:',
   needsCode: true,
-  personaId: 'product_owner',
-  camada: 3,
   slice: ({ code }) => (code || []).map((file) => `### ${file.path}\n${file.content}`).join('\n\n'),
   change: ({ input }) => `Parte do código: ${input.area}. Escreva os requisitos que este código já cumpre.`,
   contract: [
@@ -183,6 +176,37 @@ PACKS.artefacts_from_code = {
   },
 };
 
+/**
+ * One yourlab/ artefact written from code, as whole files. The step (lib/ai-steps.js)
+ * says which kind of file and which sources; the route reads the sources, not the model.
+ */
+PACKS.artefact_from_code = {
+  skill: '_packs/artefact-from-code',
+  sliceLabel: 'O que o código mostra:',
+  slice: ({ step, sources, snapshot }) => [
+    step.facts,
+    step.needsOutline ? `O projecto já escrito:\n${projectOutline(snapshot)}` : '',
+    sources,
+  ].filter(Boolean).join('\n\n') || '(sem ficheiros de apoio — use só os factos)',
+  change: ({ step, current }) => [
+    `Escreva ${step.target} — ${step.title}.`,
+    'Formato obrigatório (de yourlab/GUIDE.md):',
+    aiSteps.guideSection(step.kind),
+    current ? `Versão actual, mantenha o que ainda é verdade:\n${current}` : '',
+  ].filter(Boolean).join('\n\n'),
+  contract: [
+    'Responda APENAS com este JSON, sem texto antes ou depois:',
+    '{"files":[{"path":"<caminho completo>","content":"<ficheiro inteiro>"}],"summary":"<uma frase>"}',
+    'Só ficheiros deste tipo, no máximo 4.',
+  ].join('\n'),
+  validate(answer, { step }) {
+    const raw = Array.isArray(answer?.files) ? answer.files : [];
+    const files = aiSteps.checkFiles(step, raw);
+    return { result: { files, summary: String(answer?.summary || '').slice(0, 300) }, dropped: raw.length - files.length };
+  },
+  inputError: ({ step }) => (!step || step.kind === 'spec' ? 'Passo desconhecido.' : ''),
+};
+
 // Where a test file may live. Anything else a pack returns is not a test and is dropped.
 const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/.+\.[a-z]+$|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$|_test\.(go|py)$/i;
 const MAX_TEST_FILE_CHARS = 20000;
@@ -200,8 +224,6 @@ PACKS.tests_from_artefacts = {
   skill: '_packs/tests-from-artefacts',
   sliceLabel: 'Os requisitos a testar:',
   needsTestContext: true,
-  personaId: 'tester',
-  camada: 4,
   slice: ({ snapshot, input, framework, existingTests }) => {
     const spec = (snapshot?.requirements || []).find((entry) => entry.capability === input.capability);
     const requirements = (spec?.requirements || []).map((requirement) => [
@@ -286,8 +308,6 @@ PACKS.code_from_tests = {
   skill: '_packs/code-from-tests',
   sliceLabel: 'Os testes e o código que eles usam:',
   needsTestsAndCode: true,
-  personaId: 'developer',
-  camada: 4,
   slice: ({ testFiles = [], codeFiles = [], scope }) => [
     `Pode escrever em: ${(scope?.prefixes || []).join(', ')}`,
     '',
@@ -331,8 +351,6 @@ PACKS.code_from_tests = {
  */
 PACKS.sync_back = {
   skill: '_packs/sync-back',
-  personaId: 'product_owner',
-  camada: 3,
   slice: ({ snapshot }) => projectOutline(snapshot),
   change: ({ input }) => (input.changes || []).slice(0, 4)
     .map((change) => `### ${change.path}\n${cap(change.diff, 2000)}`).join('\n\n'),
@@ -385,7 +403,8 @@ function splitDrafts(parent, tasks, { now, actorUserId, newId }) {
       complexity: 'low',
       status: 'planned',
       origin: 'platform',
-      executorMode: parent.executorMode || 'both',
+      // 'both' would make each child's status derive from children it does not have.
+      executorMode: 'human',
       deliveryStageId: parent.deliveryStageId || 'unclassified',
       parentTaskId: parent.id,
       dependencyTaskIds: drafts.length ? [drafts[drafts.length - 1].id] : [],
@@ -435,59 +454,30 @@ function parseAnswer(raw) {
 
 /** Builds the runner the route calls. Same connection rules as the mockup runner. */
 function createPackRunner(deps) {
-  const { dataDir, runtime, connectorStore, agentConnectionMode } = deps;
+  const { dataDir, complete = llmCall.complete } = deps;
 
   return async function runPack(packId, context) {
     const pack = PACKS[packId];
     if (!pack) return { error: `Pacote desconhecido: ${packId}`, status: 404 };
     const inputError = pack.inputError?.(context);
     if (inputError) return { error: inputError, status: 400 };
-    if (agentConnectionMode === 'disabled') {
-      return { error: 'Execução por agente desactivada nesta instalação.', status: 503 };
-    }
-    if (agentConnectionMode === 'remote_pull' && !connectorStore?.activeConnector()) {
-      return { error: 'Nenhum Agent Runtime emparelhado. Emparelhe um em Definições da plataforma → Agent Runtime.', status: 409 };
-    }
 
-    const settings = await agentPlatformSettings.readAgentPlatformSettings(dataDir);
-    const persona = agentPersonas.resolvePersona(pack.personaId, settings.personas);
-    const routed = agentPlatformSettings.routeForPersona(settings, { personaId: pack.personaId, camada: pack.camada });
-    if (!routed.option) {
-      return { error: 'Nenhum modelo activo. Active um em Definições da plataforma → Modelos.', status: 409 };
-    }
-
-    let instructions;
+    let prompt;
     try {
-      instructions = buildInstructions(packId, context);
+      prompt = buildInstructions(packId, context);
     } catch (error) {
       return { error: error.message, status: 500 };
     }
 
     try {
-      const created = await runtime.createJob({
-        agentId: persona.id,
-        agentType: persona.taskTypes[0],
-        instructions,
-        llm: llmOptions.wireSpec(routed.option),
-        options: {
-          modelProfileId: routed.profileId,
-          llmOptionId: routed.option.id,
-          // One job, one pass.
-          planningWaveSize: 1,
-          enableWebSearch: false,
-        },
-      });
-      const answer = parseAnswer(created?.output ?? created?.result ?? created?.text);
+      const reply = await complete({ dataDir, prompt });
+      if (reply.error) return reply;
+      const answer = parseAnswer(reply.text);
       if (!answer) return { error: 'O modelo não devolveu o JSON pedido.', status: 502 };
       const { result, dropped } = pack.validate(answer, context);
-      return {
-        result,
-        dropped,
-        costUsd: Math.max(0, Number(created?.costUsed) || 0),
-        llmOptionId: routed.option.id,
-      };
+      return { result, dropped, costUsd: Math.max(0, Number(reply.costUsd) || 0), model: reply.model };
     } catch (error) {
-      return { error: `O Agent Runtime não respondeu: ${error.message}`, status: 502 };
+      return { error: `A DeepInfra não respondeu: ${error.message}`, status: 502 };
     }
   };
 }

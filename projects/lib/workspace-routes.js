@@ -24,6 +24,7 @@ const workspaceFormat = require('./workspace-format');
 const workspaceSync = require('./workspace-sync');
 const workItems = require('./work-items');
 const promptPacks = require('./prompt-packs');
+const aiSteps = require('./ai-steps');
 const { promptDiff } = require('./work-snapshot');
 const { RENDER_HEADERS } = require('./mockup-routes');
 
@@ -121,6 +122,17 @@ function registerWorkspaceRoutes(app, deps) {
     message: 'Este projecto não tem repositório ligado. Ligue um em Definições do projecto.',
   });
 
+  const stepRef = (key) => ({ type: 'ai_step', id: key });
+
+  /** The steps the survey implies, each with the task that carries it (if created). */
+  function stepsWithTasks(project) {
+    const items = workItems.getWorkItems(project);
+    return aiSteps.planSteps(project.repositorySurvey).map((step) => {
+      const task = workItems.findBySourceRef(items, stepRef(step.key));
+      return { key: step.key, kind: step.kind, title: step.title, target: step.target, task: task ? { id: task.id, status: task.status } : null };
+    });
+  }
+
   app.get('/api/projects/:projectId/workspace', authMiddleware, loadProjectForUser, async (req, res) => {
     const project = req.loadedProject;
     return res.json({
@@ -128,6 +140,7 @@ function registerWorkspaceRoutes(app, deps) {
       hasRepository: Boolean(gitRepositories.normalizeProjectRepository(project.repository)),
       guidePath: workspaceFormat.GUIDE_PATH,
       surveyModules: (project.repositorySurvey?.modules || []).map((entry) => entry.name),
+      aiSteps: stepsWithTasks(project),
     });
   });
 
@@ -210,7 +223,19 @@ function registerWorkspaceRoutes(app, deps) {
       // ponytail: reusing waiting_review so Hoje shows it as-is; give it its own tone if Hoje gets noisy.
       let task = null;
       const draft = workspaceFormat.taskFromEdit({ filePath, before, after: content, snapshot: workspace.snapshot });
-      if (draft) {
+      const stepKey = String(req.body?.aiStep || '');
+      if (stepKey) {
+        // Writing an AI step's proposal is that step's task being done — not new work.
+        await updateStore(async (store) => {
+          const project = store.projects.find((entry) => entry.id === req.params.projectId);
+          const list = workItems.getWorkItems(project);
+          const done = workItems.findBySourceRef(list, stepRef(stepKey));
+          if (!done) return;
+          Object.assign(done, { status: 'completed', updatedAt: new Date().toISOString(), updatedBy: req.auth.user.id });
+          workItems.setWorkItems(project, list);
+          task = workItems.findWorkItem(project, done.id);
+        });
+      } else if (draft) {
         const now = new Date().toISOString();
         await updateStore(async (store) => {
           const project = store.projects.find((entry) => entry.id === req.params.projectId);
@@ -222,7 +247,7 @@ function registerWorkspaceRoutes(app, deps) {
             complexity: 'medium',
             status: 'waiting_review',
             origin: 'platform',
-            executorMode: 'both',
+            executorMode: 'human',
             deliveryStageId: 'unclassified',
             sourceRefs: [{ type: 'artifact', id: filePath, label: filePath }],
             createdAt: now,
@@ -415,6 +440,106 @@ function registerWorkspaceRoutes(app, deps) {
   });
 
   // Creates the smaller tasks a person accepted from split_task, under the original.
+  /**
+   * One task per step of filling the artefacts from code. Steps that already have a task
+   * are left alone, so pressing it twice never duplicates work.
+   */
+  app.post('/api/projects/:projectId/ai-steps', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const steps = aiSteps.planSteps(req.loadedProject.repositorySurvey);
+      if (!steps.length) return res.status(409).json({ message: 'Levante o código primeiro (Resumo → Documentação).' });
+      let created = 0;
+      let stepList = [];
+      await updateStore(async (store) => {
+        const project = store.projects.find((entry) => entry.id === req.params.projectId);
+        if (!project) throw new Error('Projecto não encontrado.');
+        const list = workItems.getWorkItems(project);
+        const now = new Date().toISOString();
+        const records = steps
+          .filter((step) => !workItems.findBySourceRef(list, stepRef(step.key)))
+          .map((step) => workItems.normalizeWorkItem({
+            id: `witem_${crypto.randomUUID()}`,
+            title: `IA ${steps.indexOf(step) + 1}/${steps.length}: ${step.title}`,
+            descriptionMarkdown: `Escrever \`${step.target}\` a partir do código.\n\nExecute em Artefactos → Preencher a partir do código. Nada é escrito sem carregar em Escrever.`,
+            complexity: 'low',
+            status: 'planned',
+            origin: 'platform',
+            executorMode: 'human',
+            deliveryStageId: 'unclassified',
+            sourceRefs: [{ ...stepRef(step.key), label: step.target }],
+            createdAt: now,
+            updatedAt: now,
+            createdBy: req.auth.user.id,
+            updatedBy: req.auth.user.id,
+          }, { project, actorUserId: req.auth.user.id, nowIso: () => now }));
+        created = records.length;
+        workItems.setWorkItems(project, [...list, ...records].slice(0, 2000));
+        stepList = stepsWithTasks(project);
+        if (created) {
+          appendActivity(store, { projectId: project.id, actorUserId: req.auth.user.id, action: 'ai_stepListcreated', details: { count: created } });
+        }
+      });
+      return res.json({ created, aiSteps: stepList });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /** Runs one step: reads its sources, makes one call, returns files to review. Writes nothing. */
+  app.post('/api/projects/:projectId/ai-steps/run', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    if (typeof runPack !== 'function') return res.status(503).json({ message: 'Os pacotes de IA não estão ligados nesta instalação.' });
+    try {
+      const project = req.loadedProject;
+      const step = aiSteps.planSteps(project.repositorySurvey).find((entry) => entry.key === String(req.body?.key || ''));
+      if (!step) return res.status(404).json({ message: 'Passo desconhecido. Levante o código outra vez.' });
+      const repository = gitRepositories.normalizeProjectRepository(project.repository);
+      if (!repository) return noRepository(res);
+      const reader = await workspaceSync.pickReader(repository, { remoteClient });
+      const snapshot = project.workspace?.snapshot || null;
+
+      let outcome;
+      if (step.kind === 'spec') {
+        // Requirements already have their own pack; its answer becomes one file here.
+        const code = await readArea(repository, step.area);
+        outcome = await runPack('artefacts_from_code', { snapshot, code, input: { area: step.area } });
+        if (!outcome.error) {
+          const { result } = outcome;
+          outcome.result = {
+            files: result.requirements.length ? aiSteps.checkFiles(step, [{ path: result.path, content: result.spec }]) : [],
+            summary: result.summary,
+          };
+        }
+      } else {
+        const sources = [];
+        for (const filePath of step.sources) {
+          const content = await reader.readFile(filePath).catch(() => '');
+          if (content) sources.push({ path: filePath, content });
+        }
+        const single = !step.target.endsWith('/');
+        const current = single ? await reader.readFile(step.target).catch(() => '') : '';
+        outcome = await runPack('artefact_from_code', { snapshot, step, sources: aiSteps.readSources(sources), current, input: {} });
+      }
+      if (outcome.error) return res.status(outcome.status || 400).json({ message: outcome.error });
+      for (const file of outcome.result.files) {
+        const before = await reader.readFile(file.path).catch(() => '');
+        file.exists = Boolean(before);
+        file.sha = workspaceFormat.fileSha(before);
+        file.diff = promptDiff(before, file.content);
+      }
+      await updateStore(async (store) => {
+        appendActivity(store, {
+          projectId: req.params.projectId,
+          actorUserId: req.auth.user.id,
+          action: 'ai_step_run',
+          details: { key: step.key, costUsd: outcome.costUsd, model: outcome.model, files: outcome.result.files.length },
+        });
+      });
+      return res.json({ key: step.key, ...outcome });
+    } catch (error) {
+      return res.status(502).json({ message: error.message });
+    }
+  });
+
   app.post('/api/projects/projects/:projectId/work-items/:workItemId/split', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
     try {
       const tasks = (Array.isArray(req.body?.tasks) ? req.body.tasks : [])
