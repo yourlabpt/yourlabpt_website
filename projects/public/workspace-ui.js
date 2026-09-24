@@ -1144,6 +1144,11 @@
     select(target);
   }
 
+  /* ------------------------------------------------------------ splitting a task */
+
+  // Proposals per task id, so re-drawing the task editor does not lose them.
+  const splits = new Map();
+
   function projectIdNow() {
     return window.state?.selectedProject?.id || state.projectId;
   }

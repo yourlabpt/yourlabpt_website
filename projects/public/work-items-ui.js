@@ -642,6 +642,8 @@
       }
     }
     state.detailReview = payload.reviewTarget || null;
+    // Findings about the task's size, sent beside it rather than on it.
+    state.detailCutTest = Array.isArray(payload.cutTest) ? payload.cutTest : [];
     state.detailOrchestration = payload.orchestration || null;
     state.canManage = Boolean(payload.canManage);
     state.canPostUpdate = Boolean(payload.canPostUpdate);
@@ -962,8 +964,7 @@
    * task is visible *before* an agent spends money failing at it, and each finding names
    * where it gets fixed rather than only what is wrong.
    */
-  function cutTestBanner(detail) {
-    const findings = detail?.cutTest || [];
+  function cutTestBanner(findings = []) {
     if (!findings.length) return '';
     return `
       <section class="ado-editor-section ado-cut-test">
@@ -1512,7 +1513,7 @@
           </section>
         ` : ''}
 
-        ${cutTestBanner(detail)}
+        ${cutTestBanner(state.detailCutTest)}
 
         ${isCoordination ? `
           <section class="ado-editor-section ado-coordination-panel">
