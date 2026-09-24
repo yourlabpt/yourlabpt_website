@@ -128,10 +128,11 @@ describe('forward: platform to openspec', () => {
     const specs = sync.buildSpecsFromRequirements(PLATFORM_REQUIREMENTS);
     assert.equal(specs.length, 1);
     assert.equal(specs[0].capability, 'reservas');
-    // Stakeholder requirements are not part of a capability spec.
-    assert.deepEqual(specs[0].requirements.map((entry) => entry.id), ['FR-001', 'RNF-001']);
-    assert.equal(specs[0].requirements[0].scenarios[0].id, 'TC-001');
-    assert.equal(specs[0].requirements[1].scenarios.length, 0);
+    // Every kind is written, stakeholders included: the files are the whole record.
+    const ids = specs[0].requirements.map((entry) => entry.id);
+    assert.ok(ids.includes('FR-001') && ids.includes('RNF-001'));
+    assert.equal(specs[0].requirements.find((entry) => entry.id === 'FR-001').scenarios[0].id, 'TC-001');
+    assert.equal(specs[0].requirements.find((entry) => entry.id === 'RNF-001').scenarios.length, 0);
   });
 
   it('produces the project documents plus one spec.md per capability', () => {
@@ -365,7 +366,8 @@ describe('running openspec against a repository', () => {
     const specs = await repo.readSpecs(client, repository, result.branch);
     assert.equal(specs.length, 1);
     assert.equal(specs[0].capability, 'reservas');
-    assert.equal(specs[0].requirements.length, 2);
+    // STK, FR and RNF — every kind travels; the TC is a scenario under its FR.
+    assert.equal(specs[0].requirements.length, 3);
   });
 
   it('skips a push when the repository already matches the platform', async () => {
@@ -423,7 +425,7 @@ describe('running openspec against a repository', () => {
     const client = fakeRepositoryClient({ 'openspec/project.md': '# p' });
     const report = await repo.status(client, repository, PLATFORM_REQUIREMENTS);
     assert.equal(report.initialized, true);
-    assert.equal(report.platformRequirementCount, 2);
+    assert.equal(report.platformRequirementCount, 3);
     assert.equal(report.repositoryRequirementCount, 0);
     assert.equal(report.diff.inSync, false);
     assert.equal(client.changeRequests.length, 0);

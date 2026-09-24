@@ -2688,8 +2688,10 @@
     scheduleRuntimeHealthRefresh();
     scheduleTaskBoardRefresh();
 
-    if (!state.loaded) {
-      $('workItemsBoard').innerHTML = '<p class="ado-empty">A carregar tarefas…</p>';
+    // Always read again on open: tasks are created from Artefactos and by AI runs
+    // while this tab is not showing, and a stale board says they do not exist.
+    {
+      if (!state.loaded) $('workItemsBoard').innerHTML = '<p class="ado-empty">A carregar tarefas…</p>';
       try {
         await fetchList(project.id);
         await fetchMeta(project.id).catch(() => null);

@@ -243,9 +243,10 @@
           method: 'POST', body: { promptText },
         });
         state.openSessionId = created.session.id;
-        await api(`/${state.projectId}/mockups/${created.session.id}/iterate`, {
+        const first = await api(`/${state.projectId}/mockups/${created.session.id}/iterate`, {
           method: 'POST', body: { requestText: '' },
         });
+        if (first.seededFrom) window.showToast?.(`Partiu do mockup que o projecto já tinha (${first.seededFrom}).`, 'ok');
       });
       return;
     }
@@ -268,11 +269,11 @@
       if (verdict === 'discarded'
         && !window.confirm('Descartar esta sessão? As versões geradas deixam de estar acessíveis.')) return;
       run(async () => {
-        await api(`/${state.projectId}/mockups/${session.id}/verdict`, {
+        const result = await api(`/${state.projectId}/mockups/${session.id}/verdict`, {
           method: 'POST', body: { verdict, iterationId },
         });
         window.showToast?.(verdict === 'approved'
-          ? 'Mockup aprovado. A Descoberta pode avançar.'
+          ? (result.writtenTo ? `Mockup aprovado e escrito em ${result.writtenTo}.` : 'Mockup aprovado. Ligue um repositório para o guardar em yourlab/mockup/.')
           : 'Sessão descartada.', 'ok');
       });
     }

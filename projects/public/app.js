@@ -43,6 +43,9 @@ const NAV_GROUPS = [
     collapsible: true,
     items: [
       { id: 'camada0', label: 'Intenção', icon: 'bolt' },
+      // The platform's own requirement editor. Same requirements as Artefactos → Requisitos:
+      // the files in openspec/specs/ are pulled on every sync and pushed on every edit.
+      { id: 'requisitos', label: 'Editor de requisitos', icon: 'list' },
       { id: 'decisoes', label: 'Decisões', icon: 'branch' },
       { id: 'documentos', label: 'Documentos', icon: 'doc' },
       { id: 'perguntas', label: 'Perguntas', icon: 'help' },
@@ -1577,8 +1580,6 @@ function renderActiveTab(project, tabId) {
       renderClarificationQuestions(project);
       break;
     case 'requisitos':
-      // The repository's requirements, by type. The platform's own editor is below it.
-      window.WorkspaceUI?.renderRequisitos?.(project);
       // If this is an overview-only payload, load requirements first before rendering.
       if (project.hasHeavyData && !(Array.isArray(project.requirements) && project.requirements.length)) {
         renderRequirementModuleControls(project);
@@ -3047,9 +3048,7 @@ function switchToTab(tabId) {
   // navigation still arrive with the old names.
   if (target === 'fases') target = 'plano';
   if (target === 'deliveryos') target = 'projeto';
-  // Requisitos lives inside Artefactos now, as its «Por tipo» view.
-  const openRequirements = target === 'requisitos';
-  if (openRequirements) target = 'plano';
+
   if (target === 'hoje' && !canSeeHoje()) target = 'projetos';
   if (isClientUser() && !CLIENT_VISIBLE_TABS.has(target)) target = 'projeto';
   if (target === 'tarefas') {
@@ -3108,7 +3107,6 @@ function switchToTab(tabId) {
     window.PlatformSettingsUI?.render?.();
       window.GoogleSignInUI?.renderSettings?.();
   }
-  if (openRequirements && state.activeTab === 'plano') window.WorkspaceUI?.select?.('@requisitos');
   persistNavigationState();
 }
 

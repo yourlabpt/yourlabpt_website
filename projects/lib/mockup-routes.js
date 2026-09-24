@@ -6,6 +6,7 @@
  * name.
  */
 const aiRuns = require('./ai-runs');
+const workspaceIo = require('./workspace-io');
 const crypto = require('crypto');
 const mockupSessions = require('./mockup-sessions');
 const secretBox = require('./secret-box');
@@ -149,9 +150,16 @@ function registerMockupRoutes(app, deps) {
       if (blocked) return res.status(409).json({ message: blocked });
 
       const previousId = session.iterations[session.iterations.length - 1]?.id || '';
-      const previousHtml = previousId
+      // A first turn starts from the mockup the project already has, when it has one:
+      // the screen is improved, not reinvented.
+      let seededFrom = '';
+      let previousHtml = previousId
         ? await mockupSessions.loadIterationHtml(blobDeps, project.id, previousId)
         : '';
+      if (!previousId) {
+        const existing = await workspaceIo.readFile(dataDir, workspaceIo.repositoryOf(project), workspaceIo.MOCKUP_ENTRY).catch(() => '');
+        if (existing.trim()) { previousHtml = existing; seededFrom = workspaceIo.MOCKUP_ENTRY; }
+      }
 
       const produced = await startMockupRun({
         projectId: project.id,
@@ -198,7 +206,7 @@ function registerMockupRoutes(app, deps) {
         request: String(req.body?.requestText || session.promptText || '').slice(0, 1000),
         outcome: { costUsd: produced.costUsd, model: produced.llmOptionId, summary: `Ecrã gerado (iteração ${iterationId}).` },
       });
-      return res.json({ session: view });
+      return res.json({ session: view, seededFrom });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -216,12 +224,14 @@ function registerMockupRoutes(app, deps) {
       const verdict = String(req.body?.verdict || '');
       let view = null;
       let promoted = null;
+      let approvedId = '';
       await updateStore(async (store) => {
         const project = store.projects.find((entry) => entry.id === req.params.projectId);
         if (!project) throw new Error('Projeto nao encontrado.');
         const session = mockupSessions.recordVerdict(
           project, req.params.sessionId, req.body?.iterationId, verdict, nowIso(),
         );
+        approvedId = session.approvedIterationId || '';
         if (verdict === 'approved') {
           promoted = {
             id: `diag_${session.approvedIterationId}`,
@@ -243,7 +253,24 @@ function registerMockupRoutes(app, deps) {
           details: { sessionId: req.params.sessionId, iterationId: req.body?.iterationId },
         });
       });
-      return res.json({ session: view, promoted });
+      // An approved screen is the project's mockup: it goes to yourlab/mockup/, where
+      // Artefactos shows it and the next Intenção starts from it.
+      let writtenTo = '';
+      if (verdict === 'approved') {
+        const repository = workspaceIo.repositoryOf(req.loadedProject);
+        if (repository) {
+          const html = await mockupSessions.loadIterationHtml(blobDeps, req.params.projectId, approvedId);
+          if (html) {
+            await workspaceIo.writeFiles(dataDir, repository, [{ path: workspaceIo.MOCKUP_ENTRY, content: html }], 'mockup aprovado');
+            await workspaceIo.syncProject({ dataDir, updateStore, appendActivity }, req.params.projectId, repository, req.auth.user.id, () => ({
+              action: 'workspace_file_saved',
+              details: { path: workspaceIo.MOCKUP_ENTRY, source: 'mockup_approved' },
+            }));
+            writtenTo = workspaceIo.MOCKUP_ENTRY;
+          }
+        }
+      }
+      return res.json({ session: view, promoted, writtenTo });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }

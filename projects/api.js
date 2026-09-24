@@ -41,6 +41,7 @@ const llmProviderSettings = require('./lib/llm-provider-settings');
 const { registerOpenspecRoutes } = require('./lib/openspec-routes');
 const { registerSurveyRoutes } = require('./lib/survey-routes');
 const { registerWorkspaceRoutes } = require('./lib/workspace-routes');
+const workspaceIo = require('./lib/workspace-io');
 const { registerIntakeRoutes } = require('./lib/intake-routes');
 const { registerMockupRoutes } = require('./lib/mockup-routes');
 const { registerEpicRoutes } = require('./lib/epic-routes');
@@ -557,6 +558,11 @@ function registerRequirementsPlatform(app, options) {
       if (!sqliteStore.verifyRequirementsSaved(project.id, requirements)) {
         throw new Error(`SQLite nao confirmou requisitos do projeto ${project.id}`);
       }
+    }
+    // The files are the record: an edit to the requirements here reaches openspec/specs/
+    // a moment later, whichever editor made it. A pull from the files never re-pushes.
+    if (workspaceIo.noteRequirements(project.id, requirements) && workspaceIo.repositoryOf(full)) {
+      workspaceIo.schedulePush({ dataDir, updateStore, appendActivity, loadProject: ensureProjectLoaded }, project.id, full.updatedBy || '');
     }
 
     await blobStore.externalizeProjectBlobs(full, dataDir, writeJson);

@@ -15,9 +15,7 @@
  * written to directly.
  */
 const crypto = require('crypto');
-const gitSettings = require('./git-provider-settings');
 const gitRepositories = require('./git-repositories');
-const { createGitProviderClient } = require('./git-provider-client');
 const openspecRepository = require('./openspec-repository');
 const secretBox = require('./secret-box');
 const workspaceFormat = require('./workspace-format');
@@ -26,6 +24,7 @@ const workItems = require('./work-items');
 const promptPacks = require('./prompt-packs');
 const aiSteps = require('./ai-steps');
 const aiRuns = require('./ai-runs');
+const workspaceIo = require('./workspace-io');
 const { promptDiff } = require('./work-snapshot');
 const { RENDER_HEADERS } = require('./mockup-routes');
 
@@ -67,28 +66,11 @@ function forViewer(workspace, user) {
 function registerWorkspaceRoutes(app, deps) {
   const { authMiddleware, requireRole, loadProjectForUser, updateStore, appendActivity, dataDir, loadProject, runPack } = deps;
 
-  async function remoteClient() {
-    const settings = await gitSettings.readGitProviderSettings(dataDir);
-    const token = await gitSettings.resolveGitToken(dataDir);
-    return createGitProviderClient({ provider: settings.provider, apiBaseUrl: settings.apiBaseUrl, token });
-  }
+  const remoteClient = () => workspaceIo.remoteClient(dataDir);
+  const ioDeps = { dataDir, updateStore, appendActivity };
 
-  /** Reads the repository again and keeps the snapshot on the project. */
-  async function readAndStore(projectId, repository, actorUserId, activity) {
-    const { snapshot, source, ref } = await workspaceSync.syncWorkspace(repository, { remoteClient });
-    const workspace = { snapshot, source, ref, syncedAt: new Date().toISOString(), syncedBy: actorUserId };
-    await updateStore(async (store) => {
-      const target = store.projects.find((entry) => entry.id === projectId);
-      if (!target) throw new Error('Projecto não encontrado.');
-      const changed = target.workspace?.snapshot?.contentHash !== snapshot.contentHash;
-      target.workspace = workspace;
-      if (changed) {
-        target.updatedAt = workspace.syncedAt;
-        if (activity) appendActivity(store, { projectId, actorUserId, ...activity(snapshot, source) });
-      }
-    });
-    return workspace;
-  }
+  /** Reads the repository again, keeps the snapshot and pulls the requirements from it. */
+  const readAndStore = (projectId, repository, actorUserId, activity) => workspaceIo.syncProject(ioDeps, projectId, repository, actorUserId, activity);
 
   // What one area of code looks like to a pack: a few source files, each cut short.
   // ponytail: first N files by name; pick by size or recency if areas get large.
@@ -227,25 +209,14 @@ function registerWorkspaceRoutes(app, deps) {
         return res.status(409).json({ message: 'O ficheiro mudou no repositório desde que o abriu. Actualize e volte a aplicar as suas alterações.' });
       }
 
-      let changeRequest = null;
-      if (typeof reader.writeFile === 'function') {
-        await reader.writeFile(filePath, content);
-      } else {
-        const client = await remoteClient();
-        const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-        const result = await openspecRepository.commitFilesForReview(client, repository, {
-          files: [{ path: filePath, content }],
-          branch: `yourlab/edicao-${stamp}`,
-          title: `yourlab: ${filePath}`,
-          body: 'Editado na plataforma.',
-          commitMessage: `yourlab: ${filePath}`,
-        });
-        changeRequest = result.changeRequest;
-      }
+      // Working copy when there is one, a commit on the default branch otherwise — so
+      // the next read, from either place, already shows this save.
+      const written = await workspaceIo.writeFiles(dataDir, repository, [{ path: filePath, content }], 'yourlab');
+      const changeRequest = null;
 
       const workspace = await readAndStore(req.params.projectId, repository, req.auth.user.id, () => ({
         action: 'workspace_file_saved',
-        details: { path: filePath, source: reader.kind },
+        details: { path: filePath, source: written.source, branch: written.branch || '' },
       }));
 
       // A saved edit leaves exactly one task behind: the diff, and what it puts in doubt.
@@ -298,7 +269,7 @@ function registerWorkspaceRoutes(app, deps) {
         });
       }
 
-      return res.json({ workspace: forViewer(workspace, req.auth.user), sha: workspaceFormat.fileSha(content), changeRequest, task, diff: draft?.diff || '' });
+      return res.json({ workspace: forViewer(workspace, req.auth.user), sha: workspaceFormat.fileSha(content), changeRequest, written: written.source, branch: written.branch || '', task, diff: draft?.diff || '' });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -630,37 +601,21 @@ function registerWorkspaceRoutes(app, deps) {
       const project = req.loadedProject;
       const repository = gitRepositories.normalizeProjectRepository(project.repository);
       if (!repository) return noRepository(res);
-      // Same rule as saving: into the working copy when there is one, a change request otherwise.
+      // Same rule as saving: the working copy, or commits on the default branch.
       const reader = await workspaceSync.pickReader(repository, { remoteClient });
-      const existing = new Set(await reader.listTree(`${workspaceFormat.ROOT}/`));
-      // A project that already has code starts from what the survey found in it.
-      const files = workspaceFormat.skeletonFiles(project, { existing, survey: project.repositorySurvey || null });
-      if (typeof reader.writeFile === 'function') {
-        for (const file of files) await reader.writeFile(file.path, file.content);
-        const workspace = await readAndStore(project.id, repository, req.auth.user.id, () => ({
-          action: 'workspace_initialized',
-          details: { files: files.map((file) => file.path), source: 'local', fromSurvey: Boolean(project.repositorySurvey) },
-        }));
-        return res.json({ local: true, files: files.map((file) => file.path), workspace: forViewer(workspace, req.auth.user) });
-      }
-      const client = await remoteClient();
-      const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-      const result = await openspecRepository.commitFilesForReview(client, repository, {
-        files,
-        branch: `yourlab/pasta-${stamp}`,
-        title: 'yourlab/: o projecto documentado no repositório',
-        body: 'Cria o GUIDE.md e a pasta yourlab/ a partir do que a plataforma já sabia deste projecto. A partir daqui, é aqui que se escreve.',
-        commitMessage: 'yourlab: guia e pasta inicial',
-      });
-      await updateStore(async (store) => {
-        appendActivity(store, {
-          projectId: project.id,
-          actorUserId: req.auth.user.id,
-          action: 'workspace_initialized',
-          details: { files: result.files, branch: result.branch },
-        });
-      });
-      return res.json(result);
+      const existing = new Set([
+        ...await reader.listTree(`${workspaceFormat.ROOT}/`),
+        ...await reader.listTree(workspaceFormat.SPEC_PREFIX),
+      ]);
+      // A project that already has code starts from what the survey found in it; one
+      // with requirements on the platform takes them along as openspec/specs/.
+      const files = workspaceFormat.skeletonFiles(project, { existing, survey: project.repositorySurvey || null, requirements: project.requirements || [] });
+      const written = await workspaceIo.writeFiles(dataDir, repository, files, 'yourlab: guia e pasta inicial');
+      const workspace = await readAndStore(project.id, repository, req.auth.user.id, () => ({
+        action: 'workspace_initialized',
+        details: { files: files.map((file) => file.path), source: written.source, fromSurvey: Boolean(project.repositorySurvey) },
+      }));
+      return res.json({ local: written.source === 'local', written: written.source, files: files.map((file) => file.path), workspace: forViewer(workspace, req.auth.user) });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }

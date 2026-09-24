@@ -15,7 +15,10 @@
 const openspecFormat = require('./openspec-format');
 const decisionsLog = require('./decisions-log');
 
-const SPEC_TYPES = new Set(['functional', 'non_functional']);
+// Every kind of requirement is written to the files; a test case is a scenario of the
+// requirement it verifies rather than a requirement of its own.
+const SPEC_TYPES = new Set(['stakeholder', 'functional', 'non_functional', 'undefined', 'out_of_scope']);
+const ID_PREFIX = { stakeholder: 'STK', functional: 'FR', non_functional: 'RNF', test_case: 'TC', undefined: 'UQ', out_of_scope: 'OOS' };
 
 function text(value, fallback = '') {
   const result = value === null || value === undefined ? '' : String(value).trim();
@@ -158,8 +161,8 @@ function buildRequirementsFromSpecs(specs, { existingRequirements = [] } = {}) {
   const existing = ensureArray(existingRequirements);
   const existingById = new Map(existing.map((entry) => [text(entry.id), entry]));
   const records = [];
-  const counters = { functional: 0, non_functional: 0, test_case: 0 };
-  const prefix = { functional: 'FR', non_functional: 'RNF', test_case: 'TC' };
+  const counters = Object.fromEntries(Object.keys(ID_PREFIX).map((type) => [type, 0]));
+  const prefix = ID_PREFIX;
   const usedIds = new Set(existingById.keys());
 
   // A hand-written spec carries no platform ids. Without an identity fallback every
@@ -213,8 +216,10 @@ function buildRequirementsFromSpecs(specs, { existingRequirements = [] } = {}) {
         continue;
       }
 
-      const type = text(requirement.type) === 'non_functional' ? 'non_functional' : 'functional';
-      const requirementId = resolveId(type, moduleName, requirement.title, requirement.id);
+      const type = SPEC_TYPES.has(text(requirement.type)) ? text(requirement.type) : 'functional';
+      // The requirement's own module when it says one; the capability's otherwise.
+      const requirementModule = text(requirement.module) || moduleName;
+      const requirementId = resolveId(type, requirementModule, requirement.title, requirement.id);
       records.push({
         id: requirementId,
         type,
@@ -223,19 +228,19 @@ function buildRequirementsFromSpecs(specs, { existingRequirements = [] } = {}) {
         description: text(requirement.shall),
         rationale: text(requirement.rationale),
         priority: text(requirement.priority),
-        module: moduleName,
+        module: requirementModule,
         deliveryStageId: 'requirements',
         source: 'openspec',
       });
 
       for (const scenario of ensureArray(requirement.scenarios)) {
         records.push({
-          id: resolveId('test_case', moduleName, scenario.title, scenario.id),
+          id: resolveId('test_case', requirementModule, scenario.title, scenario.id),
           type: 'test_case',
           title: text(scenario.title, 'Cenario'),
           condition: text(scenario.when),
           measure: text(scenario.then),
-          module: moduleName,
+          module: requirementModule,
           deliveryStageId: 'validation',
           source: 'openspec',
           linkedFunctionalRequirement: requirementId,

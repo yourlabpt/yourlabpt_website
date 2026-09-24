@@ -727,11 +727,19 @@ function modulesDiagram(modules) {
  * files the repository does not have yet are returned — except GUIDE.md, which the
  * platform owns and always refreshes.
  */
-function skeletonFiles(project = {}, { existing = new Set(), survey = null } = {}) {
+function skeletonFiles(project = {}, { existing = new Set(), survey = null, requirements = [] } = {}) {
   const files = [{ path: GUIDE_PATH, content: guide() }];
   const add = (filePath, content) => {
     if (content && !existing.has(filePath)) files.push({ path: filePath, content });
   };
+
+  // Requirements the platform already holds move into the repository with the folder,
+  // so from here on the files are the whole record. Never over a spec someone wrote.
+  if (Array.isArray(requirements) && requirements.length && ![...existing].some((filePath) => filePath.startsWith(SPEC_PREFIX))) {
+    for (const spec of require('./openspec-sync').buildSpecsFromRequirements(requirements)) {
+      add(openspecFormat.specPath(spec.capability), openspecFormat.serializeSpec(spec));
+    }
+  }
 
   if (survey) {
     const projectMd = serializeProject({

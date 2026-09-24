@@ -219,6 +219,8 @@ PACKS.edit_artefact = {
   label: 'Editar artefacto',
   skill: '_packs/edit-artefact',
   needsFile: true,
+  // A whole mockup screen is the file; cutting it would return a cut file.
+  sliceMax: 24000,
   sliceLabel: 'O ficheiro, como está agora:',
   slice: ({ input, current }) => `${input.path}\n\n${current || '(ainda vazio)'}`,
   change: ({ input }) => [
@@ -467,7 +469,7 @@ function buildInstructions(packId, context) {
     method,
     '---',
     pack.sliceLabel || 'O projecto (só nomes e títulos):',
-    cap(pack.slice(context), MAX_SLICE_CHARS),
+    cap(pack.slice(context), pack.sliceMax || MAX_SLICE_CHARS),
     '---',
     'A alteração:',
     cap(pack.change(context), MAX_CHANGE_CHARS),
