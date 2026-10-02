@@ -122,13 +122,87 @@
       ${block('Entregáveis', piece.deliverables?.length ? `<ul class="av-checklist">${piece.deliverables.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '')}`;
   }
 
+  /** A Mermaid diagram with its tools: zoom, fit, export, copy. The canvas pans and zooms. */
+  function mermaidBlock(source, { tools = true } = {}) {
+    return `
+      <div class="av-diagram-wrap">
+        ${tools ? `<div class="av-diagram-tools">
+          <button type="button" class="btn tiny" data-av-zoom="out" aria-label="Reduzir">−</button>
+          <button type="button" class="btn tiny" data-av-zoom="fit">Ajustar</button>
+          <button type="button" class="btn tiny" data-av-zoom="in" aria-label="Ampliar">+</button>
+          <span class="av-diagram-sep"></span>
+          <button type="button" class="btn tiny" data-av-export="svg">SVG</button>
+          <button type="button" class="btn tiny" data-av-export="png">PNG</button>
+          <button type="button" class="btn tiny" data-av-copy>Copiar código</button>
+          <span class="av-diagram-hint">roda do rato amplia · arrastar move</span>
+        </div>` : ''}
+        <div class="av-diagram" data-av-mermaid="${esc(source)}"><div class="av-diagram-canvas">A desenhar…</div></div>
+        <p class="av-diagram-error" hidden></p>
+      </div>`;
+  }
+
   // Mermaid prints the %% title itself, so the view adds no heading of its own.
   function diagram(piece) {
-    return `<div class="av-diagram" data-av-mermaid="${esc(piece.source)}">A desenhar…</div>`;
+    return mermaidBlock(piece.source);
+  }
+
+  function mermaidId(name) {
+    return String(name || 'x').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'x';
+  }
+  function mermaidLabel(text) {
+    return String(text || '').replace(/"/g, "'");
+  }
+
+  /** The entities as an ER diagram. A field named <entidade>_id, or typed as an entity, is a link. */
+  function erDiagramFrom(entities) {
+    const names = new Map(entities.map((entity) => [mermaidId(entity.name).toLowerCase(), entity]));
+    const lines = ['erDiagram'];
+    const links = [];
+    for (const entity of entities) {
+      const id = mermaidId(entity.name);
+      lines.push(`  ${id} {`);
+      for (const field of entity.fields) {
+        const type = mermaidId(field.type || 'texto').toLowerCase();
+        const key = /^id$/i.test(field.name) ? ' PK' : /_id$/i.test(field.name) ? ' FK' : '';
+        lines.push(`    ${type} ${mermaidId(field.name)}${key}`);
+        const ref = field.name.match(/^(.+)_id$/i)?.[1] || field.type;
+        const target = ref && names.get(mermaidId(ref).toLowerCase());
+        if (target && target !== entity) links.push(`  ${mermaidId(target.name)} ||--o{ ${id} : "${mermaidLabel(field.name)}"`);
+      }
+      lines.push('  }');
+    }
+    return [...lines, ...links].join('\n');
+  }
+
+  /** The steps as a flow, top to bottom. */
+  function flowchartFrom(title, steps) {
+    const lines = ['flowchart TD'];
+    steps.forEach((step, index) => {
+      lines.push(`  s${index + 1}["${index + 1}. ${mermaidLabel(step).slice(0, 80)}"]`);
+      if (index) lines.push(`  s${index} --> s${index + 1}`);
+    });
+    return lines.join('\n');
+  }
+
+  /** Two ways of seeing the same thing, with a switch. The second is drawn only when shown. */
+  function twoViews(first, second, labels) {
+    return `
+      <div class="av-two" data-av-mode="a">
+        <div class="ios-segmented av-two-switch" role="tablist">
+          <button type="button" class="ios-segment is-active" data-av-toggle="a">${esc(labels[0])}</button>
+          <button type="button" class="ios-segment" data-av-toggle="b">${esc(labels[1])}</button>
+        </div>
+        <div class="av-two-a">${first}</div>
+        <div class="av-two-b" hidden>${second}</div>
+      </div>`;
   }
 
   function database(piece) {
     if (!piece?.entities?.length) return empty('Ainda sem entidades.');
+    return twoViews(entityTables(piece), mermaidBlock(erDiagramFrom(piece.entities)), ['Tabelas', 'Diagrama']);
+  }
+
+  function entityTables(piece) {
     return `<div class="av-entities">${piece.entities.map((entity) => `
       <section class="av-entity">
         <h3 class="av-entity-name">${esc(entity.name)} <span class="ios-count">${entity.fields.length}</span></h3>
@@ -142,8 +216,9 @@
 
   function workflow(piece) {
     // The title is the viewer's own heading; the view is the steps.
-    return `
-      ${piece.steps?.length ? `<ol class="av-steps">${piece.steps.map((step) => `<li>${esc(step)}</li>`).join('')}</ol>` : empty('Ainda sem passos.')}`;
+    if (!piece.steps?.length) return empty('Ainda sem passos.');
+    const list = `<ol class="av-steps">${piece.steps.map((step) => `<li>${esc(step)}</li>`).join('')}</ol>`;
+    return twoViews(list, mermaidBlock(flowchartFrom(piece.title, piece.steps)), ['Passos', 'Fluxo']);
   }
 
   function mockup(piece) {
@@ -177,6 +252,7 @@
           ${requirement.rationale ? `<p class="ios-footnote">Porque: ${esc(requirement.rationale)}</p>` : ''}
           ${scenarios ? `<h3 class="av-label">Cenários de aceitação</h3><div class="ios-list ios-sublist">${scenarios}</div>` : ''}
           ${opts.showCapability ? `<div class="ios-card-actions"><button type="button" class="btn" data-ws-open="${esc(entry.path)}">Abrir ${esc(capability)}</button></div>` : ''}
+          ${opts.editable ? `<div class="ios-card-actions"><button type="button" class="btn" data-ws-req-edit="${esc(requirement.id || requirement.title)}">Editar requisito</button></div>` : ''}
         </div>
       </details>`;
   }
@@ -196,16 +272,19 @@
     return sections || empty('Ainda sem requisitos.');
   }
 
-  function spec(piece) {
+  function spec(piece, opts = {}) {
     const entries = (piece.requirements || []).map((requirement) => ({ requirement, capability: piece.capability, path: piece.file }));
     const untyped = entries.filter((entry) => entry.requirement.type === 'undefined').length;
     return `
       <header class="av-hero">
         <p class="av-kicker">Capacidade</p>
         <h2 class="av-title">${esc(piece.title || piece.capability)}</h2>
-        <div class="av-meta"><span class="ios-chip">${entries.length} requisito${entries.length === 1 ? '' : 's'}</span>${untyped ? kit().badge('amber', `${untyped} por definir`) : ''}</div>
+        <div class="av-meta">
+          <span class="ios-chip">${entries.length} requisito${entries.length === 1 ? '' : 's'}</span>${untyped ? kit().badge('amber', `${untyped} por definir`) : ''}
+          ${opts.editable ? '<button type="button" class="btn tiny" data-ws-req-new>+ Novo requisito</button>' : ''}
+        </div>
       </header>
-      ${byType(entries)}`;
+      ${byType(entries, { editable: opts.editable })}`;
   }
 
   /** Everything the snapshot holds as requirements, across capabilities, by type. */
@@ -250,7 +329,7 @@
                 : kind === 'database' ? database(piece)
                   : kind === 'workflow' ? workflow(piece)
                     : kind === 'mockup' ? mockup(piece)
-                      : kind === 'spec' ? spec(piece)
+                      : kind === 'spec' ? spec(piece, opts)
                         : empty('Formato desconhecido.');
     return `${opts.hideFindings ? '' : findingsBanner(view.findings)}<div class="av-doc av-${kind}">${body}</div>`;
   }
@@ -261,12 +340,29 @@
     if (!nodes.length) return;
     window.ensureMermaidLoaded?.().then((mermaid) => {
       nodes.forEach((node, index) => {
-        // Mermaid throws on a half-written diagram; that is normal while typing.
+        const canvas = node.querySelector('.av-diagram-canvas') || node;
+        const note = node.parentElement?.querySelector?.('.av-diagram-error');
+        // Mermaid throws on a half-written diagram; that is normal while typing. The last
+        // good drawing stays, dimmed, with the error and its line next to it.
         mermaid.render(`av-diagram-${Date.now()}-${index}`, node.dataset.avMermaid.trim())
-          .then(({ svg }) => { node.innerHTML = svg; })
-          .catch((error) => { node.innerHTML = empty(String(error.message || error).split('\n')[0]); });
+          .then(({ svg }) => {
+            canvas.innerHTML = svg;
+            canvas.classList.remove('is-stale');
+            if (note) note.hidden = true;
+            canvas.style.transform = '';
+            delete node.dataset.avZoom;
+          })
+          .catch((error) => {
+            const message = String(error.message || error).split('\n').find((line) => /parse error|error/i.test(line)) || String(error.message || error).split('\n')[0];
+            if (canvas.querySelector('svg')) {
+              canvas.classList.add('is-stale');
+              if (note) { note.textContent = message; note.hidden = false; }
+            } else {
+              canvas.innerHTML = empty(message);
+            }
+          });
       });
-    }).catch(() => nodes.forEach((node) => { node.innerHTML = empty('Mermaid não disponível.'); }));
+    }).catch(() => nodes.forEach((node) => { (node.querySelector('.av-diagram-canvas') || node).innerHTML = empty('Mermaid não disponível.'); }));
   }
 
   /* ------------------------------------------------------------ one line per artefact */
@@ -300,6 +396,8 @@
   window.ArtefactViews = {
     render,
     hydrate,
+    erDiagramFrom,
+    flowchartFrom,
     requirementsOverview,
     requirementTypes,
     findingsBanner,

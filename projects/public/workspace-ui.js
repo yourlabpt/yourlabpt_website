@@ -148,40 +148,173 @@
 
   /* ------------------------------------------------------------ the mockup */
 
-  function closeSheet() {
-    document.getElementById('workspaceMockupSheet')?.remove();
+  /* ------------------------------------------------------------ presenting: one artefact at a time, full screen */
+
+  // Shown to the client: the page disappears, one artefact fills the screen, ← → walk
+  // the list in the order of the page. A mockup gets its screens as a rail and a device
+  // width; everything else gets its formatted view, larger.
+  const DEVICES = { phone: ['Telemóvel', 390], tablet: ['Tablet', 834], full: ['Ecrã', 0] };
+  const stage = { open: false, items: [], index: 0, screen: '', device: 'full', rail: true, views: new Map(), mockupBase: '' };
+
+  function stageItems(snap) {
+    const items = [];
+    for (const group of GROUPS) {
+      for (const row of groupRows(group, snap)) {
+        if (row.target.startsWith('@group:') || row.missing) continue;
+        items.push({ target: row.target, title: row.title, group: group.label });
+      }
+    }
+    return items;
   }
 
-  function showSheet(url, current, screens) {
-    closeSheet();
-    const sheet = document.createElement('div');
-    sheet.className = 'ios-sheet-backdrop';
-    sheet.id = 'workspaceMockupSheet';
-    sheet.innerHTML = `
-      <div class="ios-sheet" role="dialog" aria-modal="true" aria-label="Mockup">
-        <header class="ios-sheet-head">
-          <span class="ios-card-title">Mockup</span>
-          ${screens.length > 1 ? `<div class="ios-segmented" role="tablist">${screens.map((screen) => `
-            <button type="button" role="tab" class="ios-segment ${screen.file === current ? 'is-active' : ''}" data-ws-screen="${esc(screen.file)}">${esc(screen.title)}</button>`).join('')}</div>` : ''}
-          <button type="button" class="btn ios-round" data-ws-close aria-label="Fechar">${icon('close', 18)}</button>
-        </header>
-        <iframe class="ios-sheet-frame" sandbox="" referrerpolicy="no-referrer" title="Mockup" src="${esc(url)}"></iframe>
-      </div>`;
-    document.body.appendChild(sheet);
+  async function openStage(target, { screen = '' } = {}) {
+    const snap = snapshot();
+    if (!snap?.initialized) return;
+    stage.items = stageItems(snap);
+    if (!stage.items.length) return;
+    const index = stage.items.findIndex((item) => item.target === target);
+    Object.assign(stage, { open: true, index: index >= 0 ? index : 0, screen, views: stage.views || new Map() });
+    if (!stage.mockupBase && snap.mockup?.screens?.length) {
+      try {
+        const { url } = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/mockup-link?screen=${encodeURIComponent(snap.mockup.entry || snap.mockup.screens[0].file)}`);
+        // The ticket is in the path: the same base serves every screen.
+        stage.mockupBase = url.slice(0, url.lastIndexOf('/') + 1);
+      } catch (error) {
+        window.showToast?.(error.message, 'error');
+      }
+    }
+    document.body.classList.add('av-stage-open');
+    document.addEventListener('keydown', stageKeys, true);
+    paintStage();
   }
 
-  async function openMockup(screen) {
+  function closeStage() {
+    if (!stage.open) return;
+    stage.open = false;
+    document.getElementById('artefactStage')?.remove();
+    document.body.classList.remove('av-stage-open');
+    document.removeEventListener('keydown', stageKeys, true);
+    if (document.fullscreenElement) document.exitFullscreen?.();
+  }
+
+  function stageMove(delta) {
+    const next = stage.index + delta;
+    if (next < 0 || next >= stage.items.length) return;
+    stage.index = next;
+    stage.screen = '';
+    paintStage();
+  }
+
+  function stageKeys(event) {
+    if (event.target?.matches?.('input, textarea, select')) return;
+    if (event.key === 'Escape') { event.stopPropagation(); closeStage(); }
+    else if (event.key === 'ArrowRight' || event.key === 'PageDown') stageMove(1);
+    else if (event.key === 'ArrowLeft' || event.key === 'PageUp') stageMove(-1);
+    else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const screens = stageScreens();
+      if (!screens.length) return;
+      const at = Math.max(0, screens.findIndex((entry) => entry.file === stageScreenFile()));
+      const to = screens[at + (event.key === 'ArrowDown' ? 1 : -1)];
+      if (to) { stage.screen = to.file; paintStage(); }
+    }
+  }
+
+  function stageCurrent() { return stage.items[stage.index]; }
+  function stageIsMockup() { return stageCurrent()?.target.startsWith('yourlab/mockup/'); }
+  function stageScreens() { return stageIsMockup() ? (snapshot()?.mockup?.screens || []) : []; }
+  function stageScreenFile() { return stage.screen || stageCurrent()?.target.split('/').pop(); }
+
+  /** The formatted view of one artefact, read once and kept while the stage is open. */
+  async function stageView(target) {
+    if (stage.views.has(target)) return stage.views.get(target);
+    const pending = (async () => {
+      if (target === '@requisitos') return { overview: true };
+      const file = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/file?path=${encodeURIComponent(target)}`);
+      return file.view;
+    })();
+    stage.views.set(target, pending);
+    try { return await pending; } catch (error) { stage.views.delete(target); throw error; }
+  }
+
+  function paintStage() {
+    if (!stage.open) return;
+    let host = document.getElementById('artefactStage');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'artefactStage';
+      host.className = 'av-stage';
+      host.setAttribute('role', 'dialog');
+      host.setAttribute('aria-modal', 'true');
+      document.body.appendChild(host);
+    }
+    const k = kit();
+    const item = stageCurrent();
+    const total = stage.items.length;
+    const isMockup = stageIsMockup();
+    const screens = stageScreens();
+    const file = stageScreenFile();
+    const current = screens.find((entry) => entry.file === file);
+    host.innerHTML = `
+      <header class="av-stage-head">
+        <button type="button" class="btn ios-round" data-stage="close" aria-label="Fechar">${icon('close', 18)}</button>
+        <div class="av-stage-title">
+          <p class="av-kicker">${esc(item.group)}${isMockup && screens.length > 1 ? ` · ecrã ${Math.max(0, screens.findIndex((entry) => entry.file === file)) + 1} de ${screens.length}` : ''}</p>
+          <h2>${esc(isMockup && current ? current.title : item.title)}</h2>
+        </div>
+        ${isMockup ? `
+          <div class="ios-segmented av-stage-devices" role="tablist">${Object.entries(DEVICES).map(([id, [label]]) => `
+            <button type="button" class="ios-segment ${stage.device === id ? 'is-active' : ''}" data-stage-device="${id}">${label}</button>`).join('')}</div>
+          ${screens.length > 1 ? `<button type="button" class="btn ${stage.rail ? 'primary' : ''}" data-stage="rail">Ecrãs · ${screens.length}</button>` : ''}` : ''}
+        <span class="av-stage-count">${stage.index + 1} / ${total}</span>
+        <button type="button" class="btn ios-round" data-stage="prev" ${stage.index === 0 ? 'disabled' : ''} aria-label="Anterior">${icon('chevronLeft', 18)}</button>
+        <button type="button" class="btn ios-round" data-stage="next" ${stage.index === total - 1 ? 'disabled' : ''} aria-label="Seguinte">${icon('chevronRight', 18)}</button>
+        <button type="button" class="btn" data-stage="fullscreen" title="Ocupar o ecrã todo">${document.fullscreenElement ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}</button>
+      </header>
+      <div class="av-stage-body ${isMockup ? 'is-mockup' : ''}">
+        ${isMockup ? `
+          ${screens.length > 1 && stage.rail ? `<nav class="av-stage-rail" aria-label="Ecrãs"><div class="ios-list">${screens.map((screen) => `
+            <button type="button" class="ios-row ${screen.file === file ? 'is-selected' : ''}" data-stage-screen="${esc(screen.file)}">
+              <span class="ios-row-main"><span class="ios-row-title">${esc(screen.title)}</span><span class="ios-row-sub">${esc(screen.file)}</span></span>
+            </button>`).join('')}</div></nav>` : ''}
+          <div class="av-stage-frame-wrap">
+            <div class="av-stage-device" style="${DEVICES[stage.device][1] ? `width:${DEVICES[stage.device][1]}px` : ''}">
+              ${stage.mockupBase ? `<iframe class="av-stage-frame" sandbox="" referrerpolicy="no-referrer" title="${esc(current?.title || 'Mockup')}" src="${esc(stage.mockupBase + file)}"></iframe>` : '<p class="av-empty">Sem ligação ao mockup.</p>'}
+            </div>
+          </div>`
+    : '<div class="av-stage-doc" id="artefactStageDoc"><p class="av-empty">A ler…</p></div>'}
+      </div>
+      <p class="av-stage-hint">← → artefacto anterior / seguinte${screens.length > 1 ? ' · ↑ ↓ ecrã' : ''} · Esc fecha</p>`;
+    if (!isMockup) {
+      const seq = stage.index;
+      stageView(item.target).then((view) => {
+        if (!stage.open || stage.index !== seq) return;
+        const doc = document.getElementById('artefactStageDoc');
+        if (!doc) return;
+        doc.innerHTML = view?.overview
+          ? window.ArtefactViews.requirementsOverview(snapshot())
+          : window.ArtefactViews.render(view, { capabilities: capabilities(), hideFindings: true });
+        window.ArtefactViews.hydrate(doc);
+      }).catch((error) => {
+        const doc = document.getElementById('artefactStageDoc');
+        if (doc) doc.innerHTML = `<p class="av-empty">${esc(error.message)}</p>`;
+      });
+    }
+    // The next one is read while this one is being shown.
+    for (const neighbour of [stage.items[stage.index + 1], stage.items[stage.index - 1]]) {
+      if (neighbour && !neighbour.target.startsWith('yourlab/mockup/')) stageView(neighbour.target).catch(() => {});
+    }
+  }
+
+  /** «Abrir em grande» / «Ver mockup»: the stage, on the mockup. */
+  function openMockup(screen) {
     const snap = snapshot();
     const screens = snap?.mockup?.screens || [];
     const file = screen || snap?.mockup?.entry || screens[0]?.file;
     if (!file) return;
-    try {
-      const { url } = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/mockup-link?screen=${encodeURIComponent(file)}`);
-      showSheet(url, file, screens);
-    } catch (error) {
-      window.showToast?.(error.message, 'error');
-    }
+    openStage(`yourlab/mockup/${file}`, { screen: file });
   }
+
+  function closeSheet() { closeStage(); }
 
   /* ------------------------------------------------------------ Resumo's card */
 
@@ -494,8 +627,13 @@
 
   async function saveFile() {
     const field = document.getElementById('artefactText');
-    if (!view.sel || view.saving || !field) return;
-    const content = field.value;
+    if (!field) return;
+    return saveContent(field.value);
+  }
+
+  /** Writes `content` as the open artefact. The editor and the requirement form both end here. */
+  async function saveContent(content) {
+    if (!view.sel || view.saving) return;
     const target = view.sel;
     view.saving = true;
     paintArtefactos();
@@ -535,6 +673,56 @@
 
   const DIRTY_NOTE = 'Não guardado — o ficheiro só muda ao Guardar.';
 
+  // What each kind of file is made of, one button each. A snippet lands on its own line
+  // at the caret; «passo» and «entidade» count what is already there.
+  const SNIPPETS = {
+    project: [['Contexto', '\n## Contexto\n'], ['Risco', '- '], ['Assunção', '- '], ['Secção', '\n## '], ['Lista', '- ']],
+    ideas: [['Ideia', '\n## Nome da ideia\n- Estado: nova\nPorque pode importar.\n'], ['Estado', '- Estado: a explorar']],
+    questions: [['Pergunta', '\n## A pergunta?\n- Para: cliente\n- Estado: aberta\n'], ['Resposta', '- Resposta: '], ['Respondida', '- Estado: respondida']],
+    phase: [['Feature', '\n### Nome da feature\n- Requisitos: \nO que faz.\n'], ['Requisitos', '- Requisitos: '], ['Entregável', '- '], ['Objetivo', '\n## Objetivo\n'], ['Entregáveis', '\n## Entregáveis\n- ']],
+    diagram: [['Nó', '  A[Nome]\n'], ['Ligação', '  A --> B\n'], ['Ligação com texto', '  A -- texto --> B\n'], ['Grupo', '  subgraph Nome\n    A\n  end\n'], ['Base de dados', '  Base[(Base de dados)]\n']],
+    database: [['Entidade', (text) => `\n## Entidade: Nome\n| Campo | Tipo | Notas |\n|---|---|---|\n| id | uuid | |\n`], ['Campo', '| campo | texto | |\n'], ['Ligação', '| outra_id | uuid | liga a Outra |\n']],
+    workflow: [['Passo', (text) => `${(text.match(/^\s*\d+[.)]/gm) || []).length + 1}. `], ['Nota', '\n']],
+    spec: [['Requisito', '\n### Requirement: Título\n<!-- yourlab: type=functional -->\n\nO sistema SHALL …\n'], ['Cenário', '\n#### Scenario: Caso\n- **WHEN** …\n- **THEN** …\n'], ['Tipo', '<!-- yourlab: type=functional -->'], ['Porquê', '_Porque:_ ']],
+    mockup: [['Secção', '<section>\n  <h2>Título</h2>\n</section>\n'], ['Cartão', '<div class="card">\n  <b>Nome</b><br>Texto\n</div>\n'], ['Botão', '<button>Acção</button>'], ['Ligação a outro ecrã', '<a href="outro.html">Ir</a>']],
+  };
+
+  function kindOfPath(filePath) {
+    return filePath.startsWith('openspec/') ? 'spec'
+      : /^yourlab\/phases\//.test(filePath) ? 'phase'
+        : /^yourlab\/diagrams\//.test(filePath) ? 'diagram'
+          : /^yourlab\/workflows\//.test(filePath) ? 'workflow'
+            : /^yourlab\/mockup\//.test(filePath) ? 'mockup'
+              : filePath.split('/').pop().replace('.md', '');
+  }
+
+  function toolbar() {
+    const kind = kindOfPath(view.sel);
+    const items = SNIPPETS[kind] || [];
+    return `
+      <div class="av-toolbar">
+        ${items.map(([label], index) => `<button type="button" class="btn tiny" data-ws-snippet="${index}" title="Inserir ${esc(label.toLowerCase())}">${esc(label)}</button>`).join('')}
+        ${items.length ? '<span class="av-toolbar-sep"></span>' : ''}
+        <span class="ios-footnote">⌘S guarda · Tab indenta · Enter continua listas</span>
+      </div>`;
+  }
+
+  /** Puts a snippet on its own line at the caret and keeps the caret after it. */
+  function insertSnippet(index) {
+    const field = document.getElementById('artefactText');
+    const entry = (SNIPPETS[kindOfPath(view.sel)] || [])[index];
+    if (!field || !entry) return;
+    const raw = typeof entry[1] === 'function' ? entry[1](field.value) : entry[1];
+    const before = field.value.slice(0, field.selectionStart);
+    const after = field.value.slice(field.selectionEnd);
+    const atLineStart = !before || before.endsWith('\n');
+    const snippet = (raw.startsWith('\n') || atLineStart ? '' : '\n') + raw;
+    field.setRangeText(snippet, field.selectionStart, field.selectionEnd, 'end');
+    field.focus();
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    void after;
+  }
+
   function editPane() {
     const text = currentText();
     const dirty = text !== view.content || view.isNew;
@@ -546,6 +734,7 @@
       </div>
       <div class="av-edit" data-pane="${view.pane}">
         <div class="av-edit-text">
+          ${toolbar()}
           <textarea id="artefactText" class="ios-editor-text" spellcheck="false">${esc(text)}</textarea>
           <div id="artefactFindings">${window.ArtefactViews.findingsBanner(view.live?.findings || [])}</div>
         </div>
@@ -556,6 +745,117 @@
         <button type="button" class="btn" data-ws-action="cancel">${dirty ? 'Descartar' : 'Fechar'}</button>
         <button type="button" class="btn primary" data-ws-action="save" ${view.saving || !dirty ? 'disabled' : ''}>${view.saving ? 'A guardar…' : 'Guardar'}</button>
       </div>`;
+  }
+
+  /* ------------------------------------------------------------ a requirement as a form */
+
+  const TYPE_OPTIONS = ['stakeholder', 'functional', 'non_functional', 'test_case', 'undefined', 'out_of_scope'];
+
+  function closeReqForm() { document.getElementById('reqForm')?.remove(); }
+
+  function openReqForm(key) {
+    closeReqForm();
+    const piece = view.saved?.piece;
+    const found = key ? (piece?.requirements || []).find((entry) => (entry.id && entry.id === key) || entry.title === key) : null;
+    const req = found || { id: '', type: 'functional', module: '', priority: '', title: '', shall: '', rationale: '', scenarios: [] };
+    const types = window.ArtefactViews.requirementTypes();
+    const scenarioRow = (scenario = {}) => `
+      <div class="av-scenario">
+        <input class="ios-input" name="sTitle" placeholder="Cenário" value="${esc(scenario.title || '')}" />
+        <input class="ios-input" name="sWhen" placeholder="QUANDO…" value="${esc(scenario.when || '')}" />
+        <input class="ios-input" name="sThen" placeholder="ENTÃO…" value="${esc(scenario.then || '')}" />
+        <button type="button" class="btn tiny" data-req-scenario-remove aria-label="Remover">×</button>
+      </div>`;
+    const host = document.createElement('div');
+    host.id = 'reqForm';
+    host.className = 'av-modal';
+    host.innerHTML = `
+      <form class="av-modal-card" data-req-form data-req-key="${esc(key || '')}">
+        <header class="av-modal-head">
+          <h2>${found ? 'Editar requisito' : 'Novo requisito'}</h2>
+          <button type="button" class="btn ios-round" data-req-close aria-label="Fechar">${icon('close', 18)}</button>
+        </header>
+        <div class="av-form">
+          <label class="full">Título<input class="ios-input" name="title" required value="${esc(req.title)}" /></label>
+          <label>Tipo<select name="type">${TYPE_OPTIONS.map((id) => `<option value="${id}" ${req.type === id ? 'selected' : ''}>${esc(types[id]?.prefix || '')} · ${esc(types[id]?.label || id)}</option>`).join('')}</select></label>
+          <label>Id<input class="ios-input" name="id" placeholder="ex.: FR-12" value="${esc(req.id)}" /></label>
+          <label>Módulo<input class="ios-input" name="module" placeholder="ex.: Backend" value="${esc(req.module)}" /></label>
+          <label>Prioridade<select name="priority"><option value="">—</option>${['high', 'medium', 'low'].map((id) => `<option value="${id}" ${req.priority === id ? 'selected' : ''}>${{ high: 'Alta', medium: 'Média', low: 'Baixa' }[id]}</option>`).join('')}</select></label>
+          <label class="full">O sistema SHALL…<textarea name="shall">${esc(req.shall)}</textarea></label>
+          <label class="full">Porquê<input class="ios-input" name="rationale" value="${esc(req.rationale)}" /></label>
+          <div class="av-scenarios">
+            <span class="av-label">Cenários de aceitação</span>
+            <div data-req-scenarios>${(req.scenarios || []).map(scenarioRow).join('')}</div>
+            <div><button type="button" class="btn tiny" data-req-scenario-add>+ Cenário</button></div>
+          </div>
+        </div>
+        <footer class="av-modal-foot">
+          <div>${found ? '<button type="button" class="btn" data-req-remove>Remover</button>' : ''}</div>
+          <div><button type="button" class="btn" data-req-close>Cancelar</button><button type="submit" class="btn primary">Guardar no ficheiro</button></div>
+        </footer>
+      </form>`;
+    host.dataset.scenarioRow = scenarioRow();
+    document.body.appendChild(host);
+    host.querySelector('[name="title"]')?.focus();
+  }
+
+  async function submitReqForm(form, { remove = false } = {}) {
+    const data = new FormData(form);
+    const rows = [...form.querySelectorAll('.av-scenario')].map((row) => ({
+      title: row.querySelector('[name="sTitle"]').value, when: row.querySelector('[name="sWhen"]').value, then: row.querySelector('[name="sThen"]').value,
+    }));
+    const body = {
+      path: view.sel,
+      content: currentText(),
+      key: form.dataset.reqKey,
+      remove,
+      requirement: { id: data.get('id'), type: data.get('type'), module: data.get('module'), priority: data.get('priority'), title: data.get('title'), shall: data.get('shall'), rationale: data.get('rationale'), scenarios: rows },
+    };
+    try {
+      const { content } = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/spec-edit`, { method: 'POST', body });
+      closeReqForm();
+      await saveContent(content);
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    }
+  }
+
+  /* ------------------------------------------------------------ diagrams: zoom, pan, export */
+
+  function zoomDiagram(node, factor, { fit = false } = {}) {
+    const canvas = node.querySelector('.av-diagram-canvas');
+    if (!canvas) return;
+    const state_ = node._zoom || { k: 1, x: 0, y: 0 };
+    if (fit) Object.assign(state_, { k: 1, x: 0, y: 0 });
+    else state_.k = Math.min(6, Math.max(0.2, state_.k * factor));
+    node._zoom = state_;
+    canvas.style.transform = `translate(${state_.x}px, ${state_.y}px) scale(${state_.k})`;
+  }
+
+  function exportDiagram(node, kind) {
+    const svgNode = node.querySelector('svg');
+    if (!svgNode) return;
+    const svg = new XMLSerializer().serializeToString(svgNode);
+    const name = `${titleOf(view.sel).replace(/[^\w-]+/g, '-').toLowerCase() || 'diagrama'}.${kind}`;
+    const download = (href) => { const a = document.createElement('a'); a.href = href; a.download = name; a.click(); };
+    if (kind === 'svg') {
+      download(URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })));
+      return;
+    }
+    // PNG at 2×, on the page background: Mermaid's SVG is transparent.
+    const img = new Image();
+    const box = svgNode.getBoundingClientRect();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(box.width * 2) || 1600;
+      canvas.height = Math.ceil(box.height * 2) || 900;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => download(URL.createObjectURL(blob)), 'image/png');
+    };
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 
   /* ------------------------------------------------------------ new files */
@@ -806,8 +1106,8 @@
       const spec = target.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
       if (spec && view.content) actions.push(`<button type="button" class="btn" data-ws-tests="${esc(spec[1])}">Gerar testes</button>`);
     }
-    if (target.startsWith('yourlab/mockup/') && view.content) {
-      actions.push(`<button type="button" class="btn" data-ws-action="mockup" data-ws-screen="${esc(target.split('/').pop())}">Abrir em grande</button>`);
+    if (view.mode === 'view' && !view.loading && (view.content || target === '@requisitos') && !proposalShown(target)) {
+      actions.push(`<button type="button" class="btn" data-ws-action="present" title="Ecrã inteiro, para mostrar ao cliente">${icon('image', 15)}Apresentar</button>`);
     }
     return `
       <header class="av-viewer-head">
@@ -854,7 +1154,7 @@
         </div>
         ${stepsBlock(target)}`;
     }
-    return `${specHere}${impactPane()}${window.ArtefactViews.render(view.saved, opts)}${stepsBlock(target)}`;
+    return `${specHere}${impactPane()}${window.ArtefactViews.render(view.saved, { ...opts, editable: canSync() })}${stepsBlock(target)}`;
   }
 
   function progressLine() {
@@ -1259,6 +1559,55 @@
       else if (name === 'back') { view.sel = ''; paintArtefactos(); }
       else if (name === 'add-cancel') { view.adding = ''; paintArtefactos(); }
       else if (name === 'mockup') openMockup(action.dataset.wsScreen);
+      else if (name === 'present') openStage(view.sel, { screen: view.sel.startsWith('yourlab/mockup/') ? view.sel.split('/').pop() : '' });
+      return;
+    }
+    const snippet = target?.closest?.('[data-ws-snippet]');
+    if (snippet) { insertSnippet(Number(snippet.dataset.wsSnippet)); return; }
+    const toggle = target?.closest?.('[data-av-toggle]');
+    if (toggle) {
+      const wrap = toggle.closest('.av-two');
+      const mode = toggle.dataset.avToggle;
+      wrap.dataset.avMode = mode;
+      wrap.querySelectorAll('[data-av-toggle]').forEach((button) => button.classList.toggle('is-active', button === toggle));
+      wrap.querySelector('.av-two-a').hidden = mode !== 'a';
+      wrap.querySelector('.av-two-b').hidden = mode !== 'b';
+      if (mode === 'b') window.ArtefactViews.hydrate(wrap.querySelector('.av-two-b'));
+      return;
+    }
+    const zoom = target?.closest?.('[data-av-zoom]');
+    if (zoom) { zoomDiagram(zoom.closest('.av-diagram-wrap').querySelector('.av-diagram'), zoom.dataset.avZoom === 'in' ? 1.25 : 0.8, { fit: zoom.dataset.avZoom === 'fit' }); return; }
+    const exportBtn = target?.closest?.('[data-av-export]');
+    if (exportBtn) { exportDiagram(exportBtn.closest('.av-diagram-wrap'), exportBtn.dataset.avExport); return; }
+    const copy = target?.closest?.('[data-av-copy]');
+    if (copy) {
+      const source = copy.closest('.av-diagram-wrap').querySelector('[data-av-mermaid]')?.dataset.avMermaid || '';
+      navigator.clipboard?.writeText(source).then(() => window.showToast?.('Código Mermaid copiado.', 'ok'));
+      return;
+    }
+    const reqEdit = target?.closest?.('[data-ws-req-edit], [data-ws-req-new]');
+    if (reqEdit) { openReqForm(reqEdit.dataset.wsReqEdit || ''); return; }
+    const reqForm = target?.closest?.('#reqForm');
+    if (reqForm) {
+      if (target.closest('[data-req-close]')) closeReqForm();
+      else if (target.closest('[data-req-scenario-add]')) reqForm.querySelector('[data-req-scenarios]').insertAdjacentHTML('beforeend', reqForm.dataset.scenarioRow);
+      else if (target.closest('[data-req-scenario-remove]')) target.closest('.av-scenario').remove();
+      else if (target.closest('[data-req-remove]') && window.confirm('Remover este requisito do ficheiro?')) submitReqForm(reqForm.querySelector('form'), { remove: true });
+      else if (target === reqForm) closeReqForm();
+      return;
+    }
+    const stageBtn = target?.closest?.('[data-stage], [data-stage-device], [data-stage-screen]');
+    if (stageBtn && stage.open) {
+      const action = stageBtn.dataset.stage;
+      if (action === 'close') closeStage();
+      else if (action === 'prev') stageMove(-1);
+      else if (action === 'next') stageMove(1);
+      else if (action === 'rail') { stage.rail = !stage.rail; paintStage(); }
+      else if (action === 'fullscreen') {
+        const host = document.getElementById('artefactStage');
+        (document.fullscreenElement ? document.exitFullscreen() : host?.requestFullscreen?.())?.finally?.(paintStage);
+      } else if (stageBtn.dataset.stageDevice) { stage.device = stageBtn.dataset.stageDevice; paintStage(); }
+      else if (stageBtn.dataset.stageScreen) { stage.screen = stageBtn.dataset.stageScreen; paintStage(); }
       return;
     }
     const splitHost = target?.closest?.('[data-split-task]');
@@ -1288,10 +1637,12 @@
     if (screen) { openMockup(screen.dataset.wsScreen); return; }
     const go = target?.closest?.('[data-ws-go]');
     if (go) { window.switchToTab?.(go.dataset.wsGo); return; }
-    if (target?.closest?.('[data-ws-close]') || target?.classList?.contains('ios-sheet-backdrop')) closeSheet();
+    if (target?.closest?.('[data-ws-close]')) closeSheet();
   });
 
   document.addEventListener('submit', (event) => {
+    const reqForm = event.target?.closest?.('[data-req-form]');
+    if (reqForm) { event.preventDefault(); submitReqForm(reqForm); return; }
     const addForm = event.target?.closest?.('[data-ws-add-form]');
     if (addForm) {
       event.preventDefault();
@@ -1317,6 +1668,55 @@
     text.setSelectionRange(start, start + (lines[line - 1] || '').length);
   }
 
+  // The editor's keys: save, indent, and lists that continue themselves.
+  document.addEventListener('keydown', (event) => {
+    const field = event.target;
+    if (field?.id !== 'artefactText') return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveFile(); return; }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      field.setRangeText('  ', field.selectionStart, field.selectionEnd, 'end');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      const before = field.value.slice(0, field.selectionStart);
+      const line = before.slice(before.lastIndexOf('\n') + 1);
+      const bullet = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+      if (!bullet) return;
+      event.preventDefault();
+      if (!bullet[3].trim()) {
+        // An empty item ends the list.
+        field.setRangeText('', field.selectionStart - line.length, field.selectionStart, 'end');
+      } else {
+        const marker = /^\d+/.test(bullet[2]) ? `${Number(bullet[2]) + 1}${bullet[2].endsWith(')') ? ')' : '.'}` : bullet[2];
+        field.setRangeText(`\n${bullet[1]}${marker} `, field.selectionStart, field.selectionEnd, 'end');
+      }
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+
+  // A diagram pans by dragging and zooms with the wheel, anchored where the pointer is.
+  document.addEventListener('wheel', (event) => {
+    const node = event.target?.closest?.('.av-diagram');
+    if (!node) return;
+    event.preventDefault();
+    zoomDiagram(node, event.deltaY < 0 ? 1.1 : 0.9);
+  }, { passive: false });
+  document.addEventListener('pointerdown', (event) => {
+    const node = event.target?.closest?.('.av-diagram');
+    if (!node || event.button !== 0) return;
+    const start = { x: event.clientX, y: event.clientY, ox: node._zoom?.x || 0, oy: node._zoom?.y || 0 };
+    node.classList.add('is-dragging');
+    const move = (e) => {
+      node._zoom = { ...(node._zoom || { k: 1 }), x: start.ox + (e.clientX - start.x), y: start.oy + (e.clientY - start.y) };
+      zoomDiagram(node, 1);
+    };
+    const up = () => { node.classList.remove('is-dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+
   // Typing only touches the draft: the file is written on Guardar and nowhere else.
   document.addEventListener('input', (event) => {
     if (event.target?.id !== 'artefactText') return;
@@ -1330,9 +1730,6 @@
     previewDraft();
   });
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeSheet();
-  });
 
   window.WorkspaceUI = {
     load,
@@ -1345,6 +1742,7 @@
     renderRequisitos: (project) => { renderArtefactos(project); select('@requisitos'); },
     openArtefact,
     select,
+    present: openStage,
     openMockup,
     subscribe: (listener) => {
       listeners.add(listener);

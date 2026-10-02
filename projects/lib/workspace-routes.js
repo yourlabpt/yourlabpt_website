@@ -4,21 +4,22 @@
  *   GET  /workspace                      the last snapshot, and whether a repository exists
  *   POST /workspace/sync                 read yourlab/ and openspec/specs/ again, now
  *   GET  /workspace/file?path=           one artefact's text, and the sha it was read at
- *   PUT  /workspace/file                 save it back: working copy, or a change request
- *   POST /workspace/initialize           open a change request with GUIDE.md and a starting
- *                                        folder written from what the platform already knows
+ *   PUT  /workspace/file                 save it back: working copy, or a commit on the branch
+ *   POST /workspace/initialize           write GUIDE.md and a starting folder (and the
+ *                                        platform's requirements as openspec/specs/)
  *   GET  /workspace/mockup-link          a short-lived link to one mockup screen
  *   GET  /workspace/mockup/:ticket/:file the screen itself, sandboxed
  *
- * Reading is deterministic and changes nothing. Writing touches only the project's own
- * working copy; without one it opens a change request. The default branch is never
- * written to directly.
+ * Reading is deterministic and changes nothing. Writing goes to the project's working
+ * copy, or straight to the default branch when there is none (lib/workspace-io.js), so
+ * the next read already shows the save. Tests and code still go through a change request.
  */
 const crypto = require('crypto');
 const gitRepositories = require('./git-repositories');
 const openspecRepository = require('./openspec-repository');
 const secretBox = require('./secret-box');
 const workspaceFormat = require('./workspace-format');
+const openspecFormat = require('./openspec-format');
 const workspaceSync = require('./workspace-sync');
 const workItems = require('./work-items');
 const promptPacks = require('./prompt-packs');
@@ -164,6 +165,45 @@ function registerWorkspaceRoutes(app, deps) {
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
+  });
+
+  /**
+   * One requirement edited as a form. The spec file is parsed, that requirement replaced,
+   * added or removed, and the file given back as text — nothing written: the save is the
+   * same PUT as any edit, so the sha check and the task are the same too.
+   */
+  app.post('/api/projects/:projectId/workspace/spec-edit', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, (req, res) => {
+    const filePath = String(req.body?.path || '');
+    const match = filePath.match(workspaceFormat.PATHS.spec);
+    if (!match) return res.status(400).json({ message: 'Só ficheiros openspec/specs/<capacidade>/spec.md.' });
+    const spec = openspecFormat.parseSpec(String(req.body?.content ?? ''), { capability: match[1] });
+    const key = String(req.body?.key || '');
+    const index = key ? spec.requirements.findIndex((entry) => (entry.id && entry.id === key) || entry.title === key) : -1;
+    if (req.body?.remove) {
+      if (index < 0) return res.status(404).json({ message: 'Requisito não encontrado no ficheiro.' });
+      spec.requirements.splice(index, 1);
+    } else {
+      const src = req.body?.requirement || {};
+      const clean = (value, max = 600) => String(value ?? '').trim().slice(0, max);
+      const next = {
+        id: clean(src.id, 40),
+        type: workspaceFormat.REQUIREMENT_TYPES.includes(String(src.type)) ? String(src.type) : 'undefined',
+        priority: clean(src.priority, 20),
+        module: clean(src.module, 80),
+        title: clean(src.title, 140) || 'Requisito',
+        shall: clean(src.shall),
+        rationale: clean(src.rationale),
+        // The sentence is written as typed; an EARS shape read earlier would rebuild the old one.
+        earsPattern: '',
+        condition: '',
+        scenarios: (Array.isArray(src.scenarios) ? src.scenarios : []).slice(0, 12)
+          .map((scenario) => ({ title: clean(scenario?.title, 140), when: clean(scenario?.when, 300), then: clean(scenario?.then, 300) }))
+          .filter((scenario) => scenario.title),
+      };
+      if (index >= 0) spec.requirements[index] = { ...spec.requirements[index], ...next };
+      else spec.requirements.push(next);
+    }
+    return res.json({ content: openspecFormat.serializeSpec(spec) });
   });
 
   // The formatted view of text not saved yet (a draft, a proposal). Reads, never writes.

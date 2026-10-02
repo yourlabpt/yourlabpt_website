@@ -1,12 +1,21 @@
 (function () {
   let loading = null;
 
+  // Follows the app's theme, so a diagram is not a dark island on a light page.
+  function themeNow() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'neutral';
+  }
+  function init(mermaid) {
+    const theme = themeNow();
+    if (mermaid._yourlabTheme === theme) return;
+    mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+    mermaid._yourlabTheme = theme;
+    mermaid._yourlabInit = true;
+  }
+
   window.ensureMermaidLoaded = function ensureMermaidLoaded() {
     if (window.mermaid) {
-      if (!window.mermaid._yourlabInit) {
-        window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-        window.mermaid._yourlabInit = true;
-      }
+      init(window.mermaid);
       return Promise.resolve(window.mermaid);
     }
     if (loading) return loading;
@@ -16,8 +25,7 @@
       script.async = true;
       script.onload = () => {
         if (window.mermaid) {
-          window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-          window.mermaid._yourlabInit = true;
+          init(window.mermaid);
           resolve(window.mermaid);
         } else {
           reject(new Error('Mermaid não disponível'));

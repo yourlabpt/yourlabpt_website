@@ -2058,71 +2058,7 @@ details > summary::after {
   white-space: nowrap;
 }
 
-/* ---------------------------------------------------------------- the mockup sheet */
-
-.ios-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.ios-sheet {
-  display: flex;
-  flex-direction: column;
-  width: min(1100px, 100%);
-  height: min(820px, 100%);
-  overflow: hidden;
-  border-radius: 16px;
-  background: var(--surface);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.ios-sheet-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px 10px 18px;
-  border-bottom: 1px solid var(--line);
-}
-
-.ios-sheet-head .ios-segmented {
-  max-width: 70%;
-  margin-left: auto;
-  overflow-x: auto;
-}
-
-.ios-sheet-head .ios-segmented + .btn,
-.ios-sheet-head .ios-card-title + .btn {
-  margin-left: auto;
-}
-
-.ios-sheet-head .ios-segmented + .btn {
-  margin-left: 0;
-}
-
-.ios-sheet-frame {
-  flex: 1;
-  width: 100%;
-  border: 0;
-  background: var(--surface);
-}
-
 @media (max-width: 700px) {
-  .ios-sheet-backdrop {
-    align-items: flex-end;
-    padding: 0;
-  }
-
-  .ios-sheet {
-    height: calc(100% - 44px);
-    border-radius: 12px 12px 0 0;
-  }
-
   .ios-fold-body {
     padding-left: 16px;
   }
@@ -2437,4 +2373,95 @@ details > summary::after {
   .av-edit[data-pane="view"] .av-edit-text { display: none; }
   .av-edit-live { max-height: none; }
   .av-title { font-size: 22px; }
+}
+
+/* ================================================================ presenting an artefact */
+
+.av-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+body.av-stage-open { overflow: hidden; }
+.av-stage-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.av-stage-title { flex: 1; min-width: 0; }
+.av-stage-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.av-stage-title .av-kicker { margin: 0 0 2px; }
+.av-stage-count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.av-stage-devices { flex: none; }
+.av-stage-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.av-stage-doc { flex: 1; overflow: auto; padding: 32px 24px 64px; }
+.av-stage-doc .av-doc { max-width: 960px; margin: 0 auto; gap: 28px; }
+.av-stage-doc .av-title { font-size: 34px; }
+.av-stage-doc .av-prose { font-size: 17px; }
+.av-stage-doc .av-prose.is-lead { font-size: 21px; }
+.av-stage-doc .av-bullets li, .av-stage-doc .av-checklist li, .av-stage-doc .av-steps li { font-size: 17px; }
+.av-stage-doc .ios-row-title { font-size: 16px; }
+.av-stage-doc .av-diagram { min-height: 60vh; display: grid; place-items: center; }
+.av-stage-doc .av-diagram svg { max-height: 80vh; }
+.av-stage-rail { width: 260px; flex: none; overflow: auto; padding: 12px; border-right: 1px solid var(--line); background: var(--surface); }
+.av-stage-frame-wrap { flex: 1; min-width: 0; overflow: auto; display: flex; justify-content: center; padding: 16px; background: var(--bg-2); }
+.av-stage-device { width: 100%; max-width: 100%; height: 100%; flex: none; border-radius: var(--radius-card); overflow: hidden; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15); }
+.av-stage-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+.av-stage-hint { margin: 0; padding: 6px 16px; font-size: 12px; color: var(--muted-2); text-align: center; border-top: 1px solid var(--line); background: var(--surface); }
+@media (max-width: 900px) {
+  .av-stage-head { flex-wrap: wrap; padding: 8px 12px; }
+  .av-stage-title { order: -1; flex-basis: calc(100% - 52px); }
+  .av-stage-rail { display: none; }
+  .av-stage-frame-wrap { padding: 0; }
+  .av-stage-device { border-radius: 0; box-shadow: none; }
+  .av-stage-doc { padding: 20px 16px 48px; }
+  .av-stage-doc .av-title { font-size: 26px; }
+  .av-stage-hint { display: none; }
+}
+
+/* ================================================================ artefact tooling */
+
+.av-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.av-toolbar .btn.tiny { height: 28px; padding: 0 10px; font-size: 12px; }
+.av-toolbar-sep { width: 1px; height: 20px; align-self: center; background: var(--line-2); margin: 0 4px; }
+
+.av-diagram-wrap { display: flex; flex-direction: column; gap: 8px; }
+.av-diagram-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.av-diagram-tools .btn.tiny { height: 28px; min-width: 28px; padding: 0 10px; font-size: 12px; }
+.av-diagram-sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 4px; }
+.av-diagram-hint { margin-left: auto; font-size: 12px; color: var(--muted-2); }
+.av-diagram { overflow: hidden; cursor: grab; min-height: 240px; user-select: none; touch-action: none; }
+.av-diagram.is-dragging { cursor: grabbing; }
+.av-diagram-canvas { transform-origin: 0 0; display: inline-block; min-width: 100%; transition: opacity 0.15s; }
+.av-diagram-canvas.is-stale { opacity: 0.35; }
+.av-diagram-error { margin: 0; padding: 8px 12px; border-radius: var(--radius-control); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+
+.av-two { display: flex; flex-direction: column; gap: 10px; }
+.av-two-switch { align-self: flex-start; }
+
+/* a requirement as a form */
+.av-modal { position: fixed; inset: 0; z-index: 450; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.45); }
+.av-modal-card { width: min(720px, 100%); max-height: calc(100vh - 32px); overflow: auto; border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+.av-modal-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+.av-modal-head h2 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; color: var(--heading); }
+.av-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px 18px; }
+.av-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.av-form label.full { grid-column: 1 / -1; }
+.av-form .ios-input, .av-form select, .av-form textarea {
+  height: auto; min-height: 36px; padding: 8px 12px; font: inherit; font-size: 14px; color: var(--text);
+  border: 1px solid var(--input-border); border-radius: var(--radius-control); background: var(--input-bg); text-transform: none; letter-spacing: 0;
+}
+.av-form textarea { min-height: 72px; resize: vertical; }
+.av-scenarios { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
+.av-scenario { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; }
+.av-scenario .ios-input { min-height: 34px; }
+.av-modal-foot { display: flex; justify-content: space-between; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--surface); }
+.av-modal-foot > div { display: flex; gap: 8px; }
+@media (max-width: 700px) {
+  .av-form { grid-template-columns: 1fr; }
+  .av-scenario { grid-template-columns: 1fr; }
+  .av-diagram-hint { display: none; }
 }
