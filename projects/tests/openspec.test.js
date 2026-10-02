@@ -329,27 +329,25 @@ function fakeRepositoryClient(initialFiles = {}) {
 describe('running openspec against a repository', () => {
   const repository = { owner: 'yourlab', name: 'reservas', defaultBranch: 'main' };
 
-  it('initializes a repository onto a branch with a change request, not main', async () => {
+  it('initializes a repository straight onto the default branch, with no change request', async () => {
     const client = fakeRepositoryClient();
     const result = await repo.initialize(client, repository, PROJECT, PLATFORM_REQUIREMENTS);
 
-    assert.ok(result.branch.startsWith('openspec/init/'));
-    assert.equal(result.changeRequest.number, 1);
-    // The default branch must be untouched: review happens before anything lands.
-    assert.deepEqual(Object.keys(client.branches.main), []);
-    assert.ok(client.branches[result.branch]['openspec/project.md']);
-    assert.ok(client.branches[result.branch]['openspec/specs/reservas/spec.md']);
+    assert.equal(result.branch, 'main');
+    assert.equal(result.changeRequest, null);
+    assert.deepEqual(Object.keys(client.branches), ['main'], 'no side branch');
+    assert.equal(client.changeRequests.length, 0);
+    assert.ok(client.branches.main['openspec/project.md']);
+    assert.ok(client.branches.main['openspec/specs/reservas/spec.md']);
   });
 
-  it('refuses a second initialize while the first change request is still open', async () => {
+  it('refuses a second initialize once openspec/ is there', async () => {
     const client = fakeRepositoryClient();
     await repo.initialize(client, repository, PROJECT, PLATFORM_REQUIREMENTS);
-    // The first init lives on a branch, so the default branch still has no openspec/.
     await assert.rejects(
       () => repo.initialize(client, repository, PROJECT, PLATFORM_REQUIREMENTS),
-      /Ja existe um pedido aberto/
+      /ja tem uma pasta openspec/
     );
-    assert.equal(client.changeRequests.length, 1, 'must not open a duplicate change request');
   });
 
   it('refuses to initialize a repository that already has openspec/', async () => {
@@ -380,12 +378,13 @@ describe('running openspec against a repository', () => {
     assert.equal(client.changeRequests.length, 0, 'no change request for a no-op');
   });
 
-  it('pushes a real difference onto a review branch', async () => {
+  it('pushes a real difference onto the default branch', async () => {
     const client = fakeRepositoryClient();
     const result = await repo.push(client, repository, PROJECT, PLATFORM_REQUIREMENTS);
     assert.equal(result.skipped, undefined);
-    assert.equal(client.changeRequests.length, 1);
-    assert.ok(result.branch.startsWith('openspec/sync/'));
+    assert.equal(client.changeRequests.length, 0);
+    assert.equal(result.branch, 'main');
+    assert.ok(client.branches.main['openspec/specs/reservas/spec.md']);
   });
 
   it('pulls an existing repository into platform requirements', async () => {

@@ -2397,7 +2397,7 @@
                 ? ` ${commit.outOfScope.length} ficheiro(s) fora do módulo foram recusados.`
                 : '';
               window.showToast?.(
-                `Código enviado para ${commit.branch} (pedido #${commit.changeRequest?.number}).${refused}`,
+                `Código enviado para o ramo ${commit.branch}.${refused}`,
                 refused ? 'warn' : 'ok'
               );
             } else {

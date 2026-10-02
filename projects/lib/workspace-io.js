@@ -15,6 +15,7 @@ const workspaceSync = require('./workspace-sync');
 const workspaceFormat = require('./workspace-format');
 const openspecSync = require('./openspec-sync');
 const openspecFormat = require('./openspec-format');
+const gitLocal = require('./git-local');
 
 const NO_REPOSITORY = 'Este projecto não tem repositório ligado. Ligue um em Definições do projecto.';
 
@@ -49,8 +50,14 @@ async function writeFiles(dataDir, repository, files, message) {
   if (!files.length) return { source: 'none', paths: [] };
   const reader = await readerFor(dataDir, repository);
   if (typeof reader.writeFile === 'function') {
+    // A working copy is brought up to date first — never written over what someone
+    // pushed elsewhere — and what is written is committed and pushed right away.
+    const root = repository.localPath;
+    const pulled = await gitLocal.pull(root);
+    if (!pulled.ok) throw new Error(`O repositório local não está actualizado: ${pulled.message}. Resolva no git e tente de novo.`);
     for (const file of files) await reader.writeFile(file.path, file.content);
-    return { source: 'local', paths: files.map((file) => file.path) };
+    const git = await gitLocal.commitAndPush(root, files.map((file) => file.path), message || 'yourlab');
+    return { source: 'local', paths: files.map((file) => file.path), branch: (await gitLocal.status(root))?.branch || '', git };
   }
   const client = await factory.remoteClient(dataDir);
   for (const file of files) {
@@ -128,8 +135,15 @@ function pullRequirements(existing, snapshot) {
  * requirements from it. The one place a project's view of its files is refreshed.
  */
 async function syncProject({ dataDir, updateStore, appendActivity }, projectId, repository, actorUserId, activity) {
+  // A working copy reads what the remote has now; if it cannot, the read still happens
+  // and the state says why.
+  let git = null;
+  if (gitLocal.isRepo(repository?.localPath)) {
+    const pulled = await gitLocal.pull(repository.localPath);
+    git = { ...(await gitLocal.status(repository.localPath)), pulled: pulled.ok, message: pulled.message };
+  }
   const { snapshot, source, ref } = await workspaceSync.syncWorkspace(repository, { remoteClient: () => factory.remoteClient(dataDir) });
-  const workspace = { snapshot, source, ref, syncedAt: new Date().toISOString(), syncedBy: actorUserId };
+  const workspace = { snapshot, source, ref: git?.branch || ref, git, syncedAt: new Date().toISOString(), syncedBy: actorUserId };
   await updateStore(async (store) => {
     const target = store.projects.find((entry) => entry.id === projectId);
     if (!target) throw new Error('Projecto não encontrado.');

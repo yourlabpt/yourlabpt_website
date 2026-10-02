@@ -309,7 +309,7 @@ function registerWorkspaceRoutes(app, deps) {
         });
       }
 
-      return res.json({ workspace: forViewer(workspace, req.auth.user), sha: workspaceFormat.fileSha(content), changeRequest, written: written.source, branch: written.branch || '', task, diff: draft?.diff || '' });
+      return res.json({ workspace: forViewer(workspace, req.auth.user), sha: workspaceFormat.fileSha(content), changeRequest, written: written.source, branch: written.branch || '', git: written.git || null, task, diff: draft?.diff || '' });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -655,7 +655,7 @@ function registerWorkspaceRoutes(app, deps) {
         action: 'workspace_initialized',
         details: { files: files.map((file) => file.path), source: written.source, fromSurvey: Boolean(project.repositorySurvey) },
       }));
-      return res.json({ local: written.source === 'local', written: written.source, files: files.map((file) => file.path), workspace: forViewer(workspace, req.auth.user) });
+      return res.json({ local: written.source === 'local', written: written.source, git: written.git || null, files: files.map((file) => file.path), workspace: forViewer(workspace, req.auth.user) });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }

@@ -49,29 +49,22 @@ async function isInitialized(client, repository, ref = '') {
  * Writes a set of files on a new branch and opens a change request for them.
  * Returns the branch and the change request so the caller can show a link.
  */
-async function commitFilesForReview(client, repository, {
-  files,
-  branch,
-  title,
-  body = '',
-  commitMessage,
-}) {
+/**
+ * Commits files on the repository's default branch. No side branch and no change
+ * request: every save from the platform used to open one, and a repository full of
+ * `yourlab/…` and `openspec/…` branches is noise, not review. The person reviews in
+ * the platform before pressing the button; git history keeps the rest.
+ */
+async function commitFilesForReview(client, repository, { files, title, commitMessage }) {
   if (!files.length) throw new Error('Nada para escrever.');
   const base = repository.defaultBranch;
-  await client.createBranch(repository.owner, repository.name, branch, base);
   for (const file of files) {
     await client.writeFile(repository.owner, repository.name, file.path, file.content, {
-      branch,
+      branch: base,
       message: commitMessage || title,
     });
   }
-  const changeRequest = await client.createChangeRequest(repository.owner, repository.name, {
-    title,
-    body,
-    head: branch,
-    base,
-  });
-  return { branch, base, files: files.map((file) => file.path), changeRequest };
+  return { branch: base, base, files: files.map((file) => file.path), changeRequest: null };
 }
 
 function branchName(prefix) {
@@ -86,13 +79,6 @@ function branchName(prefix) {
 async function initialize(client, repository, project, requirements) {
   if (await isInitialized(client, repository)) {
     throw new Error('Este repositorio ja tem uma pasta openspec/.');
-  }
-  // The first init lands on a branch, so the default branch still looks empty until
-  // the change request is merged. Without this check a second click opens a duplicate.
-  const open = await client.listOpenChangeRequests(repository.owner, repository.name).catch(() => []);
-  const pending = open.find((entry) => String(entry.branch || '').startsWith('openspec/init/'));
-  if (pending) {
-    throw new Error(`Ja existe um pedido aberto para criar o openspec/: #${pending.number}. Reveja-o antes de criar outro.`);
   }
   const { files, specs } = openspecSync.buildRepositoryFiles(project, requirements);
   const result = await commitFilesForReview(client, repository, {

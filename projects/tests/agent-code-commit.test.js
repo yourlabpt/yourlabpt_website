@@ -14,8 +14,10 @@ function fakeClient() {
     branches,
     changeRequests,
     async createBranch(o, n, branch, from = 'main') { branches[branch] = { ...(branches[from] || {}) }; },
-    async writeFile(o, n, path, content, { branch = 'main' } = {}) {
+    lastMessage: '',
+    async writeFile(o, n, path, content, { branch = 'main', message = '' } = {}) {
       (branches[branch] = branches[branch] || {})[path] = content;
+      this.lastMessage = message;
     },
     async createChangeRequest(o, n, { title, body, head }) {
       const record = { number: changeRequests.length + 1, url: `https://x.test/pr/${changeRequests.length + 1}`, branch: head, title, body };
@@ -160,11 +162,11 @@ describe('committing an approved result', () => {
     });
 
     assert.equal(result.committed, true);
-    assert.equal(result.branch, 'agent/reservas-abc12345');
-    assert.deepEqual(Object.keys(client.branches.main), [], 'main must stay untouched');
-    assert.equal(client.branches[result.branch]['src/reservas/criar.js'], 'export function criar() {}');
-    assert.equal(client.changeRequests.length, 1);
-    assert.match(client.changeRequests[0].title, /^feat\(reservas\): Implementar criacao de reserva/);
+    assert.equal(result.branch, 'main', 'approved in the platform: straight onto the default branch');
+    assert.deepEqual(Object.keys(client.branches), ['main'], 'no side branch');
+    assert.equal(client.branches.main['src/reservas/criar.js'], 'export function criar() {}');
+    assert.equal(client.changeRequests.length, 0);
+    assert.match(client.lastMessage, /^feat\(reservas\): Implementar criacao de reserva/);
   });
 
   it('writes the in-scope files and refuses the rest, naming them in the change request', async () => {
@@ -185,8 +187,8 @@ describe('committing an approved result', () => {
     assert.equal(result.files.length, 1);
     assert.deepEqual(result.outOfScope.map((f) => f.path), ['src/pagamentos/stripe.js']);
     assert.equal(client.branches[result.branch]['src/pagamentos/stripe.js'], undefined, 'out-of-scope file must not be written');
-    assert.match(client.changeRequests[0].body, /Fora do ambito/);
-    assert.match(client.changeRequests[0].body, /src\/pagamentos\/stripe\.js/);
+    assert.match(client.lastMessage, /Fora do ambito/);
+    assert.match(client.lastMessage, /src\/pagamentos\/stripe\.js/);
   });
 
   it('commits nothing when every file is out of scope', async () => {
@@ -245,7 +247,7 @@ describe('committing an approved result', () => {
         ],
       },
     });
-    assert.match(client.changeRequests[0].body, /Ignorados/);
-    assert.match(client.changeRequests[0].body, /src\/b\.js/);
+    assert.match(client.lastMessage, /Ignorados/);
+    assert.match(client.lastMessage, /src\/b\.js/);
   });
 });

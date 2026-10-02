@@ -383,11 +383,22 @@
       badge = errors
         ? k.badge('red', `${errors} erro${errors === 1 ? '' : 's'}`)
         : warnings ? k.badge('amber', `${warnings} aviso${warnings === 1 ? '' : 's'}`) : k.badge('green', 'Tudo legível');
+      const git = current.git;
       sub = [
         `lido ${k.ago(current.syncedAt)}`,
-        current.source === 'local' ? 'cópia local' : `GitHub${current.ref ? ` · ${current.ref}` : ''}`,
+        current.source === 'local' ? `cópia local${git?.branch ? ` · ${git.branch}` : ''}` : `GitHub${current.ref ? ` · ${current.ref}` : ''}`,
         `${snap.files.length} ficheiros`,
       ].join(' · ');
+      // The clone's standing: the platform pulled before reading, or says why it could not.
+      if (git) {
+        const notes = [];
+        if (!git.pulled) notes.push(`não actualizado: ${git.message}`);
+        if (git.behind) notes.push(`${git.behind} commit(s) atrás do remoto`);
+        if (git.ahead) notes.push(`${git.ahead} commit(s) por enviar`);
+        if (git.dirty?.length) notes.push(`${git.dirty.length} ficheiro(s) alterado(s) fora da plataforma`);
+        if (notes.length) badge = k.badge('amber', notes[0]);
+        body = notes.length ? `Git: ${notes.join(' · ')}.` : '';
+      }
       if (snap.mockup.screens.length) {
         actions.push(`<button type="button" class="btn primary" data-ws-action="mockup">${icon('image', 16)}Ver mockup</button>`);
       }
@@ -631,6 +642,15 @@
     return saveContent(field.value);
   }
 
+  /** What a save did, in one sentence: pushed, committed only, or written on the branch. */
+  function whereWritten(response) {
+    const git = response.git;
+    if (git?.pushed) return `Guardado e enviado para ${response.branch || 'o repositório'} (${git.commit}).`;
+    if (git?.committed) return `Guardado com commit ${git.commit}; ${git.message}`;
+    if (response.written === 'remote') return `Guardado no ramo ${response.branch || 'principal'} do repositório.`;
+    return 'Guardado na cópia local.';
+  }
+
   /** Writes `content` as the open artefact. The editor and the requirement form both end here. */
   async function saveContent(content) {
     if (!view.sel || view.saving) return;
@@ -646,8 +666,8 @@
       state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
       view.lastEdit = { path: target, diff: response.diff || '', task: response.task || null, ai: null, running: false };
       view.newPath = '';
-      const where = response.changeRequest ? 'Pedido de alteração aberto no repositório.' : 'Guardado no repositório.';
-      window.showToast?.(response.task ? `${where} Tarefa criada em Tarefas.` : where, 'ok');
+      const where = whereWritten(response);
+      window.showToast?.(response.task ? `${where} Tarefa criada em Tarefas.` : where, response.git && response.git.committed && !response.git.pushed ? 'warn' : 'ok');
       if (response.task) window.ResumeUI?.refresh?.();
       view.saving = false;
       notifyOthers();
@@ -1076,7 +1096,7 @@
       const fresh = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace`);
       state.data = { ...(state.data || {}), ...fresh };
       steps.outcome = null;
-      window.showToast?.(response?.changeRequest ? 'Pedido de alteração aberto no repositório.' : 'Escrito no repositório.', 'ok');
+      window.showToast?.(response ? whereWritten(response) : 'Escrito no repositório.', 'ok');
       window.ResumeUI?.refresh?.();
       notifyOthers();
       await select(outcome.result.files[0].path);

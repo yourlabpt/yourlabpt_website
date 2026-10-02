@@ -226,21 +226,18 @@ async function commitApprovedChanges(client, repository, {
     };
   }
 
-  const branch = commitBranchName(task, moduleName);
+  // Straight onto the default branch: the person approved it in the platform, and a
+  // branch per task was noise. What a change request body used to say travels in the
+  // commit message instead.
   const base = repository.defaultBranch;
-  await client.createBranch(repository.owner, repository.name, branch, base);
-  const message = commitMessage(task, moduleName);
+  const branch = base;
+  const message = `${commitMessage(task, moduleName)}\n\n${changeRequestBody({
+    task, summary: extracted.summary, files: allowed, outOfScope, rejected: extracted.rejected, personaId, agentId,
+  })}`;
   for (const file of allowed) {
     await client.writeFile(repository.owner, repository.name, file.path, file.content, { branch, message });
   }
-  const changeRequest = await client.createChangeRequest(repository.owner, repository.name, {
-    title: message,
-    body: changeRequestBody({
-      task, summary: extracted.summary, files: allowed, outOfScope, rejected: extracted.rejected, personaId, agentId,
-    }),
-    head: branch,
-    base,
-  });
+  const changeRequest = null;
 
   return {
     committed: true,
