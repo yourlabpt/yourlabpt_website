@@ -30,6 +30,52 @@ const VIU_DEMO = ['demo_mostrada', 'quer_ativar', 'ativou'];
 const DORES = { sim: 'Dor real', talvez: 'Mais ou menos', nao: 'Não é dor' };
 const CANAIS = { presencial: 'Presencial', telefone: 'Telefone', whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', email: 'Email' };
 
+// The product being shared and the number it is shared from. Editable in the
+// app (Equipa → A marca) because the brand, the line and the number change
+// faster than deploys do.
+const MARCA_CHAVE = 'foco_marca';
+const MARCA_PADRAO = {
+    nome: 'Digitu',
+    slogan: 'O seu tempo fica para o seu negócio.',
+    numero: '',
+    link: DMN_BASE_URL,
+    // How the product is named out loud — never «app» nor «plataforma».
+    descricao: 'o lugar onde o seu negócio se dá a conhecer, responde a quem pergunta e não deixa nada esquecido',
+    linhas: [
+        'Que o conheçam — os clientes certos encontram o negócio sem gastar horas a explicar-se.',
+        'Que confiem em si — quem chega já vem convencido pelo trabalho feito e pelo que dizem os outros clientes.',
+        'Que ninguém fique sem resposta — as perguntas de sempre respondidas a qualquer hora, a si só chega quem quer marcar.',
+        'Que nada fique esquecido — marcações e compromissos guardados, sem andar com tudo na cabeça.'
+    ]
+};
+
+function marca(db) {
+    let guardado = {};
+    try {
+        guardado = JSON.parse((db.prepare('SELECT value FROM app_setting WHERE key = ?').get(MARCA_CHAVE) || {}).value || '{}');
+    } catch (_) { /* valores por omissão */ }
+    const linhas = Array.isArray(guardado.linhas) && guardado.linhas.length ? guardado.linhas : MARCA_PADRAO.linhas;
+    return { ...MARCA_PADRAO, ...guardado, linhas: linhas.map((t) => String(t).slice(0, 300)).slice(0, 6) };
+}
+
+function guardarMarca(db, body, nowIso) {
+    const limpo = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+    const atual = marca(db);
+    const novo = {
+        nome: limpo(body.nome, 60) || atual.nome,
+        slogan: limpo(body.slogan, 200) || atual.slogan,
+        numero: limpo(body.numero, 40),
+        link: limpo(body.link, 300) || atual.link,
+        descricao: limpo(body.descricao, 300) || atual.descricao,
+        linhas: Array.isArray(body.linhas) ? body.linhas.map((t) => limpo(t, 300)).filter(Boolean).slice(0, 6) : atual.linhas
+    };
+    if (!/^https?:\/\//i.test(novo.link)) throw new Error('O link tem de começar por https://');
+    db.prepare(`INSERT INTO app_setting (key, value, actualizado_em) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, actualizado_em = excluded.actualizado_em`)
+        .run(MARCA_CHAVE, JSON.stringify(novo), nowIso());
+    return novo;
+}
+
 function nomesDosTipos() {
     try {
         return JSON.parse(fs.readFileSync(TIPOS_FILE, 'utf8'));
@@ -138,6 +184,19 @@ function resumo(db, { vendedorId = null } = {}) {
         WHERE e.tipo = 'foco_estado' AND COALESCE(json_extract(e.payload_json, '$.canal'), '') != '' ${filtro}
         GROUP BY 1 ORDER BY 2 DESC
     `).all({ vendedorId }).map((c) => ({ ...c, nome: CANAIS[c.canal] || c.canal }));
+    // Which value line (princípio) opens doors, and on which channel.
+    const porCampo = (campo) => db.prepare(`
+        SELECT json_extract(e.payload_json, '$.${campo}') AS nome, COUNT(DISTINCT e.entidade_id) AS contactos,
+               COUNT(DISTINCT CASE WHEN l.foco_dor = 'sim' THEN l.id END) AS dor_sim,
+               COUNT(DISTINCT CASE WHEN l.foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou') THEN l.id END) AS demos,
+               COUNT(DISTINCT CASE WHEN l.foco_estado = 'ativou' THEN l.id END) AS ativos
+        FROM evento e JOIN lead l ON l.id = e.entidade_id
+        WHERE e.tipo = 'foco_mensagem' AND COALESCE(json_extract(e.payload_json, '$.${campo}'), '') != '' ${filtro}
+        GROUP BY 1 ORDER BY 2 DESC
+    `).all({ vendedorId });
+    const principios = porCampo('principio');
+    const mensagensCanal = porCampo('canal').map((c) => ({ ...c, nome: CANAIS[c.nome] || c.nome }));
+
     // Which message gets a real conversation going.
     const mensagens = db.prepare(`
         SELECT json_extract(e.payload_json, '$.modelo') AS nome, COUNT(DISTINCT e.entidade_id) AS contactos,
@@ -152,6 +211,8 @@ function resumo(db, { vendedorId = null } = {}) {
         total,
         canais,
         mensagens,
+        principios,
+        mensagensCanal,
         vendedores: Object.values(porVendedor).sort((a, b) => b.ativos - a.ativos || b.demos - a.demos),
         segmentos: Object.values(porSegmento).sort((a, b) => (a.foco || 99) - (b.foco || 99))
     };
@@ -241,4 +302,4 @@ function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappI
     return r;
 }
 
-module.exports = { carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };
+module.exports = { carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

@@ -71,7 +71,7 @@ function instalar(db, addMissingColumns) {
         // Is the pain real? '' not asked yet · sim · talvez · nao — the thing we are testing.
         foco_dor: "TEXT NOT NULL DEFAULT ''"
     });
-    // WhatsApp message templates, shared by the team (see foco.js for placeholders).
+    // Message templates, shared by the team (see foco.js for placeholders).
     db.exec(`CREATE TABLE IF NOT EXISTS foco_mensagem (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL DEFAULT '',
@@ -82,6 +82,11 @@ function instalar(db, addMissingColumns) {
         criado_em TEXT NOT NULL,
         atualizado_em TEXT NOT NULL
     )`);
+    addMissingColumns(db, 'foco_mensagem', {
+        // Which channel it is written for ('' = any) and which value line it leads with.
+        canal: "TEXT NOT NULL DEFAULT ''",
+        principio: "TEXT NOT NULL DEFAULT ''"
+    });
     addMissingColumns(db, 'evento', { vendedor_id: "TEXT NOT NULL DEFAULT ''" });
     db.exec('CREATE INDEX IF NOT EXISTS idx_lead_vendedor ON lead(vendedor_id)');
     db.exec("CREATE INDEX IF NOT EXISTS idx_lead_dmn_token ON lead(dmn_token) WHERE dmn_token != ''");

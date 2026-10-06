@@ -1841,7 +1841,7 @@ app.patch('/api/digitalizept/equipa/:id', requireDigitalizeptAdmin, (req, res) =
 // each person's contacts, the demo link and the funnel outcome.
 app.get('/api/digitalizept/foco', requireDigitalizept, (req, res) => {
     try {
-        res.json(foco.carregar());
+        res.json({ ...foco.carregar(), marca: foco.marca(getDigitalizeptDb()) });
     } catch (err) {
         console.error('foco:', err.message);
         res.status(500).json({ error: err.message });
@@ -2019,6 +2019,17 @@ app.post('/api/digitalizept/foco/atribuir', requireDigitalizeptAdmin, (req, res)
     res.json({ n });
 });
 
+// The product being shared: name, line, the YourLab number it is sent from, and the link.
+app.patch('/api/digitalizept/foco/marca', requireDigitalizeptAdmin, (req, res) => {
+    try {
+        const m = foco.guardarMarca(getDigitalizeptDb(), req.body || {}, digitalizeptNow);
+        digitalizeptLogEvento(getDigitalizeptDb(), 'app', 'foco', 'foco_marca', m);
+        res.json({ marca: m });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
 // Take a contact from the shared list. The WHERE makes it first-come: two
 // partners tapping at once, only one UPDATE changes a row.
 app.post('/api/digitalizept/foco/contactos/:id/assumir', requireDigitalizept, (req, res) => {
@@ -2050,19 +2061,22 @@ app.post('/api/digitalizept/foco/contactos/:id/mensagem', requireDigitalizept, (
     if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Assuma o contacto primeiro.' });
     const b = req.body || {};
     const texto = cleanText(b.texto, 4000);
-    const comLink = Boolean(contacto.dmn_link) && texto.includes(contacto.dmn_link);
+    const canal = foco.CANAIS[b.canal] ? b.canal : 'whatsapp';
+    const links = [contacto.dmn_link, foco.marca(db).link].filter(Boolean);
+    const comLink = links.some((l) => texto.includes(l));
     let estado = contacto.estado;
     if (['por_contactar', 'contactado', 'voltar'].includes(estado)) estado = comLink ? 'demo_mostrada' : 'contactado';
     db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?').run(estado, contacto.id);
     digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_mensagem', {
-        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal: 'whatsapp', com_link: comLink, estado
+        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal, com_link: comLink, estado,
+        principio: cleanText(b.principio, 120)
     });
     res.json({ contacto: focoContacto(db, contacto.id) });
 });
 
 // Message templates — shared by everyone; you edit your own, the admin edits all.
 function focoMensagens(db) {
-    return db.prepare(`SELECT m.id, m.nome, m.segmento_id, m.texto, m.criado_por, v.nome AS autor, m.atualizado_em
+    return db.prepare(`SELECT m.id, m.nome, m.segmento_id, m.canal, m.principio, m.texto, m.criado_por, v.nome AS autor, m.atualizado_em
         FROM foco_mensagem m LEFT JOIN vendedor v ON v.id = m.criado_por WHERE m.ativo = 1 ORDER BY m.nome`).all();
 }
 app.get('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => {
@@ -2075,8 +2089,11 @@ app.post('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => 
     if (!nome || !texto) return res.status(400).json({ error: 'Falta o nome ou o texto.' });
     const db = getDigitalizeptDb();
     const now = digitalizeptNow();
-    db.prepare(`INSERT INTO foco_mensagem (id, nome, segmento_id, texto, criado_por, criado_em, atualizado_em)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(crypto.randomUUID(), nome, cleanText(b.segmento_id, 80), texto, req.vendedor.id, now, now);
+    db.prepare(`INSERT INTO foco_mensagem (id, nome, segmento_id, canal, principio, texto, criado_por, criado_em, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        crypto.randomUUID(), nome, cleanText(b.segmento_id, 80), cleanText(b.canal, 20), cleanText(b.principio, 10),
+        texto, req.vendedor.id, now, now
+    );
     res.json({ mensagens: focoMensagens(db) });
 });
 app.patch('/api/digitalizept/foco/mensagens/:id', requireDigitalizept, (req, res) => {
@@ -2085,8 +2102,9 @@ app.patch('/api/digitalizept/foco/mensagens/:id', requireDigitalizept, (req, res
     if (!m) return res.status(404).json({ error: 'Modelo não encontrado.' });
     if (req.vendedor.papel !== 'admin' && m.criado_por !== req.vendedor.id) return res.status(403).json({ error: 'Só quem criou (ou o admin) pode mudar este modelo.' });
     const b = req.body || {};
-    db.prepare('UPDATE foco_mensagem SET nome = ?, segmento_id = ?, texto = ?, ativo = ?, atualizado_em = ? WHERE id = ?').run(
+    db.prepare('UPDATE foco_mensagem SET nome = ?, segmento_id = ?, canal = ?, principio = ?, texto = ?, ativo = ?, atualizado_em = ? WHERE id = ?').run(
         cleanText(b.nome, 120) || m.nome, b.segmento_id !== undefined ? cleanText(b.segmento_id, 80) : m.segmento_id,
+        b.canal !== undefined ? cleanText(b.canal, 20) : m.canal, b.principio !== undefined ? cleanText(b.principio, 10) : m.principio,
         cleanText(b.texto, 4000) || m.texto, b.ativo === false ? 0 : 1, digitalizeptNow(), m.id
     );
     res.json({ mensagens: focoMensagens(db) });
