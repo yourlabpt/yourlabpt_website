@@ -19,7 +19,7 @@ const FASE = { ataque: 'Ataque', expansao: 'Expansão', depois: 'Depois' };
 
 const state = {
     me: null, cfg: null, tab: 'segmentos', contactos: [], todos: null, equipa: [], pessoas: [],
-    mensagens: [], linha: '', filtro: { texto: '', estado: '', segmento: '', dono: '' }
+    mensagens: [], linha: '', sel: new Set(), filtro: { texto: '', estado: '', segmento: '', dono: '' }
 };
 // Pin/chip colour per state: grey = not yet touched, warm = in progress, green = won, red = lost.
 const COR = {
@@ -128,8 +128,11 @@ const segmentoDoTipo = (tipo) => state.cfg.verticais.find((v) => v.foco && v.tip
     || state.cfg.verticais.find((v) => v.tipos.includes(tipo));
 const nomeTipo = (tipo) => {
     const v = segmentoDoTipo(tipo);
-    return (v && (v.tipos_nomes.find((t) => t.id === tipo) || {}).nome) || tipo;
+    return (v && (v.tipos_nomes.find((t) => t.id === tipo) || {}).nome) || (tipo === 'generico' ? 'Sem tipo' : tipo);
 };
+// Every type we sell to, once each, by name — for the batch «mudar tipo» and the add sheet.
+const tiposTodos = () => [...new Map(state.cfg.verticais.flatMap((v) => v.tipos_nomes).map((t) => [t.id, t])).values()]
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
 const entrada = (v) => (v.produtos_entrada || [v.produto_entrada]).map((p) => PRODUTO[p] || p).join(' + ');
 
 // ---------- Segmentos ----------
@@ -719,9 +722,18 @@ function filtrados() {
 function barraFiltros(aoMudar) {
     const f = state.filtro;
     const contagem = (id) => state.contactos.filter((c) => c.estado === id).length;
+    const ativos = [f.estado, f.segmento, f.dono].filter(Boolean).length;
+    // Search stays in view; the dropdowns fold away so the first screen shows contacts, not controls.
     return h('div', { class: 'foco-filtros' },
         h('input', { class: 'field-input', type: 'search', placeholder: 'Procurar nome, cidade, telefone…', value: f.texto,
             oninput: (e) => { f.texto = e.target.value; aoMudar(); } }),
+        h('details', { class: 'foco-mais', open: ativos > 0 },
+            h('summary', {}, ativos ? `Filtros (${ativos})` : 'Filtros'),
+            h('div', { class: 'foco-filtros' }, ...filtrosExtra(f, contagem, aoMudar))));
+}
+
+function filtrosExtra(f, contagem, aoMudar) {
+    return nos([
         h('select', { class: 'field-input', onchange: (e) => { f.estado = e.target.value; aoMudar(); } },
             h('option', { value: '' }, `Todos os estados (${state.contactos.length})`),
             Object.entries(state.cfg.estados).map(([id, nome]) => h('option', { value: id, selected: f.estado === id }, `${nome} (${contagem(id)})`))),
@@ -737,7 +749,7 @@ function barraFiltros(aoMudar) {
         state.me.papel === 'admin' && h('label', { class: 'foco-toggle' },
             h('input', { type: 'checkbox', checked: state.todos, onchange: (e) => { state.todos = e.target.checked; irPara(state.tab); } }),
             ' Toda a equipa')
-    );
+    ]);
 }
 
 function opcoesPessoas(atual) {
@@ -771,6 +783,9 @@ function cartaoContacto(c, hoje, aoMudar) {
     return h('div', { class: 'foco-card', role: 'button', tabindex: 0, onclick: () => abrirContacto(c),
         onkeydown: (e) => { if (e.key === 'Enter') abrirContacto(c); } },
         h('div', { class: 'foco-card-top' },
+            h('input', { type: 'checkbox', class: 'foco-sel', 'aria-label': `Selecionar ${c.nome}`, checked: state.sel.has(c.id),
+                onclick: (e) => e.stopPropagation(),
+                onchange: (e) => { if (e.target.checked) state.sel.add(c.id); else state.sel.delete(c.id); aoMudar(); } }),
             h('strong', {}, c.nome),
             h('span', { class: `foco-chip foco-chip-${c.estado}` }, state.cfg.estados[c.estado] || c.estado)
         ),
@@ -782,70 +797,133 @@ function cartaoContacto(c, hoje, aoMudar) {
 
 const MAX_LISTA = 200;
 
-// Admin: give everything the current filter shows to one person (or back to the shared list).
-function atribuirEmMassa(aoMudar) {
-    const para = h('select', { class: 'field-input' }, opcoesPessoas(null));
-    return h('div', { class: 'foco-massa' },
-        h('span', { class: 'foco-meta' }, 'Atribuir os contactos filtrados a'),
-        para,
-        h('button', { type: 'button', class: 'btn-secondary', onclick: async () => {
-            const ids = filtrados().map((c) => c.id);
-            const nome = para.value ? (state.pessoas.find((p) => p.id === para.value) || {}).nome : 'Lista comum';
-            if (!ids.length || !window.confirm(`Atribuir ${ids.length} contactos a ${nome}?`)) return;
-            try {
-                const { n } = await api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids, vendedor_id: para.value } });
-                toast(`${n} contactos atribuídos a ${nome}.`);
-                await carregarContactos();
-                aoMudar();
-            } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
-        } }, 'Atribuir'));
+// Tick contacts, then act on the ticked ones that the filter still shows: type, owner (admin), delete.
+function barraSelecao(itens, aoMudar) {
+    const ids = itens.filter((c) => state.sel.has(c.id)).map((c) => c.id);
+    const marcar = h('label', { class: 'foco-toggle' },
+        h('input', { type: 'checkbox', checked: itens.length > 0 && ids.length === itens.length,
+            onchange: (e) => { itens.forEach((c) => (e.target.checked ? state.sel.add(c.id) : state.sel.delete(c.id))); aoMudar(); } }),
+        ` Selecionar os ${itens.length} da lista`);
+    if (!ids.length) return h('div', { class: 'foco-massa' }, marcar);
+
+    const fazer = async (pergunta, chamada, mensagem) => {
+        if (!window.confirm(pergunta)) { aoMudar(); return; }
+        try {
+            const r = await chamada();
+            state.sel = new Set();
+            await carregarContactos();
+            toast(mensagem(r));
+        } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+        aoMudar();
+    };
+    const lote = (corpo) => api('/api/digitalizept/foco/contactos/lote', { method: 'POST', body: { ids, ...corpo } });
+    const n = ids.length;
+    const tipo = h('select', { class: 'field-input', onchange: (e) => {
+        const t = e.target.value;
+        if (t) fazer(`Mudar ${n} contactos para «${nomeTipo(t)}»?`, () => lote({ acao: 'tipo', tipo: t }), (r) => `${r.n} contactos: ${nomeTipo(t)}.`);
+    } }, h('option', { value: '' }, 'Mudar tipo para…'), h('option', { value: 'generico' }, 'Sem tipo'),
+        tiposTodos().map((t) => h('option', { value: t.id }, t.nome)));
+    const dono = state.me.papel === 'admin' && h('select', { class: 'field-input', onchange: (e) => {
+        const v = e.target.value;
+        if (v === '-') return;
+        const nome = v ? (state.pessoas.find((p) => p.id === v) || {}).nome : 'a lista comum';
+        fazer(`Atribuir ${n} contactos a ${nome}?`,
+            () => api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids, vendedor_id: v } }), (r) => `${r.n} atribuídos a ${nome}.`);
+    } }, h('option', { value: '-' }, 'Atribuir a…'), opcoesPessoas('-'));
+    const apagar = h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => fazer(
+        `Apagar ${n} contactos? Não dá para desfazer.`, () => lote({ acao: 'apagar' }),
+        (r) => `${r.apagados} apagados${r.com_negocio ? `; ${r.com_negocio} com negócio fechado ficaram` : ''}.`) }, `Apagar (${n})`);
+    return h('div', {}, h('div', { class: 'foco-massa' }, marcar),
+        h('div', { class: 'foco-barra' }, h('div', { class: 'foco-massa' }, tipo, dono, apagar,
+            h('button', { type: 'button', class: 'btn-secondary', onclick: () => { state.sel = new Set(); aoMudar(); } }, 'Limpar'))));
+}
+
+// «Barbearia do Zé, 912345678, Braga» per line. The order doesn't matter: the phone is the part that looks like one.
+function lerLinhas(texto) {
+    return texto.split('\n').map((l) => l.split(/[\t;,|]/).map((p) => p.trim()).filter(Boolean)).filter((p) => p.length).map((p) => {
+        const i = p.findIndex((x) => /^\+?[\d .-]{9,}$/.test(x));
+        const telefone = i >= 0 ? p.splice(i, 1)[0] : '';
+        return { nome: p[0] || '', cidade: p[1] || '', telefone };
+    }).filter((r) => r.nome);
+}
+
+function abrirAdicionar() {
+    const area = h('textarea', { class: 'field-input', rows: 6, placeholder: 'Barbearia do Zé, 912345678, Braga\nSalão Ana; 223456789; Porto' });
+    const tipo = h('select', { class: 'field-input' }, h('option', { value: '' }, 'Sem tipo (adivinhar pelo nome)'),
+        tiposTodos().filter((t) => t.id !== 'generico').map((t) => h('option', { value: t.id }, t.nome)));
+    const botao = h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
+        const rows = lerLinhas(area.value).map((r) => ({ ...r, tipo: tipo.value }));
+        if (!rows.length) { toast('Escreva pelo menos um nome.', true); return; }
+        botao.disabled = true;
+        try {
+            const r = await api('/api/digitalizept/foco/importar', { method: 'POST', body: { rows, soFoco: false, vendedor_id: state.me.id } });
+            fecharSheet();
+            toast([`${r.novos} novos`, r.ja_existiam && `${r.ja_existiam} já existiam`, r.entraram_na_lista && `${r.entraram_na_lista} voltaram à lista`].filter(Boolean).join(' · ') + '.');
+            irPara('contactos');
+        } catch (err) {
+            if (err.message !== 'unauthorized') toast(err.message, true);
+            botao.disabled = false;
+        }
+    } }, 'Adicionar');
+    abrirSheet(h('h2', {}, 'Adicionar contactos'),
+        h('p', { class: 'foco-meta' }, 'Um por linha: nome, telefone, cidade (a ordem não importa). Pode colar uma lista inteira. Quem já existe não é duplicado.'),
+        area, campo('Tipo para todos', tipo), botao);
+    area.focus();
 }
 
 async function renderContactos() {
     await carregarContactos();
+    state.sel = new Set();
     const hoje = new Date().toISOString().slice(0, 10);
     const listaEl = h('div', { class: 'foco-lista' });
+    const barraEl = h('div');
     const pintar = () => {
         const itens = filtrados();
+        barraEl.replaceChildren(barraSelecao(itens, pintar));
+        listaEl.classList.toggle('com-barra', state.sel.size > 0);
         listaEl.replaceChildren(...nos([
             itens.slice(0, MAX_LISTA).map((c) => cartaoContacto(c, hoje, pintar)),
             itens.length > MAX_LISTA && h('p', { class: 'foco-meta' }, `A mostrar ${MAX_LISTA} de ${itens.length}. Afine o filtro ou use o mapa.`),
-            !itens.length && h('p', { class: 'foco-vazio' }, state.contactos.length ? 'Nenhum contacto com este filtro.' : 'Ainda sem contactos. Importe o JSON do crawler ou registe um a partir de um segmento.')
+            !itens.length && h('p', { class: 'foco-vazio' }, state.contactos.length ? 'Nenhum contacto com este filtro.' : 'Ainda sem contactos. Toque em «Adicionar contactos».')
         ]));
     };
     render(
         h('div', { class: 'foco-acoes' },
-            h('button', { type: 'button', class: 'btn-secondary', onclick: abrirImportar }, 'Importar JSON do crawler')),
+            h('button', { type: 'button', class: 'btn-primary', onclick: abrirAdicionar }, 'Adicionar contactos'),
+            h('button', { type: 'button', class: 'btn-secondary', onclick: abrirImportar }, 'Importar CSV / JSON')),
         barraFiltros(pintar),
-        state.me.papel === 'admin' && atribuirEmMassa(pintar),
+        barraEl,
         listaEl
     );
     pintar();
 }
 
 function abrirImportar() {
-    const ficheiro = h('input', { type: 'file', accept: '.json,application/json', class: 'field-input' });
-    const colar = h('textarea', { class: 'field-input', rows: 5, placeholder: 'ou cole aqui o conteúdo de out/novos.json' });
+    const ficheiro = h('input', { type: 'file', accept: '.csv,text/csv,.json,application/json', class: 'field-input' });
+    const colar = h('textarea', { class: 'field-input', rows: 5, placeholder: 'ou cole aqui o CSV (ligar_*.csv) ou o JSON do crawler' });
     const soFoco = h('input', { type: 'checkbox', checked: true });
     const para = state.me.papel === 'admin' && h('select', { class: 'field-input' },
         h('option', { value: '' }, 'Lista comum — cada parceiro assume os seus'),
         state.pessoas.map((p) => h('option', { value: p.id }, p.nome)));
     const resultado = h('div');
     const botao = h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
-        let rows;
+        let rows, csv;
         try {
             const txt = ficheiro.files[0] ? await ficheiro.files[0].text() : colar.value;
-            rows = JSON.parse(txt);
-            if (!Array.isArray(rows)) rows = rows.businesses || rows.rows || [];
+            if (/^\s*[[{]/.test(txt)) {
+                rows = JSON.parse(txt);
+                if (!Array.isArray(rows)) rows = rows.businesses || rows.rows || [];
+            } else if (txt.trim()) csv = txt;   // CSV is parsed on the server (foco.lerCsv)
+            else throw new Error('vazio');
         } catch (_) {
-            toast('Não é um JSON válido.', true);
+            toast('Não é um CSV nem um JSON válido.', true);
             return;
         }
         botao.disabled = true;
-        botao.textContent = `A importar ${rows.length}…`;
+        botao.textContent = rows ? `A importar ${rows.length}…` : 'A importar…';
         try {
             const r = await api('/api/digitalizept/foco/importar', {
-                method: 'POST', body: { rows, soFoco: soFoco.checked, vendedor_id: para ? para.value : undefined }
+                method: 'POST', body: { rows, csv, soFoco: soFoco.checked, vendedor_id: para ? para.value : undefined }
             });
             resultado.replaceChildren(bloco('Resultado', lista([
                 `${r.novos} novos contactos por contactar`,
@@ -862,8 +940,8 @@ function abrirImportar() {
         botao.textContent = 'Importar';
     } }, 'Importar');
     abrirSheet(
-        h('h2', {}, 'Importar do crawler'),
-        h('p', { class: 'foco-meta' }, 'O ficheiro de «node linkgen.js export --json out/novos.json --new». Quem já existe não é duplicado.'),
+        h('h2', {}, 'Importar contactos'),
+        h('p', { class: 'foco-meta' }, 'Um ficheiro ligar_*.csv do leadgen (ou o JSON do crawler antigo). Quem já existe não é duplicado.'),
         ficheiro, colar,
         h('label', { class: 'foco-toggle' }, soFoco, ' Só os segmentos em foco'),
         para && campo('Atribuir a', para),

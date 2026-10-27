@@ -1,0 +1,1207 @@
+<meta charset="utf-8">
+<title>Projects Platform Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root {
+  /* Layout: one column of iOS grouped surfaces (max 1180px); a segmented control switches
+     Workflows / Screens / Integrations. Tokens copied from projects/public/ios.css. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface-2: #f7f7fa;
+  --surface-3: #efeff4;
+  --line: #e5e5ea;
+  --line-2: #d1d1d6;
+  --text: #1c1c1e;
+  --text-2: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-2: #8e8e93;
+  --heading: #000000;
+  --accent: #9a7412;
+  --accent-gold: #d4af37;
+  --accent-soft: #f4ebcd;
+  --ok: #248a3d;
+  --ok-bg: #e2f4e6;
+  --ok-ink: #1f7a36;
+  --warn: #a34a00;
+  --warn-bg: #fff0d9;
+  --danger: #d70015;
+  --bad-bg: #ffe4e6;
+  --chip-bg: #efeff4;
+  --sidebar-bg: #f7f7fa;
+  --sidebar-selected: #f4ebcd;
+  --btn-bg: #e9e9ee;
+  --input-bg: #ffffff;
+  --input-border: #d1d1d6;
+  --tile: #1c1c1e;
+  --on-gold: #1c1c1e;
+  --on-dark: #ffffff;
+  --backdrop: rgba(28, 28, 30, 0.28);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111113; --surface: #1c1c1e; --surface-2: #232325; --surface-3: #2c2c2e;
+    --line: #2f2f32; --line-2: #3a3a3c; --text: #f2f2f7; --text-2: #d1d1d6; --muted: #98989d;
+    --heading: #ffffff; --accent: #d4af37; --accent-soft: rgba(212, 175, 55, 0.18);
+    --ok: #30d158; --ok-bg: rgba(48, 209, 88, 0.16); --ok-ink: #30d158;
+    --warn: #ffb340; --warn-bg: rgba(255, 159, 10, 0.18); --danger: #ff453a; --bad-bg: rgba(255, 69, 58, 0.18);
+    --chip-bg: #2c2c2e; --sidebar-bg: #161618; --sidebar-selected: rgba(212, 175, 55, 0.16);
+    --btn-bg: #2c2c2e; --input-bg: #1c1c1e; --input-border: #3a3a3c; --tile: #2c2c2e;
+    --backdrop: rgba(0, 0, 0, 0.55); --shadow: 0 1px 3px rgba(0, 0, 0, 0.5); --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111113; --surface: #1c1c1e; --surface-2: #232325; --surface-3: #2c2c2e;
+  --line: #2f2f32; --line-2: #3a3a3c; --text: #f2f2f7; --text-2: #d1d1d6; --muted: #98989d;
+  --heading: #ffffff; --accent: #d4af37; --accent-soft: rgba(212, 175, 55, 0.18);
+  --ok: #30d158; --ok-bg: rgba(48, 209, 88, 0.16); --ok-ink: #30d158;
+  --warn: #ffb340; --warn-bg: rgba(255, 159, 10, 0.18); --danger: #ff453a; --bad-bg: rgba(255, 69, 58, 0.18);
+  --chip-bg: #2c2c2e; --sidebar-bg: #161618; --sidebar-selected: rgba(212, 175, 55, 0.16);
+  --btn-bg: #2c2c2e; --input-bg: #1c1c1e; --input-border: #3a3a3c; --tile: #2c2c2e;
+  --backdrop: rgba(0, 0, 0, 0.55); --shadow: 0 1px 3px rgba(0, 0, 0, 0.5); --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font-ui); letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 72px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2, h3 { margin: 0; color: var(--heading); text-wrap: balance; }
+h1 { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.025em; }
+h2 { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.02em; }
+h3 { font-size: 17px; line-height: 22px; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.stack-s { display: flex; flex-direction: column; gap: 6px; }
+.lede { max-width: 68ch; color: var(--text-2); }
+
+.brand { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.yl { width: 30px; height: 30px; border-radius: 8px; background: var(--tile); color: var(--accent-gold); display: grid; place-items: center; font-size: 12px; font-weight: 700; letter-spacing: 0; flex-shrink: 0; }
+
+.stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.stat { background: var(--surface); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.stat b { font-size: 26px; line-height: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.stat span { font-size: 13px; color: var(--muted); }
+.stat.ok b { color: var(--ok); } .stat.bad b { color: var(--danger); } .stat.warn b { color: var(--warn); }
+
+.card { background: var(--surface); border-radius: 12px; }
+.card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 16px 6px; flex-wrap: wrap; }
+.rows { display: flex; flex-direction: column; }
+.r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; padding: 10px 16px; border-top: 0.5px solid var(--line); align-items: center; }
+.rows > .r:first-child { border-top: 0; }
+.r-t { font-weight: 600; }
+.r-s { color: var(--muted); font-size: 13px; grid-column: 1; }
+.r-b { grid-column: 2; grid-row: 1 / span 2; justify-self: end; }
+
+.badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.badge.ok { color: var(--muted); padding-left: 0; }
+.badge.ok::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.bad { background: var(--bad-bg); color: var(--danger); }
+.badge.gray { background: var(--chip-bg); color: var(--muted); }
+.act { display: inline-block; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0; padding: 2px 7px; border-radius: 6px; background: var(--ok-bg); color: var(--ok-ink); overflow-wrap: anywhere; }
+.prop { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); letter-spacing: 0; overflow-wrap: anywhere; }
+
+.tabs { display: inline-grid; grid-auto-flow: column; padding: 2px; border-radius: 9px; background: var(--btn-bg); justify-self: start; max-width: 100%; }
+.tabs button { appearance: none; border: 0; background: transparent; font: 600 14px var(--font-ui); color: var(--muted); padding: 7px 18px; border-radius: 7px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.tabs button:focus-visible, .scr-list button:focus-visible, .filters button:focus-visible, summary:focus-visible, .pill:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panel { display: flex; flex-direction: column; gap: 22px; }
+
+/* Workflows */
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 9px; background: var(--btn-bg); }
+.seg button { appearance: none; border: 0; background: transparent; font: 600 13px var(--font-ui); color: var(--muted); padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.pill { display: inline-flex; align-items: center; height: 30px; padding: 0 13px; border-radius: 15px; border: 1px solid var(--line-2); font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; user-select: none; }
+.pill input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pill:has(input:checked) { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+.phase-h { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; }
+.phase-h .muted { font-size: 13px; }
+details.flow { background: var(--surface); border-radius: 12px; }
+details.flow + details.flow { margin-top: 8px; }
+details.flow > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 14px; gap: 12px; align-items: center; padding: 12px 16px; }
+details.flow > summary::-webkit-details-marker { display: none; }
+.letter { width: 34px; height: 34px; border-radius: 9px; background: var(--surface-3); display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--text-2); }
+.f-name { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.f-roles { font-size: 13px; color: var(--muted); }
+.f-count { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; color: var(--muted); }
+.chev { width: 14px; height: 14px; color: var(--muted-2); transition: transform 0.15s; }
+details[open] > summary .chev { transform: rotate(90deg); }
+.steps-h, .step { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 4px 16px; padding: 9px 16px; border-top: 0.5px solid var(--line); }
+.steps-h { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding-block: 7px; }
+.s-what { font-weight: 500; }
+.s-where { font-size: 13px; color: var(--muted); }
+.s-api { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; letter-spacing: 0; }
+.s-rec { display: flex; flex-wrap: wrap; gap: 5px; align-items: flex-start; align-content: flex-start; }
+.s-rec .prop { flex-basis: 100%; }
+.empty { padding: 18px 16px; color: var(--muted); }
+
+.fix { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 12px 16px; border-top: 0.5px solid var(--line); }
+.rows > .fix:first-child { border-top: 0; }
+.fix-n { width: 26px; height: 26px; border-radius: 13px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.fix p { color: var(--text-2); font-size: 14px; margin-top: 2px; }
+
+.tbl-wrap { overflow-x: auto; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 12px; border-bottom: 0.5px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 10px 12px; border-top: 0.5px solid var(--line); vertical-align: top; }
+.tbl tr:first-child td { border-top: 0; }
+.tbl td.n { width: 34px; }
+.num { width: 22px; height: 22px; border-radius: 11px; background: var(--tile); color: var(--accent-gold); font-size: 11.5px; font-weight: 700; display: inline-grid; place-items: center; font-variant-numeric: tabular-nums; }
+
+/* Screens */
+.scr { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; align-items: start; }
+.scr-list { display: flex; flex-direction: column; gap: 10px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.scr-g { display: flex; flex-direction: column; gap: 1px; }
+.scr-gl { font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 0 10px 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.scr-list button { appearance: none; border: 0; background: transparent; text-align: left; font: 15px var(--font-ui); color: var(--text); height: 32px; padding: 0 10px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.scr-list button[aria-pressed="true"] { background: var(--sidebar-selected); font-weight: 600; }
+.scr-list button .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); flex-shrink: 0; }
+.scr-view { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.scr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.facts { display: grid; grid-template-columns: 120px minmax(0, 1fr); }
+.facts > div { padding: 9px 16px; border-top: 0.5px solid var(--line); font-size: 14px; }
+.facts > div:nth-child(-n+2) { border-top: 0; }
+.facts .k { color: var(--muted); font-size: 13px; }
+.facts .v { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+
+/* Mockups: the platform's own shapes, scaled for reading */
+.m-scroll { overflow-x: auto; border-radius: 14px; }
+.m-win { min-width: 940px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-size: 13px; line-height: 1.4; color: var(--text); position: relative; }
+.mtop { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; background: var(--sidebar-bg); border-bottom: 0.5px solid var(--line); }
+.mlogo { width: 26px; height: 26px; border-radius: 7px; background: var(--tile); color: var(--accent-gold); font-weight: 700; font-size: 11px; display: grid; place-items: center; letter-spacing: 0; flex-shrink: 0; }
+.mlogo.l { width: 44px; height: 44px; border-radius: 11px; font-size: 16px; margin: 0 auto; }
+.mtop b { font-size: 14px; }
+.mmuted { color: var(--muted); font-size: 12px; }
+.mtop-r { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mic { width: 28px; height: 28px; border-radius: 14px; background: var(--btn-bg); display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.mav { width: 28px; height: 28px; border-radius: 14px; background: var(--muted-2); color: var(--on-dark); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
+.mbody { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 620px; }
+.mnav { background: var(--sidebar-bg); border-right: 0.5px solid var(--line); padding: 12px 8px; display: flex; flex-direction: column; gap: 12px; }
+.mnav-g { display: flex; flex-direction: column; gap: 1px; }
+.mnav-g.end { margin-top: auto; }
+.mnav-l { font-size: 11px; font-weight: 600; color: var(--muted); padding: 0 10px 3px; }
+.mnav-i { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+.mnav-i.on { background: var(--sidebar-selected); font-weight: 600; }
+.mnav-n, .mcount { min-width: 18px; height: 17px; border-radius: 9px; background: var(--accent-gold); color: var(--on-gold); font-size: 10.5px; font-weight: 700; display: inline-grid; place-items: center; padding: 0 5px; }
+.mmain { padding: 20px 26px 26px; display: flex; flex-direction: column; gap: 14px; position: relative; min-width: 0; }
+.mtitle { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.meye { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; }
+.mh1 { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; color: var(--heading); }
+.msub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.mtitle-r, .mbtns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mbtn { display: inline-flex; align-items: center; height: 28px; padding: 0 13px; border-radius: 14px; background: var(--btn-bg); font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--text); }
+.mbtn.p { background: var(--accent-gold); color: var(--on-gold); }
+.mbtn.wide { justify-content: center; height: 36px; border-radius: 10px; font-size: 13.5px; }
+.mgh { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; display: flex; gap: 8px; align-items: center; margin-bottom: 7px; }
+.mcard { background: var(--surface); border-radius: 12px; padding: 2px 14px; }
+.mcard.pad { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mcard-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; padding: 10px 0 4px; }
+.mrow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 0.5px solid var(--line); }
+.mcard > .mrow:first-child, .mcard-h + .mrow { border-top: 0; }
+.mrow-l { flex: 1; min-width: 0; }
+.mrow-t { font-weight: 600; font-size: 13px; }
+.mrow-s { color: var(--muted); font-size: 12px; }
+.mrow-r { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.mp { color: var(--text-2); font-size: 12.5px; }
+.mb { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.mb-ok { color: var(--muted); padding-left: 0; }
+.mb-ok::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.mb-warn { background: var(--warn-bg); color: var(--warn); }
+.mb-bad { background: var(--bad-bg); color: var(--danger); }
+.mb-gray { background: var(--chip-bg); color: var(--muted); }
+.mtile { width: 34px; height: 34px; border-radius: 9px; background: var(--surface-3); display: grid; place-items: center; font-weight: 700; font-size: 12px; color: var(--text-2); flex-shrink: 0; }
+.mstage { display: flex; flex-direction: column; gap: 5px; width: 170px; font-size: 11.5px; color: var(--muted); }
+.mbar { display: flex; gap: 3px; }
+.mbar i { width: 14px; height: 5px; border-radius: 3px; background: var(--line); }
+.mbar i.d { background: var(--muted-2); }
+.mbar i.c { background: var(--accent-gold); }
+.mcost { display: inline-block; width: 80px; height: 5px; border-radius: 3px; background: var(--line); vertical-align: middle; margin: 0 6px; overflow: hidden; }
+.mcost i { display: block; height: 100%; background: var(--accent-gold); }
+.mgrid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.mcol2 { display: flex; flex-direction: column; gap: 12px; }
+.mfields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 4px 0 12px; }
+.mfield { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); text-align: left; }
+.min { height: 30px; border: 1px solid var(--input-border); background: var(--input-bg); border-radius: 8px; padding: 0 10px; display: flex; align-items: center; color: var(--text); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.min.ta { height: 54px; align-items: flex-start; padding-top: 7px; white-space: normal; }
+.min.ph { color: var(--muted-2); }
+.mseg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--btn-bg); }
+.mseg span { padding: 3px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.mseg span.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.mpill { display: inline-flex; align-items: center; height: 26px; padding: 0 11px; border-radius: 13px; border: 1px solid var(--line-2); font-size: 12px; color: var(--text-2); }
+.mpill.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.mtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.mkpi { background: var(--surface); border-radius: 12px; padding: 10px 12px; }
+.mkpi b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.mkpi span { font-size: 11.5px; color: var(--muted); }
+.mdet { background: var(--surface); border-radius: 12px; padding: 10px 14px; color: var(--text-2); font-size: 12.5px; }
+.mdet::before { content: "▸  "; color: var(--muted); }
+.mdoc { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; color: var(--text-2); letter-spacing: 0; }
+.mtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mtable th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; padding: 8px 6px; border-bottom: 0.5px solid var(--line); }
+.mtable td { padding: 8px 6px; border-top: 0.5px solid var(--line); }
+.mtable tr:first-child td { border-top: 0; }
+.mtable .mono { font-size: 11.5px; }
+.mflag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--danger); border: 1px dashed var(--danger); border-radius: 6px; padding: 2px 7px; background: var(--surface); white-space: nowrap; }
+.mflag::before { content: "!"; width: 14px; height: 14px; border-radius: 7px; background: var(--danger); color: var(--on-dark); display: grid; place-items: center; font-size: 10px; }
+.mboard { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.mcolb { display: flex; flex-direction: column; gap: 7px; }
+.mcolb-h { font-size: 12px; font-weight: 700; color: var(--muted); display: flex; justify-content: space-between; padding: 0 2px; }
+.mtcard { background: var(--surface); border-radius: 10px; padding: 9px 10px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.mtcard .mrow-t { font-size: 12.5px; }
+.mmodal-bg { position: absolute; inset: 0; background: var(--backdrop); display: grid; justify-items: center; align-content: start; padding-top: 36px; }
+.mmodal { width: min(640px, 92%); background: var(--surface); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 10px; }
+.msplit { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; align-items: start; }
+.mlist { background: var(--surface); border-radius: 12px; padding: 6px; }
+.mlist-g { font-size: 10.5px; font-weight: 700; color: var(--muted); display: flex; justify-content: space-between; padding: 8px 8px 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.mlist-g i { font-style: normal; color: var(--accent); font-size: 13px; }
+.mlist-i { padding: 4px 8px; border-radius: 7px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 6px; }
+.mlist-i.on { background: var(--sidebar-selected); font-weight: 600; }
+.mlogin { min-height: 664px; display: grid; place-items: center; align-content: center; gap: 16px; padding: 30px; }
+.mlogin-card { width: 340px; background: var(--surface); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.mor { color: var(--muted); font-size: 12px; }
+.mphone { width: 230px; border-radius: 30px; border: 8px solid var(--tile); background: var(--surface); padding: 22px 14px 18px; display: flex; flex-direction: column; gap: 9px; margin: 0 auto; }
+.mphone .mrow { padding: 7px 0; }
+.mfeed { display: flex; gap: 10px; padding: 8px 0; border-top: 0.5px solid var(--line); }
+
+/* Integrations */
+.diagram { overflow-x: auto; background: var(--surface); border-radius: 12px; padding: 12px; }
+.diagram svg { display: block; width: 100%; height: auto; }
+.svg-zone { fill: none; stroke: var(--line-2); stroke-dasharray: 5 5; }
+.svg-zone-t { fill: var(--muted); font: 600 11.5px var(--font-ui); letter-spacing: 0.04em; text-transform: uppercase; }
+.svg-box { fill: var(--surface); stroke: var(--line-2); }
+.svg-box.person { fill: var(--surface-3); stroke: none; }
+.svg-box.main { fill: var(--accent-soft); stroke: var(--accent); }
+.svg-box.sim { stroke-dasharray: 4 4; fill: var(--surface-2); }
+.svg-t { fill: var(--text); font: 600 13px var(--font-ui); }
+.svg-s { fill: var(--muted); font: 11.5px var(--font-ui); }
+.svg-e { fill: none; stroke: var(--muted-2); stroke-width: 1.4; }
+.svg-e.dash { stroke-dasharray: 5 4; }
+.svg-arrow { fill: var(--muted-2); }
+.svg-n { fill: var(--tile); }
+.svg-nt { fill: var(--accent-gold); font: 700 10.5px var(--font-ui); }
+.seq-ab { fill: var(--surface-3); }
+.seq-at { fill: var(--text); font: 600 12.5px var(--font-ui); }
+.seq-ll { stroke: var(--line-2); stroke-dasharray: 4 4; }
+.seq-m { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+.seq-t { fill: var(--text); font: 12.5px var(--font-ui); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.seq-rk { fill: var(--ok-ink); font: 11px var(--font-mono); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.seq-rn { fill: var(--danger); font: 600 11px var(--font-ui); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.seq-wrap + .seq-wrap { margin-top: 18px; }
+.codebox { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; background: var(--surface); border-radius: 12px; padding: 14px 16px; white-space: pre; overflow-x: auto; color: var(--text-2); letter-spacing: 0; }
+.codebox b { color: var(--text); font-weight: 600; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scr { grid-template-columns: minmax(0, 1fr); }
+  .scr-list { position: static; flex-direction: row; overflow-x: auto; gap: 14px; padding-bottom: 4px; }
+  .scr-g { flex-direction: row; align-items: center; gap: 2px; }
+  .scr-gl { padding: 0 4px 0 0; white-space: nowrap; }
+  .scr-list button { white-space: nowrap; }
+  .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  h1 { font-size: 28px; line-height: 34px; }
+  .steps-h { display: none; }
+  .step { grid-template-columns: minmax(0, 1fr); }
+  details.flow > summary { grid-template-columns: 34px minmax(0, 1fr) 14px; }
+  .f-count { grid-column: 2; grid-row: 2; justify-content: flex-start; }
+  .chev { grid-column: 3; grid-row: 1; }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .facts > div:nth-child(2) { border-top: 0; }
+  .facts .k { padding-bottom: 0; border-top: 0.5px solid var(--line); }
+  .facts .v { border-top: 0; padding-top: 3px; }
+  .tabs button { padding: 7px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="svg-arrow"></path>
+    </marker>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="stack">
+    <div class="brand"><span class="yl">YL</span>YourLab Projects Platform · Delivery OS</div>
+    <h1>Projects Platform Map</h1>
+    <p class="lede">Every workflow a person can run on the platform, what each step leaves in the activity log, the screens as they look today, and the systems the platform talks to. Read from <code>yourlab_website/website/projects</code> and <code>yourlab-agent-runtime</code> on 8 October 2026. Nothing in the code was changed.</p>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Tracking at a glance"></section>
+
+  <section class="card">
+    <div class="card-h"><h2>Read this first</h2><span class="muted small">The code has moved past CONTEXT.md and README.md</span></div>
+    <div class="rows" id="drift"></div>
+  </section>
+
+  <div class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="tab-workflows" aria-controls="workflows" aria-selected="true">Workflows</button>
+    <button role="tab" id="tab-screens" aria-controls="screens" aria-selected="false">Screens</button>
+    <button role="tab" id="tab-integrations" aria-controls="integrations" aria-selected="false">Integrations</button>
+  </div>
+
+  <!-- Workflows -->
+  <section class="panel" id="workflows" role="tabpanel" aria-labelledby="tab-workflows">
+    <div class="stack-s">
+      <h2>What people do, and what it records</h2>
+      <p class="lede">Each step names the screen and button, the API call, and the row it writes to the <code>activity</code> table in <code>data/platform.db</code>. Where nothing is written, the step carries the event to add.</p>
+    </div>
+    <div class="filters">
+      <div class="seg" id="roleFilter" role="group" aria-label="Who">
+        <button aria-pressed="true" data-role="">Everyone</button>
+        <button aria-pressed="false" data-role="SA">Super admin</button>
+        <button aria-pressed="false" data-role="P">Partner</button>
+        <button aria-pressed="false" data-role="C">Client</button>
+        <button aria-pressed="false" data-role="RT">Runtime</button>
+      </div>
+      <label class="pill"><input type="checkbox" id="onlyGaps">Only what is not recorded</label>
+    </div>
+    <div class="legend">
+      <span><span class="act">action_name</span> written to activity</span>
+      <span><span class="badge bad">Not recorded</span> no trace</span>
+      <span><span class="badge warn">Broken</span> written with an empty action or a wrong name</span>
+      <span><span class="badge gray">Read</span> a view, or state kept in the browser</span>
+    </div>
+    <div id="flows" class="stack"></div>
+
+    <section class="card">
+      <div class="card-h"><h2>Fix the tracking, in this order</h2><span class="muted small">No analytics library needed: the activity table already holds who, when, project, action and details</span></div>
+      <div class="rows" id="fixes"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2>Where else activity lives</h2><span class="muted small">Per project, in <code>data/projects/&lt;id&gt;.json</code> unless noted</span></div>
+      <div class="tbl-wrap"><table class="tbl" id="stores"></table></div>
+    </section>
+  </section>
+
+  <!-- Screens -->
+  <section class="panel" id="screens" role="tabpanel" aria-labelledby="tab-screens" hidden>
+    <div class="stack-s">
+      <h2>The screens as they are</h2>
+      <p class="lede">Drawn from <code>public/index.html</code> and the <code>*-ui.js</code> files, in the shapes of <code>ios.css</code> and <code>docs/mockups/ios</code>. Shown as the super admin sees them, with example data. A red dot marks a screen with something to fix; dashed red notes mark it on the mockup.</p>
+    </div>
+    <div class="scr">
+      <nav class="scr-list" id="scrList" aria-label="Screens"></nav>
+      <div class="scr-view">
+        <div class="scr-head"><h2 id="scrName"></h2><span class="muted small" id="scrPath"></span></div>
+        <div class="m-scroll" id="scrMock"></div>
+        <div class="card facts" id="scrFacts"></div>
+      </div>
+    </div>
+    <section class="card">
+      <div class="card-h"><h2>In the code, out of reach</h2><span class="muted small">Rendered or routed, but no person can get to them</span></div>
+      <div class="rows" id="hidden"></div>
+    </section>
+  </section>
+
+  <!-- Integrations -->
+  <section class="panel" id="integrations" role="tabpanel" aria-labelledby="tab-integrations" hidden>
+    <div class="stack-s">
+      <h2>What the platform talks to</h2>
+      <p class="lede">Numbers on the lines match the table below. Dashed means simulated. Notion, Gmail, Drive and Slack do not appear anywhere in the platform code.</p>
+    </div>
+    <div class="diagram" id="map"></div>
+    <section class="card">
+      <div class="tbl-wrap"><table class="tbl" id="integ"></table></div>
+    </section>
+
+    <div class="stack-s">
+      <h2>How the main flows travel</h2>
+      <p class="lede">Green text under an arrow is the activity row it writes; red means it writes none.</p>
+    </div>
+    <div id="seqs"></div>
+
+    <div class="two">
+      <section class="stack-s">
+        <h3>The runtime connector, signed</h3>
+        <div class="codebox" id="proto"></div>
+      </section>
+      <section class="stack-s">
+        <h3>Where the data sits</h3>
+        <div class="card"><div class="rows" id="data"></div></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-h"><h2>Security and consistency</h2><span class="muted small">Found while reading; none of these were run</span></div>
+      <div class="rows" id="risks"></div>
+    </section>
+  </section>
+</div>
+
+<script>
+(() => {
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const $ = (id) => document.getElementById(id);
+const ROLE = { SA: 'Super admin', P: 'Partner', C: 'Client', RT: 'Runtime' };
+
+/* ------------------------------------------------------------ data: workflows
+   step = [what, where, api, record, eventToAdd]
+   record: 'a · b' written · null not recorded · '!x' broken · '~x' read / browser only */
+const FLOWS = [
+  { id: 'A', phase: 0, name: 'Sign in and out', roles: ['SA', 'P', 'C'], steps: [
+    ['Sign in with email and password', 'Entrar › «Entrar na Plataforma»', 'POST /auth/login', null, 'auth_signed_in {method: "password"} · auth_failed'],
+    ['Sign in with Google; the first time creates a client account', 'Entrar › «Entrar com Google»', 'POST /auth/google', 'user_signed_up_google · user_signed_in_google'],
+    ['Sign out', 'Menu › «Terminar sessão»', 'POST /auth/logout', null, 'auth_signed_out'],
+    ['Session ends after 12 h idle, or when the server restarts', '—', 'sessions Map in memory', '~in memory: a restart signs everyone out'],
+  ] },
+  { id: 'B', phase: 0, name: 'Set up the platform', roles: ['SA'], steps: [
+    ['Connect the platform\'s GitHub account', 'Definições da plataforma › «Entrar com o GitHub»', 'GET /git-provider/oauth/start → /oauth/callback', null, 'platform_setting_changed {area: "github"}'],
+    ['Repository defaults', '› «Predefinições de repositório»', 'PATCH /git-provider/settings', null, 'platform_setting_changed {area: "repo_defaults"}'],
+    ['DeepInfra key and model', '› «IA · DeepInfra» › «Guardar e testar»', 'PATCH /llm-provider/settings/deepinfra · POST …/verify', null, 'platform_setting_changed {area: "llm"} · llm_verified {ok}'],
+    ['Google sign-in settings', '› «Entrar com Google»', 'PUT /auth/google/settings', null, 'platform_setting_changed {area: "google"}'],
+    ['Create an account with a temporary password (no email is sent)', '› «Contas» › «Criar utilizador»', 'POST /users', 'user_created'],
+    ['Change role or budget view, deactivate', '› «Guardar alterações»', 'PATCH /users/:id', 'user_updated'],
+  ] },
+  { id: 'S', phase: 0, name: 'Pair the Agent Runtime', roles: ['SA', 'RT'], state: ['bad', 'API only'], steps: [
+    ['Ask for a pairing code, typing the password again', 'no screen', 'POST /agent-connectors/pairing-codes', 'agent_connector_pairing_code_created'],
+    ['Pair from the Mac', 'Terminal › npm run connector:pair', 'POST /agent-connectors/pair', 'agent_connector_paired'],
+    ['Revoke; running work becomes connection_lost', 'no screen', 'POST /agent-connectors/:id/revoke', 'agent_connector_revoked'],
+  ] },
+  { id: 'T', phase: 0, name: 'My account', roles: ['SA', 'P', 'C'], steps: [
+    ['Edit name, email, phone, company, job title', 'Conta › «Sobre si»', 'PATCH /auth/me', 'own_account_updated'],
+    ['Change password; other sessions are signed out', 'Conta › «Mudar password»', 'PATCH /auth/me', 'own_account_updated'],
+  ] },
+
+  { id: 'C', phase: 1, name: 'Create a project', roles: ['SA'], steps: [
+    ['New project from a name and an idea', 'Projetos › «Novo projecto» › «Criar projecto»', 'POST /projects', 'project_created'],
+    ['Open a project', 'Projetos › a row', 'GET /projects/:id', null, 'call the existing POST record-visit'],
+  ] },
+  { id: 'D', phase: 1, name: 'Give access', roles: ['SA'], steps: [
+    ['Give a partner or a client access', 'Definições do projecto › «Dar acesso ao projecto»', 'POST /projects/:id/members', 'project_member_assigned'],
+    ['Remove access', 'same block', 'DELETE /projects/:id/members/:uid', 'project_member_removed'],
+    ['Edit project info and proposal data', '› «Guardar definições do projecto»', 'PATCH /projects/:id', 'project_updated'],
+  ] },
+  { id: 'E', phase: 1, name: 'Repository and the yourlab folder', roles: ['SA'], steps: [
+    ['Link a repository', 'Definições do projecto › «Ligar»', 'POST /:id/repository/link', 'repository_linked'],
+    ['Create a repository', '› «Criar repositório»', 'POST /:id/repository/create', 'repository_created'],
+    ['Set the sandbox folder', '› «Guardar pasta»', 'PATCH /:id/repository', 'repository_local_path_set'],
+    ['Unlink', '› «Desligar»', 'DELETE /:id/repository', 'repository_unlinked'],
+    ['Survey the code, without AI', 'Resumo › «Levantar o código»', 'POST /:id/survey', 'repository_surveyed'],
+    ['Create the yourlab folder', 'Resumo › «Criar pasta yourlab»', 'POST /:id/workspace/initialize', 'workspace_initialized'],
+    ['Read the repository (also on open, when older than 10 min)', '«Actualizar»', 'POST /:id/workspace/sync', 'workspace_synced'],
+  ] },
+  { id: 'M', phase: 1, name: 'Project definition (intake)', roles: ['SA', 'P'], state: ['bad', 'Screen unreachable'], steps: [
+    ['Answer the 12 intake questions', 'Entrega › «Definição do projecto»', 'PATCH /:id/intake', 'intake_answered'],
+  ] },
+
+  { id: 'I', phase: 2, name: 'Intenção: a mockup before the requirements', roles: ['SA', 'P'], steps: [
+    ['First screen from two or three sentences', 'Intenção › «Gerar o primeiro ecrã»', 'POST /:id/mockups', 'mockup_session_started'],
+    ['New version', '› «Gerar nova versão»', 'POST /:id/mockups/:s/iterate', 'mockup_iterated · ai_run'],
+    ['Approve; writes yourlab/mockup/index.html', '› «Aprovar»', 'POST …/verdict', 'mockup_approved · workspace_file_saved'],
+    ['Ask for a change', '› «Pedir alteração»', 'POST …/verdict', 'mockup_changes'],
+    ['Discard', '› «Descartar»', 'POST …/verdict', 'mockup_discarded'],
+    ['Open full size', '› «Abrir em tamanho real»', 'POST …/ticket → render', '~read'],
+  ] },
+  { id: 'F', phase: 2, name: 'Edit an artefact', roles: ['SA', 'P'], steps: [
+    ['Open an artefact', 'Artefactos › the list', 'GET /:id/workspace/file', '~read'],
+    ['Ask the AI for a draft (kept in the browser until saved)', '› «Pedir à IA»', 'POST /:id/packs/edit_artefact', 'ai_run'],
+    ['Save: a commit plus a review task', '› «Guardar» (⌘S)', 'PUT /:id/workspace/file', 'workspace_file_saved · work_item_created'],
+    ['What else changes?', '› «O que mais muda?»', 'POST /:id/packs/impact', 'ai_run'],
+    ['Present to the client, full screen', '› «Apresentar»', '—', null, 'artifact_presented'],
+  ] },
+  { id: 'G', phase: 2, name: 'Fill the artefacts from the code', roles: ['SA', 'P'], steps: [
+    ['Create the AI steps as tasks', 'Artefactos › «Criar as tarefas»', 'POST /:id/ai-steps', '!ai_stepListcreated', 'rename to ai_steps_created'],
+    ['Run a step', '› «Gerar com IA» / «Refazer»', 'POST /:id/ai-steps/run', 'ai_run'],
+    ['Write the result', '› «Escrever no repositório»', 'PUT /:id/workspace/file', 'workspace_file_saved'],
+  ] },
+  { id: 'N', phase: 2, name: 'Requirements editor', roles: ['SA', 'P'], steps: [
+    ['Add', 'Editor de requisitos › «Adicionar requisito»', 'POST /requirements', 'requirement_created'],
+    ['Edit', '› «Editar requisito»', 'PATCH /requirements/:rid', 'requirement_updated'],
+    ['Delete', '› a row', 'DELETE /requirements/:rid', 'requirement_deleted'],
+    ['Batch edit', '› batch bar', 'POST /requirements/batch', 'requirements_batch_updated'],
+    ['Move, link or repair the hierarchy', '› «Mapa V»', '/requirements/hierarchy/*', 'requirement_hierarchy_*'],
+    ['Clear all', '› «Limpar todos»', 'DELETE /requirements', 'requirements_cleared'],
+    ['Mirror to openspec/specs, 1.5 s later', 'automatic', 'workspace-io push', 'requirements_pushed'],
+    ['Export MD or JSON', '› «Exportar»', '—', '~download'],
+  ] },
+  { id: 'V', phase: 2, name: 'Clarifying questions', roles: ['SA', 'P'], steps: [
+    ['Add', 'Perguntas › «Guardar Pergunta»', 'POST /questions', 'clarification_question_created'],
+    ['Edit', 'Perguntas › a row', 'PATCH /questions/:qid', 'clarification_question_updated'],
+    ['Delete', 'Perguntas › a row', 'DELETE /questions/:qid', 'clarification_question_deleted'],
+  ] },
+  { id: 'O', phase: 2, name: 'Meeting minutes (Atas)', roles: ['SA', 'P'], steps: [
+    ['New minute', 'Atas › «Guardar ata»', 'POST /meeting-minutes', 'meeting_minutes_added'],
+    ['Classify impact', '› «Classificar impacto»', 'POST /meeting-minutes/:mid/classify', 'meeting_minute_classified'],
+    ['Propagation prompt', '› «Gerar prompt IA»', 'POST /propagation-prompt', 'meeting_minute_propagation_prompt'],
+    ['Requirements pre-prompt', '› «Gerar pre-prompt»', 'POST /build-minutes-prompt', 'minutes_prompt_generated'],
+    ['Apply requirement changes', '› «Aplicar alterações»', 'POST /import-requirement-changes', 'requirement_change_set_imported'],
+    ['Promote a detected decision', '› «Promover a decisão»', 'POST /decisions/promote', '!decision_promoted', 'write it through appendActivity'],
+  ] },
+  { id: 'P', phase: 2, name: 'Documents', roles: ['SA', 'P', 'C'], steps: [
+    ['Upload up to 25 MB (clients can too, through the API)', 'Documentos › «Carregar ficheiro»', 'POST /documents/upload', 'project_document_uploaded'],
+    ['Create or edit a text document', 'Documentos', 'POST /documents/text · PATCH', 'project_document_created · project_document_updated'],
+    ['Base text for requirements', '› «Guardar texto base»', 'PUT /source-text', 'project_source_text_updated'],
+    ['AI pre-prompt and import', '› «Gerar pre-prompt IA» › «Importar requisitos»', 'build-prompt · import-ai', 'ai_prompt_generated · ai_requirements_imported'],
+    ['Open or download', '› a row', 'GET /documents/:id/download', null, 'document_downloaded {docId, role}'],
+  ] },
+  { id: 'W', phase: 2, name: 'Decisions and the Log', roles: ['SA', 'P'], steps: [
+    ['Read what changed', 'Decisões', 'GET /decisions-log?since=', '~"seen" lives in localStorage'],
+    ['Read the Log', 'Log', 'GET /projects/:id/activity', '~read: newest 400 rows of all projects'],
+    ['Revert a change', 'Log › «Reverter»', 'POST /audit-log/:aid/revert', 'audit_reverted'],
+  ] },
+
+  { id: 'H', phase: 3, name: 'Tests, then code', roles: ['SA', 'P'], steps: [
+    ['Tests from the artefacts', 'Artefactos › «Gerar testes»', 'POST /packs/tests_from_artefacts', 'ai_run'],
+    ['Write the test files (never overwrites)', '› «Escrever n ficheiro(s) de teste»', 'POST /:id/repository/tests', 'tests_written'],
+    ['Code for these tests', '› «Código para estes testes»', 'packs/code_from_tests → POST /repository/code', 'ai_run · code_written'],
+    ['Do the artefacts still say the same?', '› «Propor actualizações aos artefactos»', 'POST /packs/sync_back', 'ai_run'],
+    ['Split into small tasks', 'Tarefas › «Dividir em tarefas pequenas»', 'packs/split_task → /work-items/:wid/split', 'ai_run · work_item_split'],
+  ] },
+  { id: 'J', phase: 3, name: 'Tasks', roles: ['SA', 'P', 'C'], steps: [
+    ['New task', 'Tarefas › «+ Nova tarefa»', 'POST /work-items', 'work_item_created'],
+    ['Edit, change status', 'Tarefas › a task', 'PATCH /work-items/:wid', 'work_item_updated'],
+    ['Delete and restore', '› «Apagar»', 'DELETE · tombstones/:id/restore', 'work_item_deleted · work_item_tombstone_restored'],
+    ['Post an update (clients only on visible tasks)', '› «Publicar actualização»', 'POST …/updates', 'work_item_update_posted · work_item_update_edited'],
+    ['Propose and rule on a decision', '› «Aceitar» / «Rejeitar»', 'POST …/decisions[/:uid]', 'work_item_decision_proposed · work_item_decision_accepted'],
+    ['Register manual output; emails the reviewer', '› «Registar resultado manual»', 'POST …/manual-output', 'work_item_manual_output_submitted'],
+    ['Task suggestions', '› «Rever e criar» / «Dispensar»', 'POST /work-items/suggestions', 'task_suggestions_evaluated'],
+  ] },
+  { id: 'K', phase: 3, name: 'Agent work through the runtime', roles: ['SA', 'P', 'RT'], state: ['warn', 'Old UI, API live'], steps: [
+    ['Request a stage transition or an idea augment', '«Configurar transição» (legacy modal)', 'POST /work-items/stage-transitions/requests', 'stage_transition_request_created · idea_augment_request_created'],
+    ['The agent proposes a plan; approve it', 'Tarefas › «Aprovar e iniciar»', 'work-items/agent-requests', 'agent_request_planned · agent_request_approved'],
+    ['Dispatch to the runtime', 'automatic', 'POST /agent-runs', 'agent_run_dispatched'],
+    ['The runtime claims the work and returns the result', 'runtime', 'POST /agent-connectors/claim · /dispatches/:id/result', 'agent_dispatch_claimed · agent_dispatch_result_received'],
+    ['Review: approve, ask for changes, reject', 'Tarefas › «Aprovar e aplicar»', 'POST /work-items/:wid/review', 'work_item_review_approved'],
+    ['Commit straight to the default branch', 'automatic', 'GitHub API', 'agent_code_committed · agent_code_commit_skipped'],
+    ['Pause, retry, cancel, unlock', 'Tarefas › execution controls', '/agent-runs/:id/*', 'agent_dispatch_pause_requested · agent_dispatch_retry_queued · agent_dispatch_cancel_requested · agent_run_force_unlocked'],
+  ] },
+  { id: 'L', phase: 3, name: 'Execução: build, survey, refine', roles: ['SA', 'P', 'RT'], state: ['bad', 'No screen'], steps: [
+    ['Start; blocked without a repository or the required intake', 'Entrega › «Iniciar execução»', 'POST /:id/orchestration/start', 'orchestration_started'],
+    ['Each persona run', 'driver', 'orchestration-driver.js', 'orchestration_dispatch · orchestration_result · dispatch_failed'],
+    ['A question for a person', '› «Aceitar e continuar» / «Pedir outra versão»', 'POST /:id/orchestration/answer', 'orchestration_question_raised · orchestration_question_accepted'],
+    ['It ends: out of budget, halted, done', 'driver', '—', 'orchestration_budget_exhausted · orchestration_halted · orchestration_completed'],
+    ['Stop', '› «Parar»', 'POST /:id/orchestration/stop', 'orchestration_stopped'],
+  ] },
+  { id: 'U', phase: 3, name: 'Structured engineering', roles: ['SA', 'P'], state: ['gray', 'Per-project flag'], steps: [
+    ['Turn the flag on or off', 'Definições do projecto › Opções técnicas', 'POST /:id/engineering/feature', 'engineering_state_enabled · engineering_state_disabled'],
+    ['Propose, review and apply change sets', 'Tarefas › «Alterações de engenharia propostas»', '/:id/engineering/change-sets', 'engineering_change_set_proposed · engineering_change_set_reviewed · engineering_change_set_applied'],
+    ['External references', '—', '/:id/engineering/external-references', 'engineering_external_reference_added · engineering_external_reference_removed'],
+  ] },
+
+  { id: 'Q', phase: 4, name: 'Commercial proposal', roles: ['SA'], steps: [
+    ['Open the configurator, phases pre-filled', 'Gerar › «Gerar Proposta Comercial»', 'GET /:id/proposal-config', '~read'],
+    ['Generate', '› «Gerar proposta»', 'POST /:id/generate {mode: "commercial"}', 'proposal_bundle_generated'],
+    ['Technical package', '› «Pacote Técnico»', 'POST /:id/generate {mode: "technical"}', 'proposal_bundle_generated'],
+    ['View or download', '› «Ver HTML» · «Download»', 'GET /:id/generated/:genId/:format', null, 'proposal_viewed · proposal_downloaded'],
+    ['Delete', '› «Eliminar»', 'DELETE /:id/generated/:genId', 'proposal_bundle_deleted'],
+  ] },
+  { id: 'R', phase: 4, name: 'The client follows the project', roles: ['C'], steps: [
+    ['Open their project', 'Projetos › Resumo', 'GET /projects/:id', null, 'call the existing POST record-visit'],
+    ['See the mockup', 'Resumo › «Ver mockup»', 'GET /:id/workspace/mockup-link', null, 'mockup_viewed'],
+    ['Read questions «Para: cliente» and the phases', 'Resumo', 'GET /:id/workspace', '~read'],
+    ['Post an update on a visible task', 'Tarefas (visible tasks only)', 'POST …/updates', 'work_item_update_posted'],
+    ['Approve a stage', 'Entrega › «Aprovações pendentes» (unreachable)', 'POST /client-approvals', '!client_approval', 'write it through appendActivity, and give clients a place to approve'],
+  ] },
+];
+const PHASES = ['Set up', 'Start a project', 'Define the project', 'Build', 'Sell and follow'];
+
+const kindOf = (rec) => rec === null ? 'gap' : rec[0] === '!' ? 'broken' : rec[0] === '~' ? 'read' : 'rec';
+const all = FLOWS.flatMap((f) => f.steps);
+const count = (k) => all.filter((s) => kindOf(s[3]) === k).length;
+// decision_created, change_request_created, stage_summary_updated: malformed too, with no screen that triggers them
+const BROKEN_WITHOUT_SCREEN = 3;
+
+$('stats').innerHTML = [
+  ['', FLOWS.length, 'workflows'],
+  ['', all.length, 'steps'],
+  ['ok', count('rec'), 'steps recorded'],
+  ['bad', count('gap'), 'steps with no record'],
+  ['warn', count('broken') + BROKEN_WITHOUT_SCREEN, 'broken records'],
+].map(([k, n, t]) => `<div class="stat ${k}"><b>${n}</b><span>${t}</span></div>`).join('');
+
+const DRIFT = [
+  ['Repository as source of truth', 'yourlab/ and openspec/specs/ in the repository are the project\'s documentation. AI calls go straight to DeepInfra (lib/llm-call.js), and each one leaves a completed task behind (lib/ai-runs.js).', 'ok', 'Live'],
+  ['The persona chain (Execução) is on hold', 'API and driver are live; Resumo no longer paints it (project-home-ui.js:374) and the phone\'s Agentes tab is hidden.', 'gray', 'Paused'],
+  ['The Entrega panel cannot be reached', 'switchToTab rewrites deliveryos to Resumo (app.js:3050). Inside it: the 9 stages, Execução, intake, diagrams, structured engineering and client approvals.', 'bad', 'No access'],
+  ['Pairing the runtime has no screen', 'The form ids are gone from index.html; the runtime docs still send people to «Definições → Agent Runtime».', 'bad', 'API only'],
+  ['Agentes opens only from a task', 'Super admin, through «Definições de agentes» on a task (work-items-ui.js:2246).', 'warn', 'Hidden'],
+  ['Plano / Epics is never mounted', 'Nothing calls window.PlanoUI. GUIDE.md: phases are the only way work is grouped.', 'gray', 'Retired'],
+];
+$('drift').innerHTML = DRIFT.map(([t, s, k, b]) => `<div class="r"><div class="r-t">${esc(t)}</div><div class="r-s">${esc(s)}</div><div class="r-b"><span class="badge ${k}">${b}</span></div></div>`).join('');
+
+const chev = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"></path></svg>';
+function recCell(rec, add) {
+  const k = kindOf(rec);
+  if (k === 'rec') return rec.split(' · ').map((a) => `<span class="act">${esc(a)}</span>`).join('');
+  if (k === 'read') return `<span class="badge gray">${esc(rec.slice(1))}</span>`;
+  const badge = k === 'gap' ? '<span class="badge bad">Not recorded</span>' : `<span class="badge warn">Broken</span><span class="prop">${esc(rec.slice(1))}</span>`;
+  return badge + (add ? `<span class="prop">Add: ${esc(add)}</span>` : '');
+}
+function renderFlows() {
+  const role = document.querySelector('#roleFilter [aria-pressed="true"]').dataset.role;
+  const gaps = $('onlyGaps').checked;
+  let html = '';
+  PHASES.forEach((phase, pi) => {
+    const flows = FLOWS.filter((f) => f.phase === pi && (!role || f.roles.includes(role)));
+    const shown = flows.map((f) => ({ f, steps: f.steps.filter((s) => !gaps || ['gap', 'broken'].includes(kindOf(s[3]))) })).filter((x) => x.steps.length);
+    if (!shown.length) return;
+    html += `<div class="phase-h"><h3>${esc(phase)}</h3><span class="muted">${shown.length} ${shown.length === 1 ? 'workflow' : 'workflows'}</span></div><div>`;
+    shown.forEach(({ f, steps }) => {
+      const g = f.steps.filter((s) => kindOf(s[3]) === 'gap').length;
+      const br = f.steps.filter((s) => kindOf(s[3]) === 'broken').length;
+      const counts = (g ? `<span class="badge bad">${g} not recorded</span>` : '') + (br ? `<span class="badge warn">${br} broken</span>` : '') + (!g && !br ? '<span class="badge ok">All recorded</span>' : '');
+      html += `<details class="flow"${gaps ? ' open' : ''}><summary><span class="letter">${f.id}</span><span><span class="f-name">${esc(f.name)}${f.state ? `<span class="badge ${f.state[0]}">${esc(f.state[1])}</span>` : ''}</span><span class="f-roles">${f.roles.map((r) => ROLE[r]).join(' · ')} · ${f.steps.length} steps</span></span><span class="f-count">${counts}</span>${chev}</summary>`;
+      html += '<div class="steps-h"><span>Step · where</span><span>API</span><span>Activity</span></div>';
+      html += steps.map(([what, where, api, rec, add]) => `<div class="step"><div><div class="s-what">${esc(what)}</div><div class="s-where">${esc(where)}</div></div><div class="s-api">${esc(api)}</div><div class="s-rec">${recCell(rec, add)}</div></div>`).join('');
+      html += '</details>';
+    });
+    html += '</div>';
+  });
+  $('flows').innerHTML = html || '<div class="card empty">Nothing matches. Turn off «Only what is not recorded» or pick another role.</div>';
+}
+$('roleFilter').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  document.querySelectorAll('#roleFilter button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderFlows();
+});
+$('onlyGaps').addEventListener('change', renderFlows);
+renderFlows();
+
+const FIXES = [
+  ['Write the five malformed rows properly', 'lib/delivery-os-platform.js:464, 528, 605, 665, 713 pass {type, userId}, so decision_created, decision_promoted, change_request_created, stage_summary_updated and client_approval land with an empty action and no actor. Call appendActivity({action, actorUserId, details}).'],
+  ['Read the Log by project', 'GET /projects/:id/activity (api.js:3638) loads the newest 400 rows of all projects and then filters, so a quiet project loses its history once others get busy. Query WHERE project_id = ? on the existing idx_activity_project.'],
+  ['Record sign-ins', 'auth_signed_in {method}, auth_failed {email} and auth_signed_out around api.js:1156 and /auth/logout. The same rows give the missing login rate limit its data.'],
+  ['Record platform settings', 'platform_setting_changed {area} for GitHub, DeepInfra, Google, repository defaults and agent defaults. Only the area and who; never the secret.'],
+  ['Call record-visit', 'POST record-visit already exists (delivery-os-platform.js:536-555) and nothing calls it. One call when a project opens gives client visits and «since your last visit» for free.'],
+  ['Record what leaves the platform', 'document_downloaded, proposal_viewed, proposal_downloaded and mockup_viewed: what a client read, and which proposal went out.'],
+  ['Rename ai_stepListcreated', 'workspace-routes.js:533 → ai_steps_created. Keep the old name readable in the Log.'],
+];
+$('fixes').innerHTML = FIXES.map(([t, p], i) => `<div class="fix"><span class="fix-n">${i + 1}</span><div><div class="r-t">${esc(t)}</div><p>${esc(p)}</p></div></div>`).join('');
+
+const STORES = [
+  ['project.auditLog[]', '200', 'Requirement and project edits, revertable from the Log; bodies as snapshots in blobs'],
+  ['workItem.taskActivity[]', '300 per task', 'planned, plan_approved, plan_revised, review_*, execution_started, agent_bundle_received'],
+  ['project.taskNotifications[]', '500', 'task_review, task_failed, plan_approval; also emailed through SMTP'],
+  ['project.execucoes[].history', '—', 'Persona, model, cost, seconds and outcome of every Execução run'],
+  ['ai_run tasks', '1 per AI call', 'A completed task with the model and costUsd'],
+  ['agent_dispatch_events · commands', 'SQLite', 'Runtime events (≤256 KB per sync) and pause or cancel commands'],
+  ['project.mockupSessions[]', '12 versions', 'Each Intenção iteration and its cost; HTML in blobs/mockups'],
+  ['project.projectVisits{}', '—', 'Written by record-visit, which nothing calls'],
+  ['Browser localStorage', '—', '«Mais tarde», decisions seen, unsaved AI drafts. Lost with the browser'],
+];
+$('stores').innerHTML = '<tr><th>Store</th><th>Kept</th><th>What is in it</th></tr>' + STORES.map(([a, b, c]) => `<tr><td class="mono">${esc(a)}</td><td class="muted">${esc(b)}</td><td>${esc(c)}</td></tr>`).join('');
+
+/* ------------------------------------------------------------ screens: mockup parts */
+const b = (k, t) => `<span class="mb mb-${k}">${t}</span>`;
+const btn = (t, p) => `<span class="mbtn${p ? ' p' : ''}">${t}</span>`;
+const row = (t, s, r = '', lead = '') => `<div class="mrow">${lead}<div class="mrow-l"><div class="mrow-t">${t}</div>${s ? `<div class="mrow-s">${s}</div>` : ''}</div><div class="mrow-r">${r}</div></div>`;
+const card = (h, inner, right = '') => `<section class="mcard">${h ? `<div class="mcard-h"><span>${h}</span><span class="mbtns">${right}</span></div>` : ''}${inner}</section>`;
+const field = (l, v, cls = '') => `<label class="mfield"><span>${l}</span><span class="min ${cls}">${v}</span></label>`;
+const fields = (...f) => `<div class="mfields">${f.join('')}</div>`;
+const seg = (items, on) => `<span class="mseg">${items.map((x, i) => `<span class="${i === on ? 'on' : ''}">${x}</span>`).join('')}</span>`;
+const pill = (t, on) => `<span class="mpill${on ? ' on' : ''}">${t}</span>`;
+const title = (h, s, r = '', eye = '') => `<div class="mtitle"><div>${eye ? `<div class="meye">${eye}</div>` : ''}<div class="mh1">${h}</div>${s ? `<div class="msub">${s}</div>` : ''}</div><div class="mtitle-r">${r}</div></div>`;
+const flag = (t) => `<span class="mflag">${t}</span>`;
+const kpis = (...k) => `<div class="mtiles">${k.map(([n, t]) => `<div class="mkpi"><b>${n}</b><span>${t}</span></div>`).join('')}</div>`;
+const STAGES = ['Ideia', 'Descoberta', 'Requisitos', 'Arquitectura', 'Roteiro', 'Implementação', 'Validação', 'Entrega', 'Operação'];
+const stage = (n) => `<div class="mstage"><div class="mbar">${STAGES.map((_, i) => `<i class="${i + 1 < n ? 'd' : i + 1 === n ? 'c' : ''}"></i>`).join('')}</div><span>${STAGES[n - 1]} · ${n} de 9</span></div>`;
+const cost = (f) => `<span class="mcost"><i style="width:${Math.round(f * 100)}%"></i></span>`;
+const tile = (t) => `<span class="mtile">${t}</span>`;
+
+const NAV = [
+  [null, [['hoje', 'Hoje'], ['projetos', 'Projetos']]],
+  ['Trabalho', [['projeto', 'Resumo'], ['plano', 'Artefactos'], ['tarefas', 'Tarefas']]],
+  ['Mais', [['camada0', 'Intenção'], ['requisitos', 'Editor de requisitos'], ['decisoes', 'Decisões', 2], ['documentos', 'Documentos'], ['perguntas', 'Perguntas'], ['gerar', 'Gerar'], ['atas', 'Atas'], ['atividade', 'Log']]],
+  [null, [['definicoes', 'Definições do projecto'], ['definicoesPlataforma', 'Definições da plataforma'], ['conta', 'Conta']]],
+];
+function shell(active, inner) {
+  const nav = NAV.map(([label, items], gi) => `<div class="mnav-g${gi === 3 ? ' end' : ''}">${label ? `<div class="mnav-l">${label}</div>` : ''}${items.map(([id, t, n]) => `<div class="mnav-i${id === active ? ' on' : ''}">${t}${n ? `<span class="mnav-n">${n}</span>` : ''}</div>`).join('')}</div>`).join('');
+  return `<div class="m-win"><div class="mtop"><span class="mlogo">YL</span><b>City Pass</b><span class="mmuted">↔ Trocar projecto</span><span class="mtop-r"><span class="mic">◐</span><span class="mic">⚙</span><span class="mic">?</span><span class="mav">TS</span></span></div><div class="mbody"><nav class="mnav">${nav}</nav><main class="mmain">${inner}</main></div></div>`;
+}
+
+const SCREENS = [
+  { id: 'login', group: 'Entry', name: 'Entrar', path: 'index.html:16-42', roles: 'Everyone', api: ['GET /config', 'POST /auth/login', 'POST /auth/google'], rec: ['user_signed_up_google', 'user_signed_in_google'], gaps: ['password sign-in', 'failed sign-in'], fix: true,
+    note: 'No rate limit, no password reset and no invitations: the super admin creates each account with a temporary password and has to pass it on by hand.',
+    html: () => `<div class="m-win"><div class="mlogin"><div class="mlogin-card"><span class="mlogo l">YL</span><div class="mh1">YourLab</div><div class="msub">Portal central de requisitos, progresso e documentação técnica.</div>${field('Email', 'nome@empresa.pt')}${field('Password', '••••••••••')}<span class="mbtn p wide">Entrar na Plataforma</span><div class="mor">ou</div><span class="mbtn wide">Entrar com Google</span><div class="msub">Primeira vez? Entrar com Google cria a sua conta…</div></div><div class="msub">Requisitos · Progresso · Propostas</div>${flag('Sem limite de tentativas · sem «Esqueci a password»')}</div></div>` },
+
+  { id: 'hoje', group: 'Main', name: 'Hoje', path: 'resume-ui.js:241-282', roles: 'Super admin, partner (by global role)', api: ['GET /resume'], rec: [], gaps: ['«Mais tarde» lives in memory only'],
+    note: 'Built by lib/project-resume.js. «Em curso» lists running Execuções; with the persona chain on hold it is usually empty.',
+    html: () => shell('hoje', `${title('Hoje', '4 projectos · lido há 2 min', btn('↻'))}
+      <div><div class="mgh">À espera de si <span class="mcount">3</span></div><section class="mcard">
+        ${row('Aprovar mockup', 'Gestão Financeira Restauração · Intenção', btn('Ver mockup', 1))}
+        ${row('Rever resultado', 'City Pass · Ecrã de check-in', btn('Rever', 1))}
+        ${row('Responder a uma pergunta', 'Black Adam App · Execução', btn('Responder'))}</section></div>
+      <div><div class="mgh">Em curso</div><section class="mcard">${row('City Pass · Construção', `Developer ${cost(0.23)} $3,40 de $15`, b('ok', 'Em curso'))}</section></div>
+      <div><div class="mgh">Falhou</div><section class="mcard">
+        ${row('Execução parada', 'Hoteis&amp;Restaurantes · Sem repositório ligado', b('bad', 'Parada'))}
+        ${row('Importar utilizadores', 'Black Adam App · tarefa', b('bad', 'Falhou'))}</section></div>`) },
+
+  { id: 'projetos', group: 'Main', name: 'Projetos', path: 'index.html:118-159 · resume-ui.js:285-357', roles: 'Everyone; a client sees only their projects and no «Novo projecto»', api: ['GET /projects', 'GET /resume', 'POST /projects'], rec: ['project_created'], gaps: ['opening a project'], fix: true,
+    note: '«Novo projecto» sends only {name, originalIdeaText} and lands on Resumo. Opening a project is not recorded, not even for a client.',
+    html: () => shell('projetos', `${title('Projetos', '3 activos · 1 em pausa', btn('↻') + btn('Novo projecto', 1))}
+      <div><div class="mgh">À espera de si <span class="mcount">2</span></div><div class="mgrid2">
+        <section class="mcard pad"><div class="mrow-t">Aprovar mockup</div><div class="mrow-s">Gestão Financeira Restauração · UX</div><p class="mp">Primeira versão dos ecrãs. Os requisitos só são escritos a partir deste mockup, depois de o aprovar.</p><div class="mbtns">${btn('Ver mockup', 1)}${btn('Mais tarde')}</div></section>
+        <section class="mcard pad"><div class="mrow-t">Rever antes do commit</div><div class="mrow-s">Black Adam App · Developer</div><p class="mp">12 ficheiros no módulo de autenticação. Nada chega ao repositório sem a sua revisão.</p><div class="mbtns">${btn('Ver alterações', 1)}${btn('Mais tarde')}</div></section></div></div>
+      <div><div class="mgh" style="justify-content:space-between">Todos os projectos ${seg(['Todos', 'Activos', 'Em pausa'], 0)}</div><section class="mcard">
+        ${row('City Pass', 'Impakta', stage(3) + b('ok', 'Em curso'), tile('CP'))}
+        ${row('Black Adam App', 'Igor Soares', stage(6) + b('warn', 'À espera de si'), tile('BA'))}
+        ${row('Gestão Financeira Restauração', 'Grupo Ferreira', stage(2) + b('warn', 'À espera de si'), tile('GF'))}
+        ${row('Hoteis&amp;Restaurantes', 'Grupo Ferreira', stage(2) + b('gray', 'Em pausa'), tile('HR'))}</section></div>
+      <section class="mcard pad"><div class="mrow-t">Novo projecto</div>${fields(field('Nome do projecto', 'City Pass'), field('A sua ideia', 'Um passe digital para visitantes…', 'ta'))}<div class="mbtns"><span class="mmuted">▸ Já tenho mais detalhes</span><span style="flex:1"></span>${btn('Criar projecto', 1)}</div></section>`) },
+
+  { id: 'resumo', group: 'Work', name: 'Resumo', path: 'project-home-ui.js · workspace-ui.js:345-449', roles: 'Everyone; a client sees only the Mockup card, questions «Para: cliente» and the phases', api: ['GET /projects/:id?view=overview', 'GET /:id/workspace', 'POST /:id/survey', 'POST /:id/workspace/initialize', 'POST /:id/workspace/sync'], rec: ['repository_surveyed', 'workspace_initialized', 'workspace_synced'], gaps: ['a client opening it', '«Ver mockup»'], fix: true,
+    note: 'The only screen a client has besides Projetos and Conta, and nothing records that they looked.',
+    html: () => shell('projeto', `${title('City Pass', 'Impakta · Passe digital para visitantes em Lisboa', b('ok', 'Em curso'))}
+      <div class="mgrid2"><div class="mcol2">
+        ${card('Precisa de si', row('Rever resultado', 'Ecrã de check-in · Aguarda revisão', btn('Abrir em Tarefas')))}
+        <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Documentação</span>${b('warn', '2 avisos')}</div><div class="mrow-s">lido há 4 min · cópia local · main · 214 ficheiros</div><div class="mbtns">${btn('Ver mockup', 1)}${btn('Ver avisos (2)')}${btn('Actualizar')}</div></section>
+        ${card('Artefactos', row('Intenção', 'Propósito · Ideias', b('ok', 'Escrito')) + row('Plano', '3 fases') + row('Requisitos', '38 requisitos', b('warn', '2 UQ')) + row('Arquitectura', '3 diagramas') + row('Base de dados', '9 entidades') + row('Mockup', '6 ecrãs'))}
+      </div><div class="mcol2">
+        ${card('Perguntas em aberto · 3', row('Que métodos de pagamento no balcão?', 'Para: cliente') + row('Validade do passe depois de activado?', 'Para: cliente') + row('Ligação ao sistema de bilhética?', 'Para: equipa'))}
+        ${card('Fases', row('01 · Descoberta', '1 semana', b('ok', 'Concluída')) + row('02 · MVP check-in', '4 semanas', b('ok', 'Em curso')) + row('03 · Pagamentos', '3 semanas', b('gray', 'A seguir')))}
+        <div class="mdet">Indicadores e riscos do projecto</div>
+      </div></div>`) },
+
+  { id: 'artefactos', group: 'Work', name: 'Artefactos', path: 'workspace-ui.js:1194-1249', roles: 'Super admin, partner', api: ['GET|PUT /:id/workspace/file', 'POST /:id/workspace/sync', 'POST /:id/packs/*', 'POST /:id/ai-steps[/run]', 'POST /:id/repository/tests|code'], rec: ['workspace_file_saved', 'work_item_created', 'ai_run', 'tests_written', 'code_written'], gaps: ['«Apresentar»'],
+    note: 'Saving is a commit: with a working copy, git pull --ff-only then push; without one, a commit on the default branch through the GitHub API. A different sha returns 409 and writes nothing.',
+    html: () => shell('plano', `${title('Artefactos', 'O projecto escrito no repositório · lido há 4 min', btn('Actualizar'))}
+      <div class="mbtns"><span class="mmuted">Preenchido a partir do código: 5/8</span>${btn('Criar as tarefas', 1)}</div>
+      <div class="msplit"><div class="mlist">
+        <div class="mlist-g">Intenção <i>+</i></div><div class="mlist-i">Propósito</div><div class="mlist-i">Ideias</div>
+        <div class="mlist-g">Plano <i>+</i></div><div class="mlist-i">01 · Descoberta</div><div class="mlist-i">02 · MVP check-in</div>
+        <div class="mlist-g">Requisitos <i>+</i></div><div class="mlist-i">Por tipo</div><div class="mlist-i on">checkin ${b('warn', '2 UQ')}</div><div class="mlist-i">pagamentos</div>
+        <div class="mlist-g">Arquitectura <i>+</i></div><div class="mlist-i">contexto.mmd</div>
+        <div class="mlist-g">Base de dados <i>+</i></div><div class="mlist-i">Entidades</div>
+        <div class="mlist-g">Workflows <i>+</i></div><div class="mlist-g">Mockup <i>+</i></div>
+        <div class="mlist-g">Perguntas <span>3 em aberto</span></div>
+      </div><div class="mcol2">
+        <section class="mcard pad"><span class="mmuted">‹ Artefactos</span><div class="mtitle"><div><div class="mrow-t" style="font-size:16px">Requisitos · checkin</div><div class="mrow-s">openspec/specs/checkin/spec.md</div></div>${b('gray', 'gerado · por rever')}</div>
+          <div class="mbtns">${btn('Editar', 1)}${btn('Pedir à IA')}${btn('Gerar testes')}${btn('Apresentar')}</div>
+          <div class="mdoc">### Requirement: Validar o passe à entrada
+O sistema SHALL validar o QR do passe em menos de 2 s.
+
+#### Scenario: passe válido
+- GIVEN um passe activo
+- WHEN o QR é lido no balcão
+- THEN a entrada fica registada</div></section>
+        <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Guardado</span>${b('ok', 'Commit feito')}</div><div class="mrow-s">Tarefa criada: Rever checkin/spec.md</div><div class="mbtns">${btn('O que mais muda?')}</div></section>
+      </div></div>`) },
+
+  { id: 'tarefas', group: 'Work', name: 'Tarefas', path: 'work-items-ui.js', roles: 'Super admin, partner; a client sees tasks marked visible', api: ['/projects/:id/work-items*', '/agent-runs*', 'POST /client-approvals'], rec: ['work_item_*', 'agent_*', 'task_suggestions_evaluated'], gaps: [],
+    note: 'Nine statuses: Planeada, Pronta, Em curso, Aguarda informação, Aguarda revisão, Concluída, Falhou, Bloqueada, Cancelada. Every AI call shows up here as a completed task with its model and cost.',
+    html: () => shell('tarefas', `${title('Tarefas', 'City Pass · 14 tarefas', btn('+ Nova tarefa', 1))}
+      <div class="mbtns">${seg(['Prioridades', 'Quadro', 'Lista'], 1)}${pill('Tipo')}${pill('Estado')}${pill('Etapa')}${pill('Fase do plano')}${pill('Executor')}${pill('Cliente: visíveis', 1)}</div>
+      <div class="mboard">
+        <div class="mcolb"><div class="mcolb-h">Planeado <span>2</span></div><div class="mtcard"><div class="mrow-t">Página de pagamento</div><div class="mrow-s">Humana · Fase 03</div>${b('gray', 'Planeada')}</div><div class="mtcard"><div class="mrow-t">Relatório diário</div><div class="mrow-s">Agente · Developer</div>${b('gray', 'Pronta')}</div></div>
+        <div class="mcolb"><div class="mcolb-h">Em curso <span>1</span></div><div class="mtcard"><div class="mrow-t">Modelo de dados do passe</div><div class="mrow-s">Humana · Ana</div>${b('ok', 'Em curso')}</div></div>
+        <div class="mcolb"><div class="mcolb-h">Precisa de atenção <span>2</span></div><div class="mtcard"><div class="mrow-t">Ecrã de check-in</div><div class="mrow-s">Agente · 12 ficheiros</div>${b('warn', 'Aguarda revisão')}</div><div class="mtcard"><div class="mrow-t">Importar utilizadores</div><div class="mrow-s">Agente</div>${b('bad', 'Falhou')}</div></div>
+        <div class="mcolb"><div class="mcolb-h">Concluído <span>2</span></div><div class="mtcard"><div class="mrow-t">IA: Editar artefacto — checkin</div><div class="mrow-s">DeepSeek-V3 · $0,02</div>${b('ok', 'Concluída')}</div><div class="mtcard"><div class="mrow-t">Rever checkin/spec.md</div><div class="mrow-s">Plataforma</div>${b('ok', 'Concluída')}</div></div>
+      </div>
+      <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Ecrã de check-in</span>${b('warn', 'Aguarda revisão')}</div>
+        <div class="mrow-s">Conteúdo a rever · 12 ficheiros · src/checkin/*</div>
+        <div class="mbtns">${btn('Aprovar e aplicar', 1)}${btn('Pedir alterações')}${btn('Rejeitar')}${flag('Aprovar faz commit no ramo principal')}</div>
+        <div class="mfeed"><span class="mav">TS</span><div class="mrow-l"><div class="mrow-t">Decisão proposta · há 2 h</div><div class="mrow-s">Ler o QR também sem rede durante 30 min</div></div><div class="mrow-r">${btn('Aceitar')}${btn('Rejeitar')}</div></div>
+        <span class="min ph">Publicar actualização…</span></section>`) },
+
+  { id: 'intencao', group: 'More', name: 'Intenção', path: 'camada0-ui.js', roles: 'Super admin, partner', api: ['GET|POST /:id/mockups', 'POST …/iterate', 'POST …/verdict', 'POST …/ticket → render'], rec: ['mockup_session_started', 'mockup_iterated', 'mockup_approved', 'mockup_changes', 'mockup_discarded', 'ai_run'], gaps: [],
+    note: 'At most 12 versions and $2 per session. Approving writes yourlab/mockup/index.html to the repository; the rest is thrown away.',
+    html: () => shell('camada0', `${title('Refinar a intenção', 'Gestão Financeira Restauração', '', 'Camada 0')}
+      <div class="mgrid2"><div class="mcol2" style="align-items:center">
+        <div class="mphone"><div class="mrow-t" style="font-size:16px">Fecho do dia</div><div class="mrow-s">Terça, 7 de outubro</div>${row('Sala', '12 mesas', '1 240 €')}${row('Esplanada', '6 mesas', '610 €')}${row('Gorjetas', '3 funcionários', '84 €')}<span class="mbtn p wide">Fechar caixa</span></div>
+        <span class="mmuted">Abrir em tamanho real ↗</span>
+      </div><div class="mcol2">
+        <section class="mcard pad"><div class="mrow-t">A intenção</div><p class="mp">Os gerentes fecham o dia em papel e o escritório volta a escrever tudo em Excel. Um fecho de caixa no telemóvel que chegue logo ao escritório.</p></section>
+        <section class="mcard pad"><div class="mrow-t">O que quer mudar?</div><span class="min ta">Mostrar as gorjetas por funcionário</span><div class="mbtns">${btn('Gerar nova versão')}</div></section>
+        <div class="mbtns">${btn('Aprovar', 1)}${btn('Pedir alteração')}${btn('Descartar')}</div>
+        ${card('Versões anteriores', row('Versão 3', 'há 10 min · $0,06', b('gray', 'Actual')) + row('Versão 2', 'há 1 h · $0,07') + row('Versão 1', 'ontem · $0,05'))}
+        <span class="mmuted">3 de 12 versões · $0,18 de $2</span>
+      </div></div>`) },
+
+  { id: 'requisitos', group: 'More', name: 'Editor de requisitos', path: 'index.html:298-450 · requirements-ui.js', roles: 'Super admin, partner', api: ['GET|POST|PATCH|DELETE /requirements[/:rid|/batch]', '/requirements/hierarchy/*'], rec: ['requirement_*', 'requirements_pushed'], gaps: ['export'],
+    note: 'The same requirements as Artefactos › Requisitos: openspec/specs/ is pulled on every sync and pushed 1.5 s after every edit.',
+    html: () => shell('requisitos', `${title('Editor de requisitos', 'Espelhados em openspec/specs/ a cada edição', btn('Exportar MD') + btn('Exportar JSON') + btn('Adicionar requisito', 1))}
+      <div class="mbtns"><span class="min ph" style="width:220px">Procurar…</span>${pill('Só SMART lacunas')}${seg(['Módulo', 'Funcionalidade', 'Mapa V', 'Implementação'], 0)}</div>
+      <section class="mcard"><table class="mtable"><tr><th>ID</th><th>Requisito</th><th>Tipo</th><th>Módulo</th><th>Estado</th></tr>
+        <tr><td class="mono">STK-01</td><td>Os visitantes entram com o passe no telemóvel</td><td>Stakeholder</td><td>Check-in</td><td>${b('ok', 'Aprovado')}</td></tr>
+        <tr><td class="mono">FR-12</td><td>Validar o QR do passe em menos de 2 s</td><td>Funcional</td><td>Check-in</td><td>${b('warn', 'Em revisão')}</td></tr>
+        <tr><td class="mono">RNF-03</td><td>Funciona sem rede durante 30 min</td><td>Não funcional</td><td>Check-in</td><td>${b('ok', 'Aprovado')}</td></tr>
+        <tr><td class="mono">TC-07</td><td>Um passe expirado é recusado</td><td>Teste</td><td>Check-in</td><td>${b('gray', 'Rascunho')}</td></tr>
+        <tr><td class="mono">UQ-02</td><td>Política de reembolso</td><td>Não definido</td><td>Pagamentos</td><td>${b('warn', 'Por definir')}</td></tr>
+        <tr><td class="mono">OOS-01</td><td>Venda de bilhetes de museus</td><td>Fora de escopo</td><td>—</td><td>${b('gray', 'Excluído')}</td></tr></table></section>
+      <div class="mdet">Framework do requisito · Need · Shall · Condition · Measure · Rationale · Verification</div>`) },
+
+  { id: 'decisoes', group: 'More', name: 'Decisões', path: 'decisions-ui.js', roles: 'Super admin, partner', api: ['GET /decisions-log?since='], rec: [], gaps: ['«seen» lives in localStorage'],
+    note: 'Reads task decisions and project.decisions together (lib/decisions-log.js). A decision promoted from an Ata writes an activity row with an empty action.',
+    html: () => shell('decisoes', `${title('O que mudou, e o que isso pôs em causa', '', '', 'Decisões')}
+      <section class="mcard">
+        ${row('Ler o QR também sem rede', 'Tarefa · Ecrã de check-in · afecta checkin/spec.md, RNF-03', b('gray', 'Novo') + b('ok', 'Aceite'))}
+        ${row('Pagamentos ficam para a fase 03', 'Ata · Reunião Sistema Interno, 2 out · afecta Plano', b('gray', 'Novo') + b('ok', 'Aceite'))}
+        ${row('Guardar a fotografia do titular', 'Tarefa · Modelo de dados do passe · afecta Base de dados', b('warn', 'Proposta'))}
+        ${row('Entrar com Apple', 'Ata · 24 set', b('gray', 'Rejeitada'))}</section>`) },
+
+  { id: 'documentos', group: 'More', name: 'Documentos', path: 'documents-ui.js', roles: 'Super admin, partner (clients can upload through the API)', api: ['POST /documents/upload', 'GET /documents[/:id/download]', 'POST /documents/text', 'PUT /source-text', 'POST /build-prompt', 'POST /import-ai'], rec: ['project_document_*', 'project_source_text_updated', 'ai_prompt_generated', 'ai_requirements_imported'], gaps: ['open', 'download'], fix: true,
+    note: 'Files go to uploads/<project>/ (up to 25 MB; text extracted from .txt and .md). Nothing records who opened or downloaded one.',
+    html: () => shell('documentos', `${title('Documentos', 'Anexos do cliente, artefactos gerados pela IA e texto base', btn('Carregar ficheiro', 1))}
+      ${kpis(['6', 'Anexos visíveis'], ['3', 'Artefactos IA'], ['4', 'Com texto'], ['MVP', 'Fase activa'])}
+      <span class="min ph">Procurar documentos…</span>
+      <section class="mcard">
+        ${row('Caderno de encargos v2.pdf', 'Anexo · 1,8 MB · 12 set', btn('Abrir') + flag('Sem registo'))}
+        ${row('Tabela de preços 2026.xlsx', 'Anexo · 64 KB · 18 set', btn('Abrir'))}
+        ${row('Notas da visita ao balcão.md', 'Texto · 4 KB · 24 set', b('ok', 'Com texto'))}
+        ${row('Resumo do levantamento', 'Artefacto IA · 30 set', b('gray', 'IA'))}</section>
+      <div class="mdet">Texto base de requisitos</div><div class="mdet">Importação estruturada · Importar requisitos</div>`) },
+
+  { id: 'perguntas', group: 'More', name: 'Perguntas', path: 'index.html:206-295', roles: 'Super admin, partner', api: ['POST|PATCH|DELETE /questions[/:qid]'], rec: ['clarification_question_created', 'clarification_question_updated', 'clarification_question_deleted'], gaps: [],
+    note: 'A client sees only the questions «Para: cliente», on Resumo, and cannot answer them there.',
+    html: () => shell('perguntas', `${title('Perguntas de Clarificação', '4 perguntas · 3 em aberto', btn('Adicionar pergunta', 1), 'Q&amp;A')}
+      <section class="mcard"><table class="mtable"><tr><th>Pergunta</th><th>Para</th><th>Categoria</th><th>Prioridade</th><th>Estado</th><th>Limite</th></tr>
+        <tr><td>Que métodos de pagamento no balcão?</td><td>cliente</td><td>Negócio</td><td>Alta</td><td>${b('warn', 'Aberta')}</td><td>15 out</td></tr>
+        <tr><td>Validade do passe depois de activado?</td><td>cliente</td><td>Regras</td><td>Média</td><td>${b('warn', 'Aberta')}</td><td>20 out</td></tr>
+        <tr><td>Ligação ao sistema de bilhética?</td><td>equipa</td><td>Integração</td><td>Alta</td><td>${b('warn', 'Aberta')}</td><td>—</td></tr>
+        <tr><td>Em que idiomas sai a app?</td><td>cliente</td><td>Conteúdo</td><td>Baixa</td><td>${b('ok', 'Respondida')}</td><td>—</td></tr></table></section>`) },
+
+  { id: 'gerar', group: 'More', name: 'Gerar', path: 'index.html:453-481 · 1003-1050', roles: 'Super admin; the list of proposals is super admin only', api: ['GET /:id/proposal-config', 'POST /:id/generate', 'GET|DELETE /:id/generated/:genId[/:format]'], rec: ['proposal_bundle_generated', 'proposal_bundle_deleted'], gaps: ['view', 'download'], fix: true,
+    note: 'The configurator\'s payment defaults are 30 % on start and 20 % at the end. YourLab\'s terms are 35 % on acceptance, 35 % on the first approved version and 30 % before delivery. Proposals are written to ../generated_proposals/, outside the project data.',
+    html: () => shell('gerar', `${title('Gerar', 'Pacote técnico e proposta comercial')}
+      <div class="mbtns">${btn('Pacote Técnico')}${btn('Gerar Proposta Comercial', 1)}${pill('Dry-run (sem PDF)')}</div>
+      <div class="mdet">Geração modular — selecionar módulos</div>
+      ${card('Propostas comerciais geradas', row('2026-10-02 · rp_city-pass', 'Comercial · 3 fases · 6 400 €', btn('Ver HTML') + btn('Download HTML') + btn('Download MD') + btn('Eliminar')))}
+      <div class="mmodal-bg"><div class="mmodal"><div class="mrow-t" style="font-size:16px">Configurador de proposta comercial</div>
+        ${fields(field('Projecto', 'City Pass'), field('Cliente', 'Impakta'), field('Código', 'CP-2026-03'), field('Moeda', 'EUR'))}
+        <table class="mtable"><tr><th>#</th><th>Fase</th><th>Sem.</th><th>Objectivo</th><th style="text-align:right">Valor</th></tr>
+          <tr><td>1</td><td>Descoberta</td><td>1</td><td>Perceber o balcão e o passe</td><td style="text-align:right">800 €</td></tr>
+          <tr><td>2</td><td>MVP check-in</td><td>4</td><td>Entrar com o passe</td><td style="text-align:right">3 600 €</td></tr>
+          <tr><td>3</td><td>Pagamentos</td><td>3</td><td>Comprar e renovar</td><td style="text-align:right">2 000 €</td></tr>
+          <tr><td></td><td><b>Total</b></td><td>8</td><td></td><td style="text-align:right"><b>6 400 €</b></td></tr></table>
+        ${fields(field('Pagamento inicial', '30 %'), field('Pagamento final', '20 %'), field('Validade', '30 dias'), field('Garantia', '3 meses'))}
+        <div class="mbtns">${flag('A YourLab cobra 35 % · 35 % · 30 %')}<span style="flex:1"></span>${btn('Cancelar')}${btn('Gerar proposta', 1)}</div></div></div>`) },
+
+  { id: 'atas', group: 'More', name: 'Atas', path: 'minutes-ui.js', roles: 'Super admin, partner', api: ['/meeting-minutes*', 'POST /decisions/promote', 'POST /import-requirement-changes'], rec: ['meeting_minutes_added', 'meeting_minute_classified', 'minutes_prompt_generated', 'requirement_change_set_imported'], gaps: ['«Promover a decisão» writes a broken row'], fix: true,
+    note: 'Promoting a detected decision goes through delivery-os-platform.js:528, which writes {type, userId}: the row has no action and no actor.',
+    html: () => shell('atas', `${title('Atas do projecto', '', btn('Nova ata', 1), 'Gestão de reuniões')}
+      ${kpis(['7', 'Total'], ['2', 'Por classificar'], ['0', 'Seleccionadas'], ['3', 'Prompts gerados'])}
+      <section class="mcard">
+        ${row('Reunião Sistema Interno · 2 out', 'Requisitos · 3 decisões detectadas', b('ok', 'Classificada') + btn('+ decisão') + btn('Abrir'))}
+        ${row('Visita ao balcão · 24 set', 'Descoberta', b('warn', 'Por classificar') + btn('Abrir'))}
+        ${row('Kick-off · 12 set', 'Ideia · visão', b('ok', 'Classificada') + btn('Abrir'))}</section>
+      <section class="mcard pad"><div class="mrow-t">Decisões detectadas · Reunião Sistema Interno</div>${row('Pagamentos ficam para a fase 03', 'afecta Plano', btn('Promover a decisão') + flag('Registo sem acção'))}</section>
+      <div class="mdet">Propagação na linha de entrega · Analisar impacto · Gerar prompt IA</div>
+      <div class="mdet">Actualizar requisitos a partir de atas · Gerar pre-prompt · Aplicar alterações</div>`) },
+
+  { id: 'log', group: 'More', name: 'Log', path: 'api.js:3638 · project-audit.js', roles: 'Super admin, partner', api: ['GET /projects/:id/activity', 'POST /audit-log/:aid/revert'], rec: ['audit_reverted'], gaps: ['older rows drop out'], fix: true,
+    note: 'Reads the newest 400 rows of all projects and keeps this project\'s (at most 300). Once other projects are busy, this project\'s older history disappears from the screen.',
+    html: () => shell('atividade', `${title('Registo de Atividade', 'City Pass', btn('↺ Atualizar'), 'Log')}
+      ${card('Registo auditável (reversível)', row('Requisito FR-12 alterado', 'Túlio Soares · há 20 min', btn('Reverter')) + row('Hierarquia de requisitos refeita', 'Túlio Soares · há 2 dias', btn('Reverter')))}
+      <section class="mcard"><table class="mtable"><tr><th>Quando</th><th>Quem</th><th>Acção</th><th>Detalhes</th></tr>
+        <tr><td>10:42</td><td>Túlio Soares</td><td class="mono">workspace_file_saved</td><td class="mono">openspec/specs/checkin/spec.md</td></tr>
+        <tr><td>10:41</td><td>Túlio Soares</td><td class="mono">ai_run</td><td>IA: Editar artefacto — checkin · $0,02</td></tr>
+        <tr><td>09:15</td><td>agent_connector</td><td class="mono">agent_dispatch_result_received</td><td class="mono">dsp_…</td></tr>
+        <tr><td>09:02</td><td>—</td><td class="mono">(vazio)</td><td>${flag('decision_promoted gravado sem acção nem autor')}</td></tr></table></section>
+      <span class="mmuted">${flag('Só as 400 linhas mais recentes de todos os projectos')}</span>`) },
+
+  { id: 'definicoes', group: 'System', name: 'Definições do projecto', path: 'index.html:834-967 · project-repository-ui.js', roles: 'Super admin', api: ['PATCH /projects/:id', 'POST|DELETE /members[/:uid]', '/:id/repository[/link|/create]', 'POST /:id/engineering/feature'], rec: ['project_updated', 'project_member_*', 'repository_*', 'engineering_state_*'], gaps: [],
+    note: 'Access goes to an account that already exists; the platform sends no invitation.',
+    html: () => shell('definicoes', `${title('Definições do projecto', 'City Pass')}
+      <div class="mgrid2"><div class="mcol2">
+        <section class="mcard pad"><div class="mrow-t">Informação essencial</div>${fields(field('Nome', 'City Pass'), field('Idioma', 'Português'))}${field('Descrição curta', 'Passe digital para visitantes em Lisboa')}<div>${seg(['Ativo', 'Em espera', 'Concluído'], 0)}</div></section>
+        <section class="mcard pad"><div class="mrow-t">Dados para a proposta comercial</div>${fields(field('Nome do cliente', 'Impakta'), field('Moeda', 'EUR'), field('Código', 'CP-2026-03'))}<div class="mbtns">${btn('Guardar definições do projecto', 1)}</div></section>
+        <div class="mdet">Opções técnicas e comerciais · Engenharia estruturada</div>
+      </div><div class="mcol2">
+        ${card('Quem pode aceder ao projecto?', row('Ana Ribeiro', 'Parceiro — pode editar', btn('Tirar')) + row('Impakta', 'Cliente — apenas leitura', btn('Tirar')) + `<div class="mrow"><span class="min ph" style="flex:1">Escolher conta…</span>${seg(['Parceiro', 'Cliente'], 0)}${btn('Dar acesso ao projecto', 1)}</div>`)}
+        <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Repositório do projecto</span>${b('ok', 'Ligado')}</div>${row('yourlab/city-pass', 'main · 214 ficheiros · OpenSpec presente')}<div class="mbtns">${btn('Ver progresso')}${btn('Desligar')}</div>
+          <div class="mrow-t" style="margin-top:6px">Sandbox de desenvolvimento</div><div class="mrow-s">Alterar → Testar → Rever → Commit</div><div class="mbtns"><span class="min" style="flex:1">~/yourlab/city-pass</span>${btn('Guardar pasta')}</div></section>
+      </div></div>`) },
+
+  { id: 'plataforma', group: 'System', name: 'Definições da plataforma', path: 'index.html:772-831 · platform-settings-ui.js', roles: 'Super admin', api: ['/git-provider/{settings,verify,oauth/start,disconnect}', '/llm-provider/settings[/:pid[/verify|/disconnect]]', '/auth/google/settings', '/users'], rec: ['user_created', 'user_updated'], gaps: ['GitHub', 'DeepInfra key', 'Google', 'defaults'], fix: true,
+    note: 'Only updatedBy is kept in each settings file. Secrets are encrypted with AES-256-GCM and never sent back to the browser.',
+    html: () => shell('definicoesPlataforma', `${title('Definições da plataforma', 'Só o super admin')}
+      <div class="mgrid2"><div class="mcol2">
+        <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Conta GitHub</span>${b('ok', 'Ligado')}</div><div class="mrow-s">Permissões: repo · read:org · read:user</div><div class="mbtns">${btn('Testar ligação')}${btn('Voltar a ligar')}${btn('Desligar')}${flag('Sem registo')}</div></section>
+        <section class="mcard pad"><div class="mrow-t">Predefinições de repositório</div>${fields(field('Dono por omissão', 'yourlab'), field('Prefixo', 'yl-'), field('Pasta base das cópias', '~/yourlab'))}<div>${seg(['Privado', 'Público'], 0)}</div></section>
+        <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>IA · DeepInfra</span>${b('ok', 'Testado')}</div>${fields(field('Chave da API', '•••• 4f2a'), field('Modelo', 'deepseek-ai/DeepSeek-V3'))}<div class="mbtns">${btn('Guardar e testar', 1)}${btn('Remover chave')}</div></section>
+      </div><div class="mcol2">
+        <section class="mcard pad"><div class="mrow-t">Entrar com Google</div>${field('Client ID', '…apps.googleusercontent.com')}${field('Domínios permitidos', 'vazio = qualquer conta Google', 'ph')}</section>
+        ${card('Contas', row('Túlio Soares', 'Conta activa', b('gray', 'Superutilizador')) + row('Ana Ribeiro', 'Conta activa · pode ver valores', b('gray', 'Parceiro')) + row('Impakta', 'Conta activa', b('gray', 'Cliente')), btn('Criar utilizador', 1))}
+        <section class="mcard pad"><div class="mrow-t">Criar utilizador</div>${fields(field('Nome', 'Rita Costa'), field('Email', 'rita@exemplo.pt'), field('Password temporária', '••••••••'))}<div class="mbtns">${seg(['Cliente', 'Parceiro'], 0)}${pill('Pode ver valores comerciais')}</div></section>
+      </div></div>`) },
+
+  { id: 'conta', group: 'System', name: 'Conta', path: 'account-ui.js', roles: 'Everyone', api: ['PATCH /auth/me', 'POST /auth/logout'], rec: ['own_account_updated'], gaps: ['sign-out'],
+    note: 'Changing the email or the password signs out every other session of that person.',
+    html: () => shell('conta', `<div class="mtitle"><div style="display:flex;gap:12px;align-items:center"><span class="mav" style="width:48px;height:48px;border-radius:24px;font-size:16px">TS</span><div><div class="mh1">Túlio Soares</div><div class="msub">YourLab</div></div></div>${b('gray', 'Superutilizador')}</div>
+      <div class="mgrid2"><section class="mcard pad"><div class="mrow-t">Sobre si</div>${fields(field('Nome', 'Túlio Soares'), field('Email', 'nome@empresa.pt'), field('Telefone', '+351 …'), field('Empresa', 'YourLab'), field('Função', 'Fundador'))}<div class="mbtns">${btn('Guardar', 1)}</div></section>
+      <div class="mcol2"><section class="mcard pad"><div class="mrow-t">Password</div>${fields(field('Actual', '••••••'), field('Nova', ''), field('Repetir', ''))}<div class="mbtns">${btn('Mudar password')}</div></section>
+      <div class="mdet">Outras definições</div><div class="mdet">Primeiros passos</div><div class="mbtns">${btn('Terminar sessão')}</div></div></div>`) },
+
+  { id: 'agentes', group: 'Hidden', name: 'Agentes', path: 'reached from a task · work-items-ui.js:2246', roles: 'Super admin, only from a task', api: ['GET|PATCH /agent-platform/settings', 'GET /agent-platform/personas', 'GET /agent-runs/recent', 'GET /agent-runs/health'], rec: [], gaps: ['saving defaults', 'saving personas'], fix: true,
+    note: 'Its empty state sends people to «Definições → Agent Runtime», a screen that no longer exists (UI-RULES §4). The seven personas are on hold.',
+    html: () => shell('', `${title('Agentes', 'Só a partir de uma tarefa', '', 'IA')}
+      <section class="mcard pad"><div class="mcard-h" style="padding:0"><span>Estado</span>${b('bad', 'Sem dispositivo')}</div><div class="mrow-s">Emparelhe em Definições → Agent Runtime</div><div>${flag('Esse ecrã já não existe')}</div></section>
+      <div class="mgrid2">
+        <section class="mcard pad"><div class="mrow-t">Predefinições de execução</div>${fields(field('Perfil do modelo', 'Equilibrado'), field('Custo máximo', '$5'), field('Tempo', '60 min'))}<div class="mbtns">${pill('repo.read', 1)}${pill('repo.patch', 1)}${pill('tests.run', 1)}${pill('Pesquisa web')}</div><div class="mbtns">${btn('Guardar predefinições', 1)}</div></section>
+        ${card('Agentes da linha de produção', ['product_owner', 'ux', 'module_architect', 'orchestrator', 'tech_lead', 'developer', 'tester'].map((p) => row(`<span class="mono">${p}</span>`, '', b('gray', 'Em pausa'))).join(''))}
+      </div>`) },
+];
+
+const GROUPS = ['Entry', 'Main', 'Work', 'More', 'System', 'Hidden'];
+$('scrList').innerHTML = GROUPS.map((g) => `<div class="scr-g"><div class="scr-gl">${g}</div>${SCREENS.filter((s) => s.group === g).map((s) => `<button aria-pressed="false" data-id="${s.id}">${esc(s.name)}${s.fix ? '<span class="dot" aria-label="has something to fix"></span>' : ''}</button>`).join('')}</div>`).join('');
+function showScreen(id) {
+  const s = SCREENS.find((x) => x.id === id) || SCREENS[1];
+  document.querySelectorAll('#scrList button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.id === s.id)));
+  $('scrName').textContent = s.name;
+  $('scrPath').textContent = s.path;
+  $('scrMock').innerHTML = s.html();
+  const recs = s.rec.length ? s.rec.map((a) => `<span class="act">${esc(a)}</span>`).join('') : '<span class="muted">nothing</span>';
+  const gaps = s.gaps.length ? s.gaps.map((a) => `<span class="badge bad">${esc(a)}</span>`).join('') : '<span class="badge ok">Nothing missing</span>';
+  $('scrFacts').innerHTML = `<div class="k">Who sees it</div><div class="v">${esc(s.roles)}</div>
+    <div class="k">API</div><div class="v">${s.api.map((a) => `<code>${esc(a)}</code>`).join('<span class="muted">·</span>')}</div>
+    <div class="k">Records</div><div class="v">${recs}</div>
+    <div class="k">Not recorded</div><div class="v">${gaps}</div>
+    <div class="k">Note</div><div class="v">${esc(s.note)}</div>`;
+}
+$('scrList').addEventListener('click', (e) => { const x = e.target.closest('button'); if (x) showScreen(x.dataset.id); });
+showScreen('hoje');
+
+const HIDDEN = [
+  ['Entrega · Linha de produção', 'data-panel="deliveryos". The 9 stages with plain summaries, «Perguntas para si», «Aprovações pendentes». switchToTab sends it to Resumo (app.js:3050).'],
+  ['Execução', 'Construir / Levantar o que já existe / Refinar, cost limit (USD, default 20) and hours (default 4), «Iniciar execução», «Aceitar e continuar», «Parar». The API (/orchestration/*) is live.'],
+  ['Definição do projecto', '12 intake questions (intake-ui.js). Execução refuses to start while the required ones are empty, and there is nowhere to answer them.'],
+  ['Módulos e diagramas · Engenharia estruturada · Mapa de ligações · Composer rápido', 'Rendered inside Entrega, so never seen.'],
+  ['Emparelhar o runtime', 'app.js:211-215 looks for agentPairingForm, agentConnectorList and agentPairingResult; none exist in index.html.'],
+  ['Plano / Epics', 'plano-ui.js is never mounted. GUIDE.md: phases are the only grouping.'],
+  ['Legacy modals', '«Configurar transição», «Configurar YourLab Agent», the live YourLab Agent panel, «Execution Workbench» (index.html:1063-1339).'],
+];
+$('hidden').innerHTML = HIDDEN.map(([t, s]) => `<div class="r"><div class="r-t">${esc(t)}</div><div class="r-s">${esc(s)}</div><div class="r-b"><span class="badge bad">No access</span></div></div>`).join('');
+
+/* ------------------------------------------------------------ integrations: map */
+const NODES = [
+  ['sa', 20, 74, 150, 38, 'Super admin', [], 'person'],
+  ['pa', 20, 124, 150, 38, 'Parceiro', [], 'person'],
+  ['cl', 20, 174, 150, 38, 'Cliente', [], 'person'],
+  ['br', 225, 96, 175, 96, 'Browser', ['SPA em /projects', 'sessão em localStorage', 'Mermaid nos diagramas'], ''],
+  ['pl', 475, 96, 310, 262, 'Projects Platform', ['Express, montado em website/server', '/api/projects/* · 3 papéis', 'sessões em memória (12 h, deslizantes)', 'segredos cifrados (AES-256-GCM)', 'registo: tabela activity', 'conector do runtime (Ed25519)', 'propostas em MD e HTML', 'pacote técnico: script externo'], 'main'],
+  ['db', 475, 388, 145, 104, 'Dados', ['platform.db (SQLite)', 'projects/*.json', 'blobs · uploads', 'generated_proposals'], ''],
+  ['gt', 640, 388, 145, 104, 'Cópia de trabalho', ['git CLI (execFile)', 'pull --ff-only', 'commit · push'], ''],
+  ['rt', 475, 564, 310, 84, 'YourLab Agent Runtime', ['127.0.0.1:3847 · v0.6.3', 'chave Ed25519 no Keychain', 'durable-runtime.db'], ''],
+  ['cdn', 880, 8, 230, 46, 'cdn.jsdelivr.net', ['Mermaid 10'], ''],
+  ['go', 880, 100, 230, 46, 'Google', ['GSI · tokeninfo'], ''],
+  ['gh', 880, 156, 230, 46, 'GitHub · GitLab', ['OAuth · REST'], ''],
+  ['di', 880, 212, 230, 46, 'DeepInfra', ['DeepSeek-V3 · OpenAI-compatível'], ''],
+  ['sm', 880, 268, 230, 46, 'SMTP', ['emails de tarefas'], ''],
+  ['ja', 880, 324, 230, 46, 'Jira · Azure DevOps', ['simulado'], 'sim'],
+  ['rx', 880, 580, 230, 46, 'Modelos do runtime', ['DeepInfra · Ollama · Tavily'], ''],
+];
+const ZONES = [[450, 60, 360, 452, 'Servidor · yourlabpt.com'], [450, 532, 360, 130, 'Mac · ao lado do código']];
+const EDGES = [
+  [0, [[170, 93], [225, 128]]], [0, [[170, 143], [225, 144]]], [0, [[170, 193], [225, 160]]],
+  [1, [[400, 144], [475, 144]], [437, 144], 0, 1],
+  [2, [[300, 96], [300, 31], [880, 31]], [590, 31]],
+  [3, [[365, 96], [365, 52], [850, 52], [850, 118], [880, 118]], [590, 52]],
+  [4, [[785, 136], [880, 136]], [832, 136]],
+  [5, [[785, 179], [880, 179]], [832, 179]],
+  [6, [[785, 450], [1120, 450], [1120, 179], [1110, 179]], [1120, 320]],
+  [7, [[785, 235], [880, 235]], [832, 235]],
+  [8, [[785, 291], [880, 291]], [832, 291]],
+  [9, [[785, 347], [880, 347]], [832, 347], 1],
+  [10, [[548, 358], [548, 388]], [548, 373], 0, 1],
+  [11, [[712, 358], [712, 388]], [712, 373]],
+  [12, [[630, 564], [630, 358]], [630, 522]],
+  [13, [[785, 603], [880, 603]], [832, 603]],
+];
+function drawMap() {
+  let s = '<svg viewBox="0 0 1130 672" role="img" aria-label="Integration map of the Projects Platform" style="min-width:760px">';
+  ZONES.forEach(([x, y, w, h, t]) => { s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="svg-zone"></rect><text x="${x + 16}" y="${y + 20}" class="svg-zone-t">${esc(t)}</text>`; });
+  EDGES.forEach(([, pts, , dash, both]) => {
+    s += `<polyline points="${pts.map((p) => p.join(',')).join(' ')}" class="svg-e${dash ? ' dash' : ''}" marker-end="url(#ah)"${both ? ' marker-start="url(#ah)"' : ''}></polyline>`;
+  });
+  NODES.forEach(([, x, y, w, h, t, subs, k]) => {
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" class="svg-box ${k}"></rect>`;
+    const ty = subs.length ? y + 21 : y + h / 2 + 4.5;
+    s += `<text x="${x + 12}" y="${ty}" class="svg-t">${esc(t)}</text>`;
+    subs.forEach((sub, i) => { s += `<text x="${x + 12}" y="${y + 39 + i * 16}" class="svg-s">${esc(sub)}</text>`; });
+  });
+  EDGES.forEach(([n, , mk]) => { if (n) s += `<circle cx="${mk[0]}" cy="${mk[1]}" r="9.5" class="svg-n"></circle><text x="${mk[0]}" y="${mk[1] + 3.8}" text-anchor="middle" class="svg-nt">${n}</text>`; });
+  $('map').innerHTML = s + '</svg>';
+}
+drawMap();
+
+const INTEG = [
+  [1, 'Browser ↔ Platform', 'The app and its API', 'public/*.js · api.js', 'sess_ token in localStorage, sent as Bearer or X-Session-Token; 12 h, sliding', 'ok', 'Live'],
+  [2, 'cdn.jsdelivr.net', 'Mermaid 10 draws the diagrams', 'public/mermaid-loader.js', '—', 'ok', 'Live'],
+  [3, 'Google Identity Services', 'The «Entrar com Google» button', 'public/google-signin-ui.js', 'GOOGLE_OAUTH_CLIENT_ID, or data/platform-auth.json (env wins)', 'ok', 'Live'],
+  [4, 'Google tokeninfo', 'Checks aud, iss, exp, email_verified and the domain list', 'lib/google-signin.js', 'GOOGLE_ALLOWED_DOMAINS (empty = any account)', 'ok', 'Live'],
+  [5, 'GitHub / GitLab API', 'Repos, files, branches, commits; the platform\'s one GitHub identity', 'lib/git-provider-client.js · github-oauth.js', 'OAuth app (repo read:org read:user) or a PAT; token encrypted in git-provider.secret.json', 'warn', 'Writes to main'],
+  [6, 'git push', 'The working copy pushes after pull --ff-only', 'lib/git-local.js', 'repository.localPath; fallback identity YourLab Platform', 'ok', 'Live'],
+  [7, 'DeepInfra', 'Every live AI call: packs, AI steps, Intenção', 'lib/llm-call.js', 'Key encrypted in llm-provider.secret.json; DeepSeek-V3, temp 0.2, 120 s, cost from llm-options', 'ok', 'Live'],
+  [8, 'SMTP', 'task_review, task_failed and plan_approval emails', 'server.js sendProjectNotificationEmail', 'SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM', 'ok', 'Live'],
+  [9, 'Jira · Azure DevOps', 'Mapping and sync', 'lib/delivery-os-platform.js', 'none; lastSyncStatus is "simulated_ok"', 'gray', 'Simulated'],
+  [10, 'Local data', 'All state', 'lib/sqlite-store.js · blob-store.js · secret-box.js', 'Secret key from PLATFORM_SECRET_KEY, GIT_TOKEN_SECRET, AGENT_HMAC_SECRET or data/.secret-key', 'ok', 'Live'],
+  [11, 'git CLI', 'Fetch, status, pull, commit, push', 'lib/git-local.js (execFile)', '—', 'warn', 'Against ADR-0001'],
+  [12, 'Agent Runtime · remote_pull', 'Runs personas and agent tasks; outbound HTTPS only', 'agent-connector-*.js · R/src/connector', 'Ed25519 key in the macOS Keychain; one active connector. local_push (dev only): platform → 127.0.0.1:3847 with AGENT_RUNTIME_API_KEY + HMAC', 'warn', 'API only'],
+  [13, 'Runtime models', 'Inference and search for the runtime', 'R/.env', 'DEEPINFRA_API_KEY, OLLAMA_BASE_URL, TAVILY_API_KEY', 'ok', 'Live'],
+  ['', 'Ollama in the platform', 'Defined in llm-options (llama3.1:8b)', 'lib/llm-options', 'No card on screen, never called by llm-call', 'gray', 'Unused'],
+  ['', 'Notion · Gmail · Drive · Slack', '—', 'not in the platform code', '—', 'gray', 'Not present'],
+];
+$('integ').innerHTML = '<tr><th></th><th>System</th><th>What for</th><th>Where</th><th>Credentials</th><th>State</th></tr>' + INTEG.map(([n, sys, what, where, cred, k, st]) => `<tr><td class="n">${n ? `<span class="num">${n}</span>` : ''}</td><td><b>${esc(sys)}</b></td><td>${esc(what)}</td><td class="mono">${esc(where)}</td><td class="muted">${esc(cred)}</td><td><span class="badge ${k}">${esc(st)}</span></td></tr>`).join('');
+
+/* ------------------------------------------------------------ integrations: sequences
+   msg = [from, to, text, record]; record: string written · null none · undefined not shown */
+const SEQS = [
+  ['Pair the Agent Runtime (remote_pull)', ['Super admin', 'Platform', 'Runtime (Mac)', 'Keychain'], [
+    [0, 1, 'POST /agent-connectors/pairing-codes {password}', 'agent_connector_pairing_code_created'],
+    [1, 0, 'single-use code · 10 min · stored as sha256'],
+    [0, 2, 'npm run connector:pair -- --url --code --name'],
+    [2, 3, 'keeps the Ed25519 private key'],
+    [2, 1, 'POST /agent-connectors/pair {code, publicKey, capabilities}', 'agent_connector_paired'],
+    [1, 1, 'one active connector · 5 pairings per minute'],
+    [1, 2, 'connector id'],
+  ]],
+  ['A task done by an agent', ['Partner', 'Platform', 'Runtime', 'DeepInfra', 'GitHub'], [
+    [0, 1, '«Aprovar e iniciar» → POST /agent-runs', 'agent_run_dispatched'],
+    [1, 1, 'agent_dispatches row: frozen package + hash'],
+    [2, 1, 'POST /claim (signed, waits up to 5 s)', 'agent_dispatch_claimed'],
+    [2, 3, 'model calls'],
+    [2, 1, 'POST /dispatches/:id/sync · events, progress, lease 60 s'],
+    [2, 1, 'POST /dispatches/:id/result {packageHash, rawOutput}', 'agent_dispatch_result_received'],
+    [1, 0, 'task «Aguarda revisão» + email', 'agent_runtime_output_submitted'],
+    [0, 1, 'POST /work-items/:wid/review {approved}', 'work_item_review_approved'],
+    [1, 4, 'commit straight to the default branch', 'agent_code_committed'],
+  ]],
+  ['Save an artefact', ['Partner', 'Platform', 'Working copy', 'GitHub'], [
+    [0, 1, 'PUT /workspace/file {path, content, previousSha}'],
+    [1, 1, 'sha changed → 409, nothing written'],
+    [1, 2, 'with a working copy: pull --ff-only, write, commit'],
+    [2, 3, 'git push'],
+    [1, 3, 'without one: commit on the default branch through the API'],
+    [1, 1, 'review task, origin platform', 'workspace_file_saved · work_item_created'],
+    [1, 3, 'requirements: openspec/specs/ pushed 1.5 s later', 'requirements_pushed'],
+  ]],
+  ['Ask the AI', ['Partner', 'Browser', 'Platform', 'DeepInfra'], [
+    [0, 1, 'Artefactos › «Pedir à IA»'],
+    [1, 2, 'POST /packs/edit_artefact'],
+    [2, 3, 'POST /chat/completions · DeepSeek-V3 · temp 0.2 · 120 s'],
+    [3, 2, 'text + tokens'],
+    [2, 2, 'completed task «IA: Editar artefacto — …» with model and cost', 'ai_run'],
+    [2, 1, 'draft'],
+    [1, 1, 'draft stays in localStorage until «Guardar»'],
+  ]],
+  ['Sign in with Google', ['Person', 'Browser', 'Platform', 'Google'], [
+    [0, 1, '«Entrar com Google»'],
+    [1, 3, 'GSI (accounts.google.com/gsi/client)'],
+    [3, 1, 'ID token'],
+    [1, 2, 'POST /auth/google'],
+    [2, 3, 'POST oauth2.googleapis.com/tokeninfo'],
+    [2, 2, 'aud · iss · exp · email_verified · domain'],
+    [2, 2, 'first time: a client account with no projects', 'user_signed_up_google'],
+    [2, 1, 'sess_… (12 h, in memory)', 'user_signed_in_google'],
+  ]],
+  ['Connect the platform\'s GitHub', ['Super admin', 'Platform', 'GitHub'], [
+    [0, 1, 'GET /git-provider/oauth/start'],
+    [1, 2, 'redirect to login/oauth/authorize · repo read:org read:user'],
+    [2, 1, '/git-provider/oauth/callback?code'],
+    [1, 2, 'exchange the code for a token'],
+    [1, 1, 'token encrypted in git-provider.secret.json', null],
+  ]],
+];
+function seqSvg(actors, msgs) {
+  const colW = 220, padX = 96, top = 10, headH = 32, rowH = 46;
+  const W = padX * 2 + colW * (actors.length - 1);
+  const H = top + headH + 26 + msgs.length * rowH;
+  const X = (i) => padX + i * colW;
+  const est = (t, px) => t.length * px;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" style="min-width:${Math.min(W, 680)}px">`;
+  actors.forEach((a, i) => {
+    s += `<line x1="${X(i)}" y1="${top + headH}" x2="${X(i)}" y2="${H - 4}" class="seq-ll"></line>`;
+    s += `<rect x="${X(i) - 80}" y="${top}" width="160" height="${headH}" rx="9" class="seq-ab"></rect><text x="${X(i)}" y="${top + headH / 2 + 4.5}" text-anchor="middle" class="seq-at">${esc(a)}</text>`;
+  });
+  msgs.forEach(([f, t, text, rec], k) => {
+    const y = top + headH + 36 + k * rowH;
+    let tx, anchor;
+    if (f === t) {
+      const left = f === actors.length - 1;
+      const x = X(f);
+      s += `<path d="M${x} ${y - 10} h${left ? -16 : 16} v14 h${left ? 16 : -16}" class="seq-m" marker-end="url(#ah)"></path>`;
+      tx = left ? x - 24 : x + 24; anchor = left ? 'end' : 'start';
+      s += `<text x="${tx}" y="${y + 1}" text-anchor="${anchor}" class="seq-t">${esc(text)}</text>`;
+    } else {
+      const x1 = X(f), x2 = X(t);
+      s += `<line x1="${x1}" y1="${y}" x2="${x2 + (x2 > x1 ? -2 : 2)}" y2="${y}" class="seq-m" marker-end="url(#ah)"></line>`;
+      const half = Math.max(est(text, 6.6), rec ? est(rec, 6.7) : 0) / 2;
+      tx = Math.min(Math.max((x1 + x2) / 2, half + 6), W - half - 6); anchor = 'middle';
+      s += `<text x="${tx}" y="${y - 7}" text-anchor="middle" class="seq-t">${esc(text)}</text>`;
+    }
+    if (rec !== undefined) {
+      const ry = f === t ? y + 17 : y + 15;
+      s += rec ? `<text x="${tx}" y="${ry}" text-anchor="${anchor}" class="seq-rk">${esc('● ' + rec)}</text>` : `<text x="${tx}" y="${ry}" text-anchor="${anchor}" class="seq-rn">no activity row</text>`;
+    }
+  });
+  return s + '</svg>';
+}
+$('seqs').innerHTML = SEQS.map(([name, actors, msgs]) => `<div class="seq-wrap stack-s"><h3>${esc(name)}</h3><div class="diagram">${seqSvg(actors, msgs)}</div></div>`).join('');
+
+$('proto').innerHTML = esc(`Contract  yourlab.agent-dispatch v2 (v1 still accepted)
+Mode      AGENT_CONNECTION_MODE = remote_pull (production) | local_push (dev) | disabled
+
+Every signed request
+  X-YL-Connector-ID
+  X-YL-Timestamp     ±60 s
+  X-YL-Nonce         16–128 chars, replay window 5 min
+  X-YL-Signature     Ed25519( METHOD \\n path \\n timestamp \\n nonce \\n sha256(rawBody) )
+  X-YL-Lease-Token   while working · lease 60 s
+
+Endpoints  /api/projects/agent-connectors/…
+  POST heartbeat               renews lease and capabilities
+  POST claim                   long-poll ≤ 5 s · 204 when idle
+  POST dispatches/:id/ack
+  POST dispatches/:id/sync     status, events ≤ 256 KB, progress, checkpoint
+  POST dispatches/:id/result   rawOutput ≤ 10 MB → waiting_review, never applied alone
+
+Limits    pairing 5/min · signed calls 300/min per IP · HTTPS in production`).replace(/^(Contract|Mode|Every signed request|Endpoints|Limits)/gm, '<b>$1</b>');
+
+const DATA = [
+  ['data/platform.db', 'SQLite (WAL): users, activity, requirements and links, engineering projection, agent_connectors, pairing codes, agent_dispatches with events and commands'],
+  ['data/projects/<id>.json', 'The whole project, about 80 keys: members, stages, phases, repository, workspace, workItems, execucoes, decisions, meetingMinutes, auditLog…'],
+  ['data/blobs/<id>/…', 'Prompt runs, execution plans, agent jobs, documents, human reviews, snapshots, mockups'],
+  ['uploads/<id>/', 'Uploaded files, named <timestamp>_<name>'],
+  ['../generated_proposals/', 'Proposal config, input and the MD output, outside the project folder'],
+  ['data/*.secret.json', 'GitHub token and DeepInfra key, AES-256-GCM; key in data/.secret-key (0600) unless set in the environment'],
+];
+$('data').innerHTML = DATA.map(([t, s]) => `<div class="r"><div class="r-t mono">${esc(t)}</div><div class="r-s">${esc(s)}</div></div>`).join('');
+
+const RISKS = [
+  ['bad', 'Password sign-in has no rate limit and no reset', 'api.js:1156. Nothing slows down guessing, and a forgotten password needs the super admin.'],
+  ['bad', 'Default super admin when the environment is empty', 'admin@yourlab.local with change-me-now (api.js:206-219). Worth checking that production sets both variables.'],
+  ['warn', 'Sessions live in memory', 'api.js:55. Every deploy or restart signs everyone out.'],
+  ['warn', 'Any verified Google account becomes a client', 'Unless GOOGLE_ALLOWED_DOMAINS is set, anyone can create an account (with no projects).'],
+  ['warn', 'The client role is checked two ways', 'The browser uses the global role (app.js:690); the server uses project membership. A Google sign-up made partner on a project sees the client screens but can edit through the API.'],
+  ['warn', 'Clients can upload through the API', 'documents/upload has no editor guard (api.js:2466); the screens hide Documentos from them.'],
+  ['warn', 'Every write goes to the default branch', 'workspace-io.js:63, openspec-repository.js:58, agent-code-commit.js:229. No branch, no pull request; the review happens on the platform only.'],
+  ['warn', 'ADR-0001 and the code disagree', 'The ADR puts the runtime on the Linux server and rules out child_process. Pairing requires the macOS Keychain, and git-local.js runs git through execFile.'],
+  ['warn', 'The runtime calls routes it cannot use', 'R/src/tools/platform-client.ts calls engineering/graph, change-sets, prompt-runs and agent-runs status with the service token; those routes need a session, so they likely answer 401.'],
+  ['warn', 'Proposal payment defaults', 'The configurator suggests 30 % on start and 20 % at the end; YourLab\'s terms are 35 % · 35 % · 30 %.'],
+];
+$('risks').innerHTML = RISKS.map(([k, t, s]) => `<div class="r"><div class="r-t">${esc(t)}</div><div class="r-s">${esc(s)}</div><div class="r-b"><span class="badge ${k}">${k === 'bad' ? 'Fix' : 'Check'}</span></div></div>`).join('');
+
+/* ------------------------------------------------------------ tabs */
+const TABS = ['workflows', 'screens', 'integrations'];
+function openTab(id) {
+  if (!TABS.includes(id)) id = 'workflows';
+  TABS.forEach((t) => { $(t).hidden = t !== id; $('tab-' + t).setAttribute('aria-selected', String(t === id)); });
+}
+document.querySelector('.tabs').addEventListener('click', (e) => {
+  const x = e.target.closest('button');
+  if (!x) return;
+  const id = x.getAttribute('aria-controls');
+  openTab(id);
+  try { history.replaceState(null, '', '#' + id); } catch (_) { /* sandboxed */ }
+});
+openTab(location.hash.slice(1));
+})();
+</script>

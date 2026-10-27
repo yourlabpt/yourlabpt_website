@@ -302,4 +302,83 @@ function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappI
     return r;
 }
 
-module.exports = { carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };
+/**
+ * CSV (leadgen `ligar_*.csv`, or the same sheet re-saved by Excel/Numbers) → rows for importar().
+ * Header names are the row keys (nome, telefone, cidade, tipo, morada, maps, …). Handles the BOM,
+ * quoted fields with commas/newlines, and Excel's «;» separator. Rows marked nao_contactar are dropped.
+ */
+function lerCsv(texto) {
+    const t = String(texto || '').replace(/^﻿/, '');
+    const primeira = t.split('\n', 1)[0];
+    const sep = (primeira.match(/;/g) || []).length > (primeira.match(/,/g) || []).length ? ';' : ',';
+    const linhas = [];
+    let campo = '', linha = [], aspas = false;
+    for (let i = 0; i < t.length; i++) {
+        const c = t[i];
+        if (aspas) {
+            if (c === '"' && t[i + 1] === '"') { campo += '"'; i += 1; }
+            else if (c === '"') aspas = false;
+            else campo += c;
+        } else if (c === '"') aspas = true;
+        else if (c === sep) { linha.push(campo); campo = ''; }
+        else if (c === '\n' || c === '\r') {
+            if (c === '\r' && t[i + 1] === '\n') i += 1;
+            linha.push(campo); linhas.push(linha); linha = []; campo = '';
+        } else campo += c;
+    }
+    if (campo || linha.length) { linha.push(campo); linhas.push(linha); }
+    const [cab, ...resto] = linhas;
+    if (!cab) return [];
+    const chaves = cab.map((k) => semAcentos(k).trim());
+    return resto
+        .filter((l) => l.some((v) => v.trim()))
+        .map((l) => Object.fromEntries(chaves.map((k, i) => [k, (l[i] || '').trim()])))
+        .filter((r) => !r.nao_contactar);
+}
+
+/** Every type id we know how to sell to (plus «generico» = sem tipo). */
+function tiposConhecidos() {
+    return new Set(['generico', ...carregar().verticais.flatMap((v) => v.tipos || [])]);
+}
+
+/** Deletes one lead and everything hanging off it. A lead with a closed deal is refused. */
+function apagarLead(db, leadId) {
+    if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) return 'inexistente';
+    const fechado = db.prepare(`SELECT 1 FROM proposta p JOIN contrato c ON c.proposta_id = p.id
+        JOIN projeto pr ON pr.contrato_id = c.id WHERE p.lead_id = ? LIMIT 1`).get(leadId);
+    if (fechado) return 'fechado';
+    db.transaction(() => {
+        db.prepare('UPDATE visita SET lead_id = NULL WHERE lead_id = ?').run(leadId);
+        db.prepare('DELETE FROM nota WHERE lead_id = ?').run(leadId);
+        db.prepare('DELETE FROM evento WHERE entidade = ? AND entidade_id = ?').run('lead', leadId);
+        db.prepare('DELETE FROM lead_toque WHERE lead_id = ?').run(leadId);
+        db.prepare('DELETE FROM demo_visita WHERE lead_id = ?').run(leadId);
+        db.prepare('DELETE FROM dados_negocio WHERE lead_id = ?').run(leadId);
+        db.prepare('DELETE FROM lead WHERE id = ?').run(leadId);
+    })();
+    return 'ok';
+}
+
+/** The contacts in `ids` this seller may change: admin any Foco contact, a partner their own. */
+function contactosMeus(db, ids, vendedor) {
+    const um = db.prepare("SELECT vendedor_id FROM lead WHERE id = ? AND foco_estado != ''");
+    return ids.filter((id) => {
+        const c = um.get(id);
+        return c && (vendedor.papel === 'admin' || c.vendedor_id === vendedor.id);
+    });
+}
+
+/** Same type for every contact in `ids`. */
+function mudarTipo(db, ids, tipo) {
+    const up = db.prepare('UPDATE lead SET business_type = ? WHERE id = ?');
+    return db.transaction(() => ids.reduce((n, id) => n + up.run(tipo, id).changes, 0))();
+}
+
+/** Deletes `ids`; contacts with a closed deal are kept and counted. */
+function apagarLote(db, ids) {
+    const r = { apagados: 0, com_negocio: 0 };
+    ids.forEach((id) => { const x = apagarLead(db, id); if (x === 'ok') r.apagados += 1; else if (x === 'fechado') r.com_negocio += 1; });
+    return r;
+}
+
+module.exports = { lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

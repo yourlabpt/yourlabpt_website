@@ -156,3 +156,13 @@
 .foco-opcional { border: 1px solid var(--separator); border-radius: var(--radius-lg); padding: 12px 14px; }
 .foco-opcional > summary { cursor: pointer; font-weight: 600; }
 .foco-opcional[open] { display: grid; gap: 10px; }
+
+/* Contactos: tick, then act on the ticked */
+.foco-sel { width: 22px; height: 22px; flex: none; accent-color: #e8d5b7; }
+.foco-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: #242424; border-top: 1px solid rgba(232, 213, 183, 0.3); }
+.foco-lista.com-barra { padding-bottom: 150px; }
+.foco-perigo { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.5); }
+
+.foco-mais > summary { cursor: pointer; padding: 10px 2px; color: #a9a8a3; font-size: 0.9rem; }
+.foco-mais[open] > summary { margin-bottom: 6px; }

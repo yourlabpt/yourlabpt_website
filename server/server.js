@@ -1911,6 +1911,28 @@ app.post('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => 
     res.json({ contacto: focoContacto(db, id) });
 });
 
+// Batch on the ticked contacts: change their type, or delete them. A partner can only touch their own.
+app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const b = req.body || {};
+    const pedidos = Array.isArray(b.ids) ? [...new Set(b.ids.map((x) => cleanText(x, 80)).filter(Boolean))].slice(0, 5000) : [];
+    const ids = foco.contactosMeus(db, pedidos, req.vendedor);
+    if (!ids.length) return res.status(400).json({ error: 'Nenhum contacto seu entre os selecionados.' });
+    if (b.acao === 'tipo') {
+        const tipo = cleanText(b.tipo, 80);
+        if (!foco.tiposConhecidos().has(tipo)) return res.status(400).json({ error: 'Tipo desconhecido.' });
+        const n = foco.mudarTipo(db, ids, tipo);
+        digitalizeptLogEvento(db, 'app', 'foco', 'foco_tipo_lote', { n, tipo });
+        return res.json({ n });
+    }
+    if (b.acao === 'apagar') {
+        const r = foco.apagarLote(db, ids);
+        digitalizeptLogEvento(db, 'app', 'foco', 'foco_apagar_lote', r);
+        return res.json(r);
+    }
+    return res.status(400).json({ error: 'Ação desconhecida.' });
+});
+
 app.post('/api/digitalizept/foco/contactos/:id/demo', requireDigitalizept, async (req, res) => {
     const db = getDigitalizeptDb();
     const contacto = focoContacto(db, req.params.id);
@@ -1975,10 +1997,11 @@ app.patch('/api/digitalizept/foco/contactos/:id', requireDigitalizeptAdmin, (req
     res.json({ contacto: focoContacto(db, contacto.id) });
 });
 
-// Crawler JSON (linkgen `export --json`) → contacts "por contactar", on the map.
+// Crawler JSON (linkgen `export --json`) or leadgen CSV (`ligar_*.csv`, sent as `csv` text) → contacts "por contactar", on the map.
 app.post('/api/digitalizept/foco/importar', requireDigitalizept, (req, res) => {
     const b = req.body || {};
-    if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: 'O ficheiro tem de ser uma lista JSON de negócios.' });
+    if (typeof b.csv === 'string') b.rows = foco.lerCsv(b.csv);
+    if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: 'O ficheiro tem de ser um CSV ou uma lista JSON de negócios.' });
     if (b.rows.length > 20000) return res.status(400).json({ error: 'Máximo 20 000 negócios por importação.' });
     const db = getDigitalizeptDb();
     // Admin imports into the shared list unless handing them to someone; a partner imports for themselves.
@@ -5282,29 +5305,9 @@ app.patch('/api/digitalizept/deals/:projectId', requireDigitalizept, (req, res) 
 
 app.delete('/api/digitalizept/leads/:leadId', requireDigitalizeptAdmin, (req, res) => {
     try {
-        const leadId = cleanText(req.params.leadId, 80);
-        const db = getDigitalizeptDb();
-        const lead = db.prepare('SELECT id FROM lead WHERE id = ?').get(leadId);
-        if (!lead) return res.status(404).json({ error: 'Lead não encontrado.' });
-        const hasDeal = db.prepare(`
-            SELECT 1 FROM proposta p
-            JOIN contrato c ON c.proposta_id = p.id
-            JOIN projeto pr ON pr.contrato_id = c.id
-            WHERE p.lead_id = ? LIMIT 1
-        `).get(leadId);
-        if (hasDeal) {
-            return res.status(409).json({ error: 'Este lead tem uma proposta fechada. Apague a proposta primeiro.' });
-        }
-        const del = db.transaction(() => {
-            db.prepare('UPDATE visita SET lead_id = NULL WHERE lead_id = ?').run(leadId);
-            db.prepare('DELETE FROM nota WHERE lead_id = ?').run(leadId);
-            db.prepare('DELETE FROM evento WHERE entidade = ? AND entidade_id = ?').run('lead', leadId);
-            db.prepare('DELETE FROM lead_toque WHERE lead_id = ?').run(leadId);
-            db.prepare('DELETE FROM demo_visita WHERE lead_id = ?').run(leadId);
-            db.prepare('DELETE FROM dados_negocio WHERE lead_id = ?').run(leadId);
-            db.prepare('DELETE FROM lead WHERE id = ?').run(leadId);
-        });
-        del();
+        const r = foco.apagarLead(getDigitalizeptDb(), cleanText(req.params.leadId, 80));
+        if (r === 'inexistente') return res.status(404).json({ error: 'Lead não encontrado.' });
+        if (r === 'fechado') return res.status(409).json({ error: 'Este lead tem uma proposta fechada. Apague a proposta primeiro.' });
         return res.json({ ok: true });
     } catch (err) {
         console.error('digitalizept delete lead error:', err.message);
