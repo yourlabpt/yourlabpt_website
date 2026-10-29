@@ -163,7 +163,7 @@ test('beta usage sync: snapshot saved, used the app → Beta user, paid → Ativ
     const { sincronizarUso } = require('./digitalizept-foco');
     const db = new Database(':memory:');
     db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, dmn_token TEXT, foco_estado TEXT, foco_linha TEXT DEFAULT 'digitu',
-        vendedor_id TEXT DEFAULT 'ana', foco_uso_json TEXT DEFAULT '');
+        vendedor_id TEXT DEFAULT 'ana', foco_uso_json TEXT DEFAULT '', foco_arquivado INTEGER DEFAULT 0);
         INSERT INTO lead (id, dmn_token, foco_estado) VALUES ('usou','t1','demo_mostrada'), ('pagou','t2','quer_ativar'),
             ('nada','t3','demo_mostrada'), ('erro','t4','demo_mostrada'), ('fora','t5','por_contactar');`);
     const respostas = {
@@ -192,4 +192,20 @@ test('beta usage sync: snapshot saved, used the app → Beta user, paid → Ativ
     } finally {
         global.fetch = fetchReal;
     }
+});
+
+test('archive: hides without deleting, restore brings it back, repeated calls are no-ops', () => {
+    const Database = require('better-sqlite3');
+    const { arquivarLote } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, foco_arquivado INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO lead (id) VALUES ('a'), ('b');`);
+    const log = [];
+    const reg = (id, tipo, p) => log.push([id, tipo, p.arquivado]);
+    assert.equal(arquivarLote(db, ['a', 'b'], true, reg), 2);
+    assert.equal(arquivarLote(db, ['a'], true, reg), 0, 'already archived');
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM lead').get().n, 2, 'nothing deleted');
+    assert.equal(arquivarLote(db, ['a'], false, reg), 1);
+    assert.deepEqual(db.prepare('SELECT id FROM lead WHERE foco_arquivado = 1').all().map((r) => r.id), ['b']);
+    assert.deepEqual(log.at(-1), ['a', 'foco_arquivo', false]);
 });

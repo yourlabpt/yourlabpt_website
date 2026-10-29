@@ -129,7 +129,7 @@ const segmentoDoTipo = (tipo) => state.cfg.verticais.find((v) => v.foco && v.tip
     || state.cfg.verticais.find((v) => v.tipos.includes(tipo));
 const nomeTipo = (tipo) => {
     const v = segmentoDoTipo(tipo);
-    return (v && (v.tipos_nomes.find((t) => t.id === tipo) || {}).nome) || (tipo === 'generico' ? 'Sem tipo' : tipo);
+    return (v && (v.tipos_nomes.find((t) => t.id === tipo) || {}).nome) || (tipo === 'generico' ? 'Sem tipo' : (state.cfg.tiposNomes || {})[tipo] || tipo);
 };
 // Every type we sell to, once each, by name — for the batch «mudar tipo» and the add sheet.
 const tiposTodos = () => [...new Map(state.cfg.verticais.flatMap((v) => v.tipos_nomes).map((t) => [t.id, t])).values()]
@@ -247,16 +247,32 @@ const utilizadorDe = (url, dominio) => {
     return m && !/^(profile\.php|pages)$/i.test(m[1]) ? m[1] : '';
 };
 
+// Instagram arrives as «salao_a» (leadgen), «@salao_a» or any instagram.com URL → one handle,
+// or '' when it is a post/reel link that names no profile.
+function instagramHandle(valor) {
+    const t = String(valor || '').trim();
+    const url = t.match(/instagram\.com\/(?:stories\/)?([^/?#\s]+)/i);
+    const handle = (url ? url[1] : t).replace(/^@/, '');
+    return /^[a-z0-9._]{1,30}$/i.test(handle) && !/^(p|reel|reels|tv|explore|stories|accounts|direct)$/i.test(handle)
+        ? handle.toLowerCase() : '';
+}
+const eMovel = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+const instagramPerfil = (handle) => `https://www.instagram.com/${handle}/`;
+// Phone: ig.me/m opens the chat straight in the Instagram app (or its site if there is no app).
+// Computer: ig.me/m does not land on a chat, so the profile — «Mensagem» is one click away there.
+const instagramConversa = (handle) => (eMovel() ? `https://ig.me/m/${handle}` : instagramPerfil(handle));
+
 // Instagram and Messenger have click-to-chat links but no way to pre-fill the
 // text, so the app copies the message first and the seller pastes it.
 function canaisDoContacto(c) {
     const o = c.origem || {};
+    const ig = instagramHandle(o.instagram);
     const numero = waNumero(c.whatsapp || c.telefone);
     const fbId = String(o.facebook || '').match(/profile\.php\?id=(\d+)/i);
     return [
         numero && { id: 'whatsapp', nome: 'WhatsApp', prefill: true, url: (t) => `https://wa.me/${numero}?text=${encodeURIComponent(t)}` },
         numero && { id: 'whatsapp', nome: 'WhatsApp Web', web: true, prefill: true, url: (t) => `https://web.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(t)}` },
-        o.instagram && { id: 'instagram', nome: 'Instagram', url: () => (utilizadorDe(o.instagram, 'instagram') ? `https://ig.me/m/${utilizadorDe(o.instagram, 'instagram')}` : o.instagram) },
+        ig && { id: 'instagram', nome: 'Instagram', url: () => instagramConversa(ig) },
         o.facebook && { id: 'facebook', nome: 'Messenger', url: () => (fbId ? `https://m.me/${fbId[1]}` : (utilizadorDe(o.facebook, 'facebook') ? `https://m.me/${utilizadorDe(o.facebook, 'facebook')}` : o.facebook)) },
         o.email && { id: 'email', nome: 'Email', prefill: true, url: (t) => `mailto:${o.email}?subject=${encodeURIComponent(`${state.cfg.marca.nome} — ${c.nome}`)}&body=${encodeURIComponent(t)}` }
     ].filter(Boolean);
@@ -348,18 +364,20 @@ function configuradorMensagem(c, modeloInicial = '') {
         acoes.replaceChildren(...nos([
             canais.filter((x) => x.id === canal).map((x) => (x.prefill
                 ? h('a', { class: x.web ? 'btn-secondary' : 'btn-primary', target: '_blank', rel: 'noopener', href: x.url(caixa.value), onclick: registar }, x.nome)
-                // No pre-filled text on Instagram/Messenger: copy, then open the chat.
-                : h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
-                    await navigator.clipboard.writeText(caixa.value).catch(() => {});
+                // No pre-filled text on Instagram/Messenger: a real link tap that copies as it opens.
+                // Nothing awaited first — Safari blocks windows opened later, and only a tap hands off to the app.
+                : h('a', { class: 'btn-primary', target: '_blank', rel: 'noopener', href: x.url(caixa.value), onclick: () => {
+                    navigator.clipboard.writeText(caixa.value).catch(() => {});
                     registar();
                     toast('Mensagem copiada — cole na conversa.');
-                    window.open(x.url(caixa.value), '_blank', 'noopener');
                 } }, `${x.nome} (copia e abre)`))),
             h('button', { type: 'button', class: 'btn-secondary', onclick: () => navigator.clipboard.writeText(caixa.value).then(() => { registar(); toast('Mensagem copiada.'); }) }, 'Copiar')
         ]));
         aviso.textContent = canal === 'whatsapp'
             ? (m.numero ? `Sai do número ligado: no telemóvel é o seu; no WhatsApp Web use a sessão da ${m.nome} (${m.numero}).`
                 : `Sai do número ligado neste aparelho. Defina o número da ${m.nome} em Equipa → A marca.`)
+            : canal === 'instagram' && !eMovel()
+                ? `No computador abre o perfil: carregue em «Mensagem» e cole (o texto vai copiado). Use a conta da ${m.nome}.`
             : canal === 'instagram' || canal === 'facebook'
                 ? `Abre a conversa na conta que tiver ligada — use a da ${m.nome}. O texto vai copiado, é só colar.`
                 : '';
@@ -552,8 +570,12 @@ const VISTAS = {
     sem: { nome: 'Sem próximo passo', ok: (c) => !fechado(c) && !noInicio(c) && !c.voltar_em },
     // Beta users, the least active first: they are the ones to call.
     beta: { nome: 'Beta users', so: 'digitu', ok: (c) => c.estado === 'quer_ativar' },
-    todos: { nome: 'Todos', ok: () => true }
+    todos: { nome: 'Todos', ok: () => true },
+    // Out of the way but kept: restore, or delete test contacts for good.
+    arquivados: { nome: 'Arquivados', ok: () => true }
 };
+// Archived contacts only show in «Arquivados»; everywhere else they are gone.
+const naVista = (c, vista) => (vista === 'arquivados' ? c.arquivado : !c.arquivado);
 function proximoPasso(c, hoje) {
     if (fechado(c)) return null;
     if (!c.voltar_em) return noInicio(c) ? null : { txt: 'Sem próximo passo', cls: 'foco-pp-falta' };
@@ -608,7 +630,7 @@ function proximoDaFila(atual) {
     const i = ids.indexOf(atual);
     const ordem = i < 0 ? ids : [...ids.slice(i + 1), ...ids.slice(0, i)];
     for (const id of ordem) {
-        const c = !feitos.includes(id) && state.contactos.find((x) => x.id === id);
+        const c = !feitos.includes(id) && state.contactos.find((x) => x.id === id && !x.arquivado);
         if (c) return c;
     }
     return null;
@@ -865,6 +887,9 @@ function abrirContacto(c, { modelo } = {}) {
             }) }, 'Guardar')
         ),
         bloco('Histórico', historico),
+        meu && h('div', { class: 'foco-acoes' },
+            h('button', { type: 'button', class: 'btn-secondary', onclick: () => arquivarUm(c, !c.arquivado) }, c.arquivado ? 'Desarquivar' : 'Arquivar'),
+            c.arquivado && h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => apagarUm(c) }, 'Apagar de vez')),
         meu && h('button', { type: 'button', class: 'foco-link', onclick: () => moverLinha(c) },
             yl ? `Passar para ${state.cfg.linhas.digitu.nome}` : `Passar para ${state.cfg.linhas.yourlab.nome}`),
         state.me.papel === 'admin' && bloco('Quem trata', atribuir(c)),
@@ -873,6 +898,25 @@ function abrirContacto(c, { modelo } = {}) {
     );
     if (modelo && mensagem) mensagem.scrollIntoView({ block: 'start' });
     return null;
+}
+
+async function arquivarUm(c, arquivar) {
+    try {
+        await api('/api/digitalizept/foco/contactos/lote', { method: 'POST', body: { ids: [c.id], acao: 'arquivar', arquivar } });
+        toast(arquivar ? 'Arquivado — está em «Arquivados».' : 'De volta às listas.');
+        fecharSheet();
+        irPara(state.tab === 'mapa' ? 'mapa' : 'contactos');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+}
+
+async function apagarUm(c) {
+    if (!window.confirm(`Apagar «${c.nome}» de vez? Vai o histórico e as notas. Não dá para desfazer.`)) return;
+    try {
+        const r = await api('/api/digitalizept/foco/contactos/lote', { method: 'POST', body: { ids: [c.id], acao: 'apagar' } });
+        toast(r.apagados ? 'Apagado.' : 'Tem negócio fechado — não foi apagado.', !r.apagados);
+        fecharSheet();
+        irPara('contactos');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 }
 
 async function moverLinha(c) {
@@ -912,10 +956,11 @@ function contactarBotoes(c) {
     const o = c.origem || {};
     const tel = c.telefone || c.whatsapp;
     const wa = c.whatsapp || (waNumero(tel).startsWith('3519') ? tel : '');
+    const ig = instagramHandle(o.instagram);
     const links = [
         tel && ['Ligar', `tel:${String(tel).replace(/\s/g, '')}`],
         wa && ['WhatsApp', `https://wa.me/${waNumero(wa)}`],
-        o.instagram && ['Instagram', o.instagram],
+        (ig || /^https?:\/\//i.test(o.instagram || '')) && ['Instagram (perfil)', ig ? instagramPerfil(ig) : o.instagram],
         o.facebook && ['Facebook', o.facebook],
         o.website && ['Site atual', o.website],
         o.maps && ['Maps', o.maps],
@@ -936,6 +981,7 @@ const QUE = {
         e.instagram === true && 'segue no Instagram'
     ].filter(Boolean).join(' · '),
     foco_linha: (e) => `${e.de} → ${e.para}`,
+    foco_arquivo: (e) => (e.arquivado ? 'Arquivado' : 'Desarquivado'),
     foco_voltar: (e) => (e.voltar_em ? `Próximo contacto: ${e.voltar_em}` : 'Data de próximo contacto removida'),
     foco_mensagem: (e) => `${state.cfg.canais[e.canal] || 'WhatsApp'} · ${e.modelo}${e.com_link ? ' · com link' : ''}${e.lote ? ' · em lote' : ''}`,
     foco_demo: () => 'Link da app criado',
@@ -975,13 +1021,14 @@ async function carregarContactos() {
 }
 
 function filtrados() {
-    const { texto: t, estado, segmento, dono, vista } = state.filtro;
+    const { texto: t, estado, segmento, dono, vista, tipo } = state.filtro;
     const alvo = t.trim().toLowerCase();
     const hoje = somarDias(0);
     const v = VISTAS[vista] || VISTAS.todos;
     const donoOk = (c) => !dono || (dono === 'comum' ? !c.vendedor_id : dono === 'meus' ? c.vendedor_id === state.me.id : c.vendedor_id === dono);
-    const lista = state.contactos.filter((c) => daLinha(c, state.filtro.linha) && v.ok(c, hoje) && donoOk(c) && (!estado || c.estado === estado)
+    const lista = state.contactos.filter((c) => daLinha(c, state.filtro.linha) && naVista(c, vista) && v.ok(c, hoje) && donoOk(c) && (!estado || c.estado === estado)
         && (!segmento || ((segmentoDoTipo(c.tipo) || {}).id || 'outros') === segmento)
+        && (!tipo || c.tipo === tipo)
         && (!alvo || `${c.nome} ${c.cidade} ${c.morada} ${c.telefone}`.toLowerCase().includes(alvo)));
     if (vista === 'beta') return lista.sort((a, b) => (ultimoUso(a) < ultimoUso(b) ? -1 : 1));
     return vista === 'hoje' || vista === 'semana' ? lista.sort((a, b) => (a.voltar_em < b.voltar_em ? -1 : 1)) : lista;
@@ -991,9 +1038,10 @@ function filtrados() {
 function barraVistas(aoMudar) {
     const f = state.filtro;
     const hoje = somarDias(0);
-    const doLinha = state.contactos.filter((c) => daLinha(c, f.linha));
+    const doLinha = state.contactos.filter((c) => daLinha(c, f.linha) && !c.arquivado);
     const conta = (ok) => doLinha.filter((c) => ok(c, hoje)).length;
     const soma = (ok) => doLinha.filter(ok).reduce((t, c) => t + (c.valor_centimos || 0), 0);
+    const arquivados = state.contactos.filter((c) => daLinha(c, f.linha) && c.arquivado).length;
     return h('div', { class: 'foco-crm' },
         h('div', { class: 'foco-linhas' }, Object.entries(state.cfg.linhas).map(([id, l]) => h('button', {
             type: 'button', class: `foco-linha${f.linha === id ? ' active' : ''}`,
@@ -1004,9 +1052,9 @@ function barraVistas(aoMudar) {
                 state.sel = new Set();
                 aoMudar();
             }
-        }, l.nome, h('b', {}, state.contactos.filter((c) => daLinha(c, id)).length)))),
+        }, l.nome, h('b', {}, state.contactos.filter((c) => daLinha(c, id) && !c.arquivado).length)))),
         h('div', { class: 'foco-vistas' }, Object.entries(VISTAS).filter(([, v]) => !v.so || v.so === f.linha).map(([id, v]) => {
-            const n = conta(v.ok);
+            const n = id === 'arquivados' ? arquivados : conta(v.ok);
             return h('button', { type: 'button', class: `foco-vista${f.vista === id ? ' active' : ''}${id !== 'todos' && id !== 'semana' && n ? ' foco-vista-alerta' : ''}`,
                 onclick: () => { f.vista = id; aoMudar(); } }, v.nome, h('b', {}, n));
         })),
@@ -1021,7 +1069,7 @@ function barraVistas(aoMudar) {
 
 function barraFiltros(aoMudar) {
     const f = state.filtro;
-    const ativos = [f.segmento, f.dono].filter(Boolean).length;
+    const ativos = [f.segmento, f.tipo, f.dono].filter(Boolean).length;
     // Search stays in view; the dropdowns fold away so the first screen shows contacts, not controls.
     return h('div', { class: 'foco-filtros' },
         h('input', { class: 'field-input', type: 'search', placeholder: 'Procurar nome, cidade, telefone…', value: f.texto,
@@ -1035,8 +1083,20 @@ function filtrosExtra(f, aoMudar) {
     return nos([
         h('select', { class: 'field-input', onchange: (e) => { f.segmento = e.target.value; aoMudar(); } },
             h('option', { value: '' }, 'Todos os segmentos'),
-            state.cfg.verticais.filter((v) => v.foco).map((v) => h('option', { value: v.id, selected: f.segmento === v.id }, `${v.foco} · ${v.nome}`)),
-            h('option', { value: 'outros', selected: f.segmento === 'outros' }, 'Outros')),
+            h('optgroup', { label: 'Em foco' }, state.cfg.verticais.filter((v) => v.foco)
+                .map((v) => h('option', { value: v.id, selected: f.segmento === v.id }, `${v.foco} · ${v.nome}`))),
+            h('optgroup', { label: 'Fora do foco' }, state.cfg.verticais.filter((v) => !v.foco)
+                .map((v) => h('option', { value: v.id, selected: f.segmento === v.id }, v.nome)),
+                h('option', { value: 'outros', selected: f.segmento === 'outros' }, 'Outros (sem segmento)'))),
+        // Any business type present in the list, focus or not, with how many there are.
+        (() => {
+            const n = {};
+            state.contactos.filter((c) => daLinha(c, f.linha)).forEach((c) => { n[c.tipo] = (n[c.tipo] || 0) + 1; });
+            return h('select', { class: 'field-input', onchange: (e) => { f.tipo = e.target.value; aoMudar(); } },
+                h('option', { value: '' }, 'Todos os tipos de negócio'),
+                Object.keys(n).sort((a, b) => nomeTipo(a).localeCompare(nomeTipo(b), 'pt'))
+                    .map((t) => h('option', { value: t, selected: f.tipo === t }, `${nomeTipo(t)} (${n[t]})`)));
+        })(),
         h('select', { class: 'field-input', onchange: (e) => { f.dono = e.target.value; aoMudar(); } },
             h('option', { value: '' }, state.todos ? 'Todos os donos' : 'Meus + lista comum'),
             h('option', { value: 'meus', selected: f.dono === 'meus' }, `Só os meus (${state.contactos.filter((c) => c.vendedor_id === state.me.id).length})`),
@@ -1083,6 +1143,7 @@ function cartaoContacto(c, hoje, aoMudar) {
                 onclick: (e) => e.stopPropagation(),
                 onchange: (e) => { if (e.target.checked) state.sel.add(c.id); else state.sel.delete(c.id); aoMudar(); } }),
             h('strong', {}, c.nome),
+            c.arquivado && h('span', { class: 'foco-chip' }, 'Arquivado'),
             c.instagram && h('span', { class: 'foco-chip foco-chip-ig' }, 'IG ✓'),
             naFila(c.id) && h('span', { class: 'foco-chip foco-chip-hoje' }, filaAtual.feitos.includes(c.id) ? 'Hoje ✓' : 'Hoje'),
             h('span', { class: `foco-chip foco-chip-${c.estado}` }, state.cfg.estados[c.estado] || c.estado)
@@ -1170,6 +1231,11 @@ function barraSelecao(itens, aoMudar) {
         aoMudar();
         abrirContacto(itens.find((c) => c.id === ids[0]));
     } }, `Trabalhar estes (${n})`);
+    const noArquivo = state.filtro.vista === 'arquivados';
+    const arquivar = h('button', { type: 'button', class: 'btn-secondary', onclick: () => fazer(
+        noArquivo ? `Desarquivar ${n} contactos?` : `Arquivar ${n} contactos? Saem das listas e do mapa; ficam em «Arquivados».`,
+        () => lote({ acao: 'arquivar', arquivar: !noArquivo }),
+        (r) => `${r.n} ${noArquivo ? 'desarquivados' : 'arquivados'}.`) }, `${noArquivo ? 'Desarquivar' : 'Arquivar'} (${n})`);
     const apagar = h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => fazer(
         `Apagar ${n} contactos? Não dá para desfazer.`, () => lote({ acao: 'apagar' }),
         (r) => `${r.apagados} apagados${r.com_negocio ? `; ${r.com_negocio} com negócio fechado ficaram` : ''}.`) }, `Apagar (${n})`);
@@ -1178,7 +1244,7 @@ function barraSelecao(itens, aoMudar) {
             h('p', { class: 'foco-meta' }, `${n} selecionado${n === 1 ? '' : 's'}`),
             h('div', { class: 'foco-massa' }, estadoSel, voltarSel, outraData),
             h('div', { class: 'foco-massa' }, tipo, dono, mover),
-            h('div', { class: 'foco-massa' }, whatsapp, trabalhar, apagar,
+            h('div', { class: 'foco-massa' }, !noArquivo && whatsapp, !noArquivo && trabalhar, arquivar, apagar,
                 h('button', { type: 'button', class: 'btn-secondary', onclick: () => { state.sel = new Set(); aoMudar(); } }, 'Limpar'))));
 }
 
@@ -1222,7 +1288,7 @@ async function renderContactos() {
     await carregarContactos();
     state.sel = new Set();
     const hoje = somarDias(0);
-    if (!state.filtro.vista) state.filtro.vista = state.contactos.some((c) => daLinha(c, state.filtro.linha) && VISTAS.hoje.ok(c, hoje)) ? 'hoje' : 'todos';
+    if (!state.filtro.vista) state.filtro.vista = state.contactos.some((c) => daLinha(c, state.filtro.linha) && !c.arquivado && VISTAS.hoje.ok(c, hoje)) ? 'hoje' : 'todos';
     const listaEl = h('div', { class: 'foco-lista' });
     const barraEl = h('div');
     const vistasEl = h('div');
@@ -1235,7 +1301,8 @@ async function renderContactos() {
             itens.slice(0, MAX_LISTA).map((c) => cartaoContacto(c, hoje, pintar)),
             itens.length > MAX_LISTA && h('p', { class: 'foco-meta' }, `A mostrar ${MAX_LISTA} de ${itens.length}. Afine o filtro ou use o mapa.`),
             !itens.length && h('p', { class: 'foco-vazio' }, !state.contactos.length ? 'Ainda sem contactos. Toque em «Adicionar contactos».'
-                : state.filtro.vista === 'hoje' ? 'Nada para hoje. Veja «Sem próximo passo».' : 'Nenhum contacto com este filtro.')
+                : state.filtro.vista === 'hoje' ? 'Nada para hoje. Veja «Sem próximo passo».'
+                    : state.filtro.vista === 'arquivados' ? 'Nada arquivado.' : 'Nenhum contacto com este filtro.')
         ]));
     };
     render(

@@ -162,7 +162,7 @@ function resumo(db, { vendedorId = null } = {}) {
     const filtro = `AND l.foco_linha = 'digitu'${vendedorId ? ' AND l.vendedor_id = @vendedorId' : ''}`;
     const rows = db.prepare(`
         SELECT l.vendedor_id, l.business_type, l.foco_estado, l.foco_dor, l.foco_instagram, COUNT(*) AS n
-        FROM lead l WHERE l.foco_estado != '' ${filtro}
+        FROM lead l WHERE l.foco_estado != '' AND NOT (l.foco_arquivado = 1 AND l.foco_estado = 'por_contactar') ${filtro}
         GROUP BY 1, 2, 3, 4, 5
     `).all({ vendedorId });
     const nomes = Object.fromEntries(db.prepare('SELECT id, nome FROM vendedor').all().map((v) => [v.id, v.nome]));
@@ -440,6 +440,17 @@ function seguimentoLote(db, ids, { estado, voltarEm }, log) {
     }, 0))();
 }
 
+/** Archive (or restore) contacts. Returns how many changed. */
+function arquivarLote(db, ids, arquivar, log) {
+    const up = db.prepare('UPDATE lead SET foco_arquivado = ? WHERE id = ? AND foco_arquivado != ?');
+    const v = arquivar ? 1 : 0;
+    return db.transaction(() => ids.reduce((n, id) => {
+        if (!up.run(v, id, v).changes) return n;
+        log(id, 'foco_arquivo', { arquivado: arquivar });
+        return n + 1;
+    }, 0))();
+}
+
 /** Moves contacts to the other line; they start that line's pipeline from the top. */
 function mudarLinha(db, ids, linha, log) {
     const L = linhaDe(linha);
@@ -461,7 +472,7 @@ function mudarLinha(db, ids, linha, log) {
 async function sincronizarUso(db, { vendedor, log, nowIso }) {
     const meus = vendedor.papel === 'admin' ? '' : 'AND vendedor_id = ?';
     const leads = db.prepare(`SELECT id, dmn_token, foco_estado FROM lead WHERE foco_linha = 'digitu' AND dmn_token != ''
-        AND foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou', 'voltar') ${meus}`).all(...(meus ? [vendedor.id] : []));
+        AND foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou', 'voltar') AND foco_arquivado = 0 ${meus}`).all(...(meus ? [vendedor.id] : []));
     const up = db.prepare('UPDATE lead SET foco_uso_json = ? WHERE id = ?');
     const mover = db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?');
     const r = { n: 0, falhas: 0, mudaram: 0 };
@@ -484,4 +495,4 @@ async function sincronizarUso(db, { vendedor, log, nowIso }) {
     return r;
 }
 
-module.exports = { LINHAS, PROJETOS, ESTADOS_TODOS, linhaDe, mudarLinha, sincronizarUso, seguimentoLote, licoes, lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };
+module.exports = { arquivarLote, LINHAS, PROJETOS, ESTADOS_TODOS, linhaDe, mudarLinha, sincronizarUso, seguimentoLote, licoes, lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

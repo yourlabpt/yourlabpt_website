@@ -78,7 +78,10 @@ function instalar(db, addMissingColumns) {
         foco_projeto: "TEXT NOT NULL DEFAULT ''",
         foco_valor_centimos: "INTEGER NOT NULL DEFAULT 0",
         // Last usage snapshot pulled from the Digitu app (points, level, milestones, last activity).
-        foco_uso_json: "TEXT NOT NULL DEFAULT ''"
+        foco_uso_json: "TEXT NOT NULL DEFAULT ''",
+        // Archived: out of the lists, counts and map, but kept — history stays, and a re-import
+        // still recognises it instead of bringing it back as new.
+        foco_arquivado: "INTEGER NOT NULL DEFAULT 0"
     });
     // Message templates, shared by the team (see foco.js for placeholders).
     db.exec(`CREATE TABLE IF NOT EXISTS foco_mensagem (

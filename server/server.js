@@ -1852,7 +1852,9 @@ app.patch('/api/digitalizept/equipa/:id', requireDigitalizeptAdmin, (req, res) =
 // each person's contacts, the demo link and the funnel outcome.
 app.get('/api/digitalizept/foco', requireDigitalizept, (req, res) => {
     try {
-        res.json({ ...foco.carregar(), marca: foco.marca(getDigitalizeptDb()) });
+        // Names for every business type (not only the focus segments), for labels and the type filter.
+        const tiposNomes = Object.fromEntries(loadBusinessTypes().map((t) => [t.id, t.nome]));
+        res.json({ ...foco.carregar(), marca: foco.marca(getDigitalizeptDb()), tiposNomes });
     } catch (err) {
         console.error('foco:', err.message);
         res.status(500).json({ error: err.message });
@@ -1863,14 +1865,14 @@ const FOCO_SELECT = `
     SELECT l.id, l.nome, l.business_type AS tipo, l.cidade, l.morada, l.whatsapp, l.telefone, l.foco_estado AS estado,
            l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng, l.foco_dor AS dor,
            l.foco_origem_json, l.criado_em, l.atualizado_em, l.foco_linha AS linha, l.foco_instagram AS instagram,
-           l.foco_projeto AS projeto, l.foco_valor_centimos AS valor_centimos, l.foco_uso_json,
+           l.foco_projeto AS projeto, l.foco_valor_centimos AS valor_centimos, l.foco_uso_json, l.foco_arquivado AS arquivado,
            (SELECT texto FROM nota n WHERE n.lead_id = l.id ORDER BY n.criado_em DESC LIMIT 1) AS ultima_nota
     FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id`;
 
 function focoLinha(row) {
     if (!row) return row;
     const { foco_origem_json: origem, foco_uso_json: uso, ...rest } = row;
-    return { ...rest, instagram: Boolean(rest.instagram), origem: JSON.parse(origem || '{}'), uso: uso ? JSON.parse(uso) : null };
+    return { ...rest, instagram: Boolean(rest.instagram), arquivado: Boolean(rest.arquivado), origem: JSON.parse(origem || '{}'), uso: uso ? JSON.parse(uso) : null };
 }
 
 function focoContacto(db, id) {
@@ -1954,6 +1956,9 @@ app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res
         const n = foco.mudarTipo(db, ids, tipo);
         digitalizeptLogEvento(db, 'app', 'foco', 'foco_tipo_lote', { n, tipo });
         return res.json({ n });
+    }
+    if (b.acao === 'arquivar') {
+        return res.json({ n: foco.arquivarLote(db, ids, b.arquivar !== false, (id, tipo, p) => digitalizeptLogEvento(db, 'lead', id, tipo, p)) });
     }
     if (b.acao === 'linha') {
         if (!foco.LINHAS[b.linha]) return res.status(400).json({ error: 'Linha desconhecida.' });
