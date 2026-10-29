@@ -166,3 +166,39 @@
 
 .foco-mais > summary { cursor: pointer; padding: 10px 2px; color: #a9a8a3; font-size: 0.9rem; }
 .foco-mais[open] > summary { margin-bottom: 6px; }
+
+/* Fila de hoje */
+.foco-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 12px; border-radius: 10px; background: rgba(232, 213, 183, 0.1); border: 1px solid rgba(232, 213, 183, 0.3); font-size: 0.9rem; }
+.foco-fila-banner { margin-bottom: 4px; }
+.foco-fila-banner button { height: 40px; padding: 0 14px; }
+.foco-chip-hoje { background: rgba(232, 213, 183, 0.18); color: #e8d5b7; }
+
+/* CRM: follow-up views + pipeline */
+.foco-crm { display: grid; gap: 8px; }
+.foco-vistas, .foco-pipeline { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.foco-vista { flex: none; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(232, 213, 183, 0.25);
+    background: transparent; color: #a9a8a3; font-size: 0.85rem; cursor: pointer; }
+.foco-vista b { margin-left: 6px; color: #eeede9; }
+.foco-vista-alerta b { color: #ff6b6b; }
+.foco-vista.active { background: #e8d5b7; border-color: #e8d5b7; color: #1b1b1b; }
+.foco-vista.active b { color: #1b1b1b; }
+.foco-etapa { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 96px;
+    padding: 8px 10px; border-radius: 10px; background: #242424; border: 1px solid transparent; border-top: 3px solid var(--cor);
+    color: #a9a8a3; font-size: 0.72rem; text-align: left; cursor: pointer; }
+.foco-etapa b { font-size: 1.1rem; color: #eeede9; }
+.foco-etapa.active { border-color: var(--cor); color: #eeede9; background: #2a2a2a; }
+.foco-pp { font-weight: 600; color: #eeede9; }
+.foco-pp-atrasado { color: #ff6b6b; }
+.foco-pp-hoje { color: #f5a623; }
+.foco-pp-falta { color: #ff9a9a; }
+.foco-barra { display: grid; gap: 8px; }
+.foco-barra > .foco-meta { margin: 0; }
+.foco-lista.com-barra { padding-bottom: 260px; }
+
+/* Two business lines */
+.foco-linhas { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: #242424; }
+.foco-linha { padding: 10px 8px; border: none; border-radius: 9px; background: transparent; color: #a9a8a3; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+.foco-linha b { margin-left: 6px; font-weight: 700; }
+.foco-linha.active { background: #e8d5b7; color: #1b1b1b; }
+.foco-chip-ig { background: rgba(225, 48, 108, 0.18); color: #f58aaf; }

@@ -1851,14 +1851,15 @@ app.get('/api/digitalizept/foco', requireDigitalizept, (req, res) => {
 const FOCO_SELECT = `
     SELECT l.id, l.nome, l.business_type AS tipo, l.cidade, l.morada, l.whatsapp, l.telefone, l.foco_estado AS estado,
            l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng, l.foco_dor AS dor,
-           l.foco_origem_json, l.criado_em, l.atualizado_em,
+           l.foco_origem_json, l.criado_em, l.atualizado_em, l.foco_linha AS linha, l.foco_instagram AS instagram,
+           l.foco_projeto AS projeto, l.foco_valor_centimos AS valor_centimos, l.foco_uso_json,
            (SELECT texto FROM nota n WHERE n.lead_id = l.id ORDER BY n.criado_em DESC LIMIT 1) AS ultima_nota
     FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id`;
 
 function focoLinha(row) {
     if (!row) return row;
-    const { foco_origem_json: origem, ...rest } = row;
-    return { ...rest, origem: JSON.parse(origem || '{}') };
+    const { foco_origem_json: origem, foco_uso_json: uso, ...rest } = row;
+    return { ...rest, instagram: Boolean(rest.instagram), origem: JSON.parse(origem || '{}'), uso: uso ? JSON.parse(uso) : null };
 }
 
 function focoContacto(db, id) {
@@ -1911,6 +1912,24 @@ app.post('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => 
     res.json({ contacto: focoContacto(db, id) });
 });
 
+// Beta users' behaviour, pulled from the Digitu app; using it moves them to «Beta user», paying to «Ativou».
+app.post('/api/digitalizept/foco/uso/sincronizar', requireDigitalizept, async (req, res) => {
+    try {
+        const db = getDigitalizeptDb();
+        res.json(await foco.sincronizarUso(db, {
+            vendedor: req.vendedor, nowIso: digitalizeptNow,
+            log: (id, tipo, p) => digitalizeptLogEvento(db, 'lead', id, tipo, p)
+        }));
+    } catch (err) {
+        res.status(502).json({ error: `Não foi possível ler o uso da app: ${err.message}` });
+    }
+});
+
+// Every lesson learned, for the review after a day of calls.
+app.get('/api/digitalizept/foco/licoes', requireDigitalizept, (req, res) => {
+    res.json({ licoes: foco.licoes(getDigitalizeptDb(), req.vendedor) });
+});
+
 // Batch on the ticked contacts: change their type, or delete them. A partner can only touch their own.
 app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res) => {
     const db = getDigitalizeptDb();
@@ -1923,6 +1942,19 @@ app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res
         if (!foco.tiposConhecidos().has(tipo)) return res.status(400).json({ error: 'Tipo desconhecido.' });
         const n = foco.mudarTipo(db, ids, tipo);
         digitalizeptLogEvento(db, 'app', 'foco', 'foco_tipo_lote', { n, tipo });
+        return res.json({ n });
+    }
+    if (b.acao === 'linha') {
+        if (!foco.LINHAS[b.linha]) return res.status(400).json({ error: 'Linha desconhecida.' });
+        return res.json({ n: foco.mudarLinha(db, ids, b.linha, (id, tipo, p) => digitalizeptLogEvento(db, 'lead', id, tipo, p)) });
+    }
+    if (b.acao === 'seguimento') {
+        const estado = b.estado ? cleanText(b.estado, 40) : undefined;
+        if (estado !== undefined && !foco.ESTADOS_TODOS[estado]) return res.status(400).json({ error: 'Estado desconhecido.' });
+        const voltarEm = b.voltar_em === undefined ? undefined : String(b.voltar_em);
+        if (voltarEm && !/^\d{4}-\d{2}-\d{2}$/.test(voltarEm)) return res.status(400).json({ error: 'Data inválida.' });
+        if (estado === undefined && voltarEm === undefined) return res.status(400).json({ error: 'Nada para mudar.' });
+        const n = foco.seguimentoLote(db, ids, { estado, voltarEm }, (id, tipo, p) => digitalizeptLogEvento(db, 'lead', id, tipo, p));
         return res.json({ n });
     }
     if (b.acao === 'apagar') {
@@ -1951,7 +1983,12 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
     if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
     const b = req.body || {};
     const estado = cleanText(b.estado, 40);
-    if (!foco.ESTADOS[estado]) return res.status(400).json({ error: 'Estado desconhecido.' });
+    if (!foco.linhaDe(contacto.linha).estados[estado]) return res.status(400).json({ error: 'Estado desconhecido para esta linha.' });
+    if (typeof b.instagram === 'boolean') db.prepare('UPDATE lead SET foco_instagram = ? WHERE id = ?').run(b.instagram ? 1 : 0, contacto.id);
+    if (b.projeto !== undefined && (b.projeto === '' || foco.PROJETOS[b.projeto])) db.prepare('UPDATE lead SET foco_projeto = ? WHERE id = ?').run(b.projeto, contacto.id);
+    if (b.valor !== undefined && Number.isFinite(Number(b.valor)) && Number(b.valor) >= 0) {
+        db.prepare('UPDATE lead SET foco_valor_centimos = ? WHERE id = ?').run(Math.round(Number(b.valor) * 100), contacto.id);
+    }
     const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
     const nota = cleanText(b.nota, 2000);
     const canal = foco.CANAIS[b.canal] ? b.canal : '';
@@ -1962,9 +1999,12 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
     const whatsapp = cleanText(b.whatsapp, 40);
     if (whatsapp) db.prepare('UPDATE lead SET whatsapp = ? WHERE id = ?').run(whatsapp, contacto.id);
     if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, nota, digitalizeptNow());
+    const licao = cleanText(b.licao, 2000);
+    if (licao) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, `Lição: ${licao}`, digitalizeptNow());
     digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_estado', {
         estado, nota, voltar_em: voltarEm, canal, de: contacto.estado,
-        dor: foco.DORES[b.dor] ? b.dor : '', dor_itens: dorItens, guiao: b.guiao === true
+        dor: foco.DORES[b.dor] ? b.dor : '', dor_itens: dorItens, guiao: b.guiao === true,
+        instagram: typeof b.instagram === 'boolean' && b.instagram !== contacto.instagram ? b.instagram : undefined
     });
     res.json({ contacto: focoContacto(db, contacto.id) });
 });
@@ -2012,7 +2052,7 @@ app.post('/api/digitalizept/foco/importar', requireDigitalizept, (req, res) => {
     }
     try {
         const r = equipa.semVendedor(() => foco.importar(db, b.rows, {
-            vendedorId, soFoco: b.soFoco !== false, parseMapsUrl, whatsappIfMobile,
+            vendedorId, soFoco: b.soFoco !== false, linha: foco.LINHAS[b.linha] ? b.linha : 'digitu', parseMapsUrl, whatsappIfMobile,
             nowIso: digitalizeptNow, uuid: () => crypto.randomUUID()
         }));
         digitalizeptLogEvento(db, 'importacao', vendedorId || 'lista_comum', 'foco_importar', r);
@@ -3844,7 +3884,7 @@ app.get('/api/digitalizept/leads', requireDigitalizept, (req, res) => {
                     processoEstado: r.processo_estado || '',
                     processoEstadoLabel: leadProcess.ESTADO_LABELS[r.processo_estado] || '',
                     vendedor: r.vendedor_id ? (r.vendedor_nome || '—') : 'Lista comum',
-                    focoEstado: foco.ESTADOS[r.foco_estado] || '',
+                    focoEstado: foco.ESTADOS_TODOS[r.foco_estado] || '',
                     proximaAcaoEm: r.proxima_acao_em || '',
                     revisitarEm: r.revisitar_em || '',
                     fichaMissing: dossier.assessCompleteness({

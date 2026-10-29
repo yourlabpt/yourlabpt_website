@@ -15,18 +15,37 @@ const VERTICAIS_FILE = process.env.VERTICAIS_FILE || path.join(FOCO_DIR, 'vertic
 const TIPOS_FILE = path.join(FOCO_DIR, 'tipos.json');
 const DMN_BASE_URL = (process.env.DMN_BASE_URL || 'https://digitalizemeunegocio.pt').replace(/\/+$/, '');
 
-// Funnel: find out if the pain is real → send the app link → they try it → activate.
-// (`demo_mostrada` keeps its id for old rows; it now means the app link was sent.)
+// Two business lines, two pipelines.
+// Digitu: volume, by phone or at the door — get them to try the app as beta users (or at least follow on Instagram).
+// Funnel: pain real? → app link sent → beta user (using it) → activated (paid).
+// (`demo_mostrada` keeps its id for old rows: it means the app link was sent; `quer_ativar` now means beta user.)
 const ESTADOS = {
     por_contactar: 'Por contactar',
     contactado: 'Contactado',
     demo_mostrada: 'Link da app enviado',
-    quer_ativar: 'Quer ativar',
+    quer_ativar: 'Beta user',
     ativou: 'Ativou produto',
     voltar: 'Voltar a falar',
     sem_interesse: 'Sem interesse'
 };
 const VIU_DEMO = ['demo_mostrada', 'quer_ativar', 'ativou'];
+// YourLab à medida: custom software, consultative and high value — the five-step method's sales side.
+const ESTADOS_YOURLAB = {
+    ym_novo: 'Novo',
+    ym_conversa: 'Primeira conversa',
+    ym_proposta: 'Proposta enviada',
+    ym_negociacao: 'Em negociação',
+    ym_ganho: 'Ganho',
+    ym_perdido: 'Perdido'
+};
+const LINHAS = {
+    digitu: { nome: 'Digitu', estados: ESTADOS, inicial: 'por_contactar', fechados: ['ativou', 'sem_interesse'] },
+    yourlab: { nome: 'YourLab à medida', estados: ESTADOS_YOURLAB, inicial: 'ym_novo', fechados: ['ym_ganho', 'ym_perdido'] }
+};
+const linhaDe = (id) => LINHAS[id] || LINHAS.digitu;
+const ESTADOS_TODOS = { ...ESTADOS, ...ESTADOS_YOURLAB };
+// The three project types every à-medida lead is classified into first.
+const PROJETOS = { ideia: 'Ideia', resgate: 'Resgate', consolidacao: 'Consolidação' };
 const DORES = { sim: 'Dor real', talvez: 'Mais ou menos', nao: 'Não é dor' };
 const CANAIS = { presencial: 'Presencial', telefone: 'Telefone', whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', email: 'Email' };
 
@@ -35,6 +54,7 @@ const CANAIS = { presencial: 'Presencial', telefone: 'Telefone', whatsapp: 'What
 // faster than deploys do.
 const MARCA_CHAVE = 'foco_marca';
 const MARCA_PADRAO = {
+    instagram: '',
     nome: 'Digitu',
     slogan: 'O seu tempo fica para o seu negócio.',
     numero: '',
@@ -63,6 +83,9 @@ function guardarMarca(db, body, nowIso) {
     const atual = marca(db);
     const novo = {
         nome: limpo(body.nome, 60) || atual.nome,
+        // «digitu.pt» or «@digitu.pt» → «@digitu.pt»; a form without the field keeps it.
+        instagram: body.instagram === undefined ? atual.instagram
+            : (limpo(body.instagram, 60).replace(/^@+/, '') ? `@${limpo(body.instagram, 60).replace(/^@+/, '')}` : ''),
         slogan: limpo(body.slogan, 200) || atual.slogan,
         numero: limpo(body.numero, 40),
         link: limpo(body.link, 300) || atual.link,
@@ -95,7 +118,7 @@ function carregar() {
     const verticais = (cfg.verticais || [])
         .map((v) => ({ ...v, tipos_nomes: (v.tipos || []).map((id) => ({ id, nome: nomes[id] || id })) }))
         .sort((a, b) => (a.foco || 99) - (b.foco || 99) || a.prioridade - b.prioridade);
-    return { versao: cfg.versao, nota: cfg.nota, regra_conversao: cfg.regra_conversao, fases: cfg.fases, verticais, estados: ESTADOS, canais: CANAIS, dores: DORES, dmnBaseUrl: DMN_BASE_URL };
+    return { versao: cfg.versao, nota: cfg.nota, regra_conversao: cfg.regra_conversao, fases: cfg.fases, verticais, estados: ESTADOS_TODOS, linhas: LINHAS, projetos: PROJETOS, canais: CANAIS, dores: DORES, dmnBaseUrl: DMN_BASE_URL };
 }
 
 function segmentoDoTipo(verticais, tipo) {
@@ -136,15 +159,17 @@ async function criarDemo({ nome, tipo, cidade, whatsapp, telefone, codigo }) {
 /** Per partner and per segment: how far each contact got, and why the lost ones said no. */
 function resumo(db, { vendedorId = null } = {}) {
     const { verticais } = carregar();
-    const filtro = vendedorId ? 'AND l.vendedor_id = @vendedorId' : '';
+    const filtro = `AND l.foco_linha = 'digitu'${vendedorId ? ' AND l.vendedor_id = @vendedorId' : ''}`;
     const rows = db.prepare(`
-        SELECT l.vendedor_id, l.business_type, l.foco_estado, l.foco_dor, COUNT(*) AS n
+        SELECT l.vendedor_id, l.business_type, l.foco_estado, l.foco_dor, l.foco_instagram, COUNT(*) AS n
         FROM lead l WHERE l.foco_estado != '' ${filtro}
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3, 4, 5
     `).all({ vendedorId });
     const nomes = Object.fromEntries(db.prepare('SELECT id, nome FROM vendedor').all().map((v) => [v.id, v.nome]));
-    const vazio = () => ({ por_contactar: 0, contactos: 0, demos: 0, ativos: 0, sem_interesse: 0, dor_sim: 0, dor_talvez: 0, dor_nao: 0 });
+    const vazio = () => ({ por_contactar: 0, contactos: 0, demos: 0, beta: 0, ativos: 0, sem_interesse: 0, instagram: 0, dor_sim: 0, dor_talvez: 0, dor_nao: 0 });
     const somar = (alvo, r) => {
+        if (r.foco_instagram) alvo.instagram += r.n;
+        if (r.foco_estado === 'quer_ativar') alvo.beta += r.n;
         if (DORES[r.foco_dor]) alvo[`dor_${r.foco_dor}`] += r.n;
         if (r.foco_estado === 'por_contactar') { alvo.por_contactar += r.n; return; }
         alvo.contactos += r.n;
@@ -258,7 +283,9 @@ const digitos = (t) => String(t || '').replace(/\D/g, '').slice(-9);
  * a known lead that was never in the Foco list joins it. `soFoco` drops rows
  * outside the focus segments — the list to work is the strategy, not the crawl.
  */
-function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappIfMobile, nowIso, uuid }) {
+function importar(db, rows, { vendedorId, soFoco = true, linha = 'digitu', parseMapsUrl, whatsappIfMobile, nowIso, uuid }) {
+    const L = LINHAS[linha] ? linha : 'digitu';
+    const inicial = linhaDe(L).inicial;
     const { verticais } = carregar();
     const conhecidos = new Set(verticais.flatMap((v) => v.tipos || []));
     const doFoco = new Set(verticais.filter((v) => v.foco).flatMap((v) => v.tipos || []));
@@ -266,9 +293,9 @@ function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappI
     const porTelefone = db.prepare("SELECT id, foco_estado FROM lead WHERE substr(replace(replace(replace(telefone, ' ', ''), '+', ''), '-', ''), -9) = ? AND telefone != ''");
     const porNome = db.prepare('SELECT id, foco_estado FROM lead WHERE lower(nome) = lower(?) AND lower(cidade) = lower(?)');
     const inserir = db.prepare(`INSERT INTO lead (id, business_type, nome, morada, cidade, telefone, whatsapp, estado, foco_estado,
-        foco_origem_json, lat, lng, geocode_status, vendedor_id, criado_em)
-        VALUES (@id, @tipo, @nome, @morada, @cidade, @telefone, @whatsapp, 'novo', 'por_contactar', @origem, @lat, @lng, @geo, @vendedorId, @agora)`);
-    const juntar = db.prepare(`UPDATE lead SET foco_estado = 'por_contactar', foco_origem_json = ?,
+        foco_origem_json, lat, lng, geocode_status, vendedor_id, foco_linha, criado_em)
+        VALUES (@id, @tipo, @nome, @morada, @cidade, @telefone, @whatsapp, 'novo', @inicial, @origem, @lat, @lng, @geo, @vendedorId, @linha, @agora)`);
+    const juntar = db.prepare(`UPDATE lead SET foco_estado = '${inicial}', foco_linha = '${L}', foco_origem_json = ?,
         lat = COALESCE(lat, ?), lng = COALESCE(lng, ?) WHERE id = ?`);
 
     db.transaction(() => {
@@ -294,7 +321,7 @@ function importar(db, rows, { vendedorId, soFoco = true, parseMapsUrl, whatsappI
             inserir.run({
                 id: uuid(), tipo, nome, morada: String(row.morada || '').slice(0, 300), cidade, telefone,
                 whatsapp: whatsappIfMobile(telefone), origem, lat, lng, geo: lat != null ? 'maps' : '',
-                vendedorId: vendedorId || '', agora: nowIso()
+                vendedorId: vendedorId || '', inicial, linha: L, agora: nowIso()
             });
             r.novos += 1;
         });
@@ -381,4 +408,80 @@ function apagarLote(db, ids) {
     return r;
 }
 
-module.exports = { lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };
+/** Lessons learned, newest first, with the business each came from. Admin sees all, a partner their own. */
+// ponytail: a lesson is a note starting «Lição:», no column; give nota a tipo if lessons need their own fields
+function licoes(db, vendedor) {
+    const admin = vendedor.papel === 'admin';
+    return db.prepare(`SELECT n.texto, n.criado_em, l.id AS lead_id, l.nome, l.business_type AS tipo, l.cidade,
+            l.foco_estado AS estado, l.foco_dor AS dor
+        FROM nota n JOIN lead l ON l.id = n.lead_id
+        WHERE n.texto LIKE 'Lição:%' ${admin ? '' : 'AND l.vendedor_id = ?'}
+        ORDER BY n.criado_em DESC LIMIT 1000`).all(...(admin ? [] : [vendedor.id]))
+        .map((r) => ({ ...r, texto: r.texto.replace(/^Lição:\s*/, '') }));
+}
+
+/**
+ * Status and/or next-contact date for many contacts at once. `undefined` keeps a field;
+ * closing a lead (ativou / sem_interesse) clears its date — closed means no next step.
+ * `log(id, tipo, payload)` writes each lead's history.
+ */
+function seguimentoLote(db, ids, { estado, voltarEm }, log) {
+    const um = db.prepare('SELECT foco_estado, foco_linha FROM lead WHERE id = ?');
+    const up = db.prepare(`UPDATE lead SET foco_estado = COALESCE(@estado, foco_estado),
+        revisitar_em = COALESCE(@voltarEm, revisitar_em) WHERE id = @id`);
+    return db.transaction(() => ids.reduce((n, id) => {
+        const row = um.get(id) || {};
+        const L = linhaDe(row.foco_linha);
+        if (estado !== undefined && !L.estados[estado]) return n; // status from the other line: skip
+        const data = voltarEm === undefined && estado !== undefined && L.fechados.includes(estado) ? '' : voltarEm;
+        up.run({ id, estado: estado === undefined ? null : estado, voltarEm: data === undefined ? null : data });
+        log(id, estado === undefined ? 'foco_voltar' : 'foco_estado', { de: row.foco_estado, estado: estado === undefined ? row.foco_estado : estado, voltar_em: data, lote: true });
+        return n + 1;
+    }, 0))();
+}
+
+/** Moves contacts to the other line; they start that line's pipeline from the top. */
+function mudarLinha(db, ids, linha, log) {
+    const L = linhaDe(linha);
+    const um = db.prepare('SELECT foco_linha, foco_estado FROM lead WHERE id = ?');
+    const up = db.prepare("UPDATE lead SET foco_linha = ?, foco_estado = ?, revisitar_em = '' WHERE id = ?");
+    return db.transaction(() => ids.reduce((n, id) => {
+        const row = um.get(id);
+        if (!row || row.foco_linha === linha) return n;
+        up.run(linha, L.inicial, id);
+        log(id, 'foco_linha', { de: linhaDe(row.foco_linha).nome, para: L.nome, estado_antes: row.foco_estado });
+        return n + 1;
+    }, 0))();
+}
+
+/**
+ * Pulls each Digitu lead's usage from the app (points, level, milestones, last activity) and
+ * moves the funnel on its own: used the app → beta user; paid → activated.
+ */
+async function sincronizarUso(db, { vendedor, log, nowIso }) {
+    const meus = vendedor.papel === 'admin' ? '' : 'AND vendedor_id = ?';
+    const leads = db.prepare(`SELECT id, dmn_token, foco_estado FROM lead WHERE foco_linha = 'digitu' AND dmn_token != ''
+        AND foco_estado IN ('demo_mostrada', 'quer_ativar', 'ativou', 'voltar') ${meus}`).all(...(meus ? [vendedor.id] : []));
+    const up = db.prepare('UPDATE lead SET foco_uso_json = ? WHERE id = ?');
+    const mover = db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?');
+    const r = { n: 0, falhas: 0, mudaram: 0 };
+    await Promise.all(leads.map(async (l) => {
+        try {
+            const s = await dmn(`/api/digitalize/sessoes/${encodeURIComponent(l.dmn_token)}`);
+            const acoes = Array.isArray(s.acoes) ? s.acoes : [];
+            const ultima = [s.atualizadoEm, ...acoes.map((a) => a.criado_em)].filter(Boolean).sort().pop() || '';
+            up.run(JSON.stringify({ pontos: s.pontos || 0, nivel: s.nivel || 0, nivelNome: s.nivelNome || '', pago: Boolean(s.pago),
+                ultimaAtividade: ultima, acoes, sincronizado_em: nowIso() }), l.id);
+            r.n += 1;
+            const novo = s.pago ? 'ativou' : (s.pontos > 0 && ['demo_mostrada', 'voltar'].includes(l.foco_estado) ? 'quer_ativar' : null);
+            if (novo && novo !== l.foco_estado) {
+                mover.run(novo, l.id);
+                log(l.id, 'foco_estado', { de: l.foco_estado, estado: novo, auto: true });
+                r.mudaram += 1;
+            }
+        } catch (_) { r.falhas += 1; }
+    }));
+    return r;
+}
+
+module.exports = { LINHAS, PROJETOS, ESTADOS_TODOS, linhaDe, mudarLinha, sincronizarUso, seguimentoLote, licoes, lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

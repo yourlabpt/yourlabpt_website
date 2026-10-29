@@ -91,3 +91,105 @@ test('leadgen CSV imports as contacts por contactar, typed, on the map, never du
     assert.equal(db.prepare("SELECT business_type FROM lead WHERE cidade = 'Viseu'").get().business_type, 'barbeiro');
     assert.equal(importar(db, lerCsv(CSV), opts).ja_existiam, 2);
 });
+
+test('lessons: only notes marked «Lição:», newest first, a partner sees only their own', () => {
+    const Database = require('better-sqlite3');
+    const { licoes } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, nome TEXT, business_type TEXT, cidade TEXT, foco_estado TEXT, foco_dor TEXT, vendedor_id TEXT);
+        CREATE TABLE nota (id TEXT PRIMARY KEY, lead_id TEXT, texto TEXT, criado_em TEXT);
+        INSERT INTO lead VALUES ('a','Barbearia Zé','barbeiro','Braga','sem_interesse','nao','ana'), ('b','Salão Rui','salao-beleza','Porto','contactado','sim','rui');
+        INSERT INTO nota VALUES ('1','a','Lição: dono só atende de manhã','2026-10-29T09:00'), ('2','a','Não atendeu.','2026-10-29T10:00'),
+            ('3','b','Lição: preço não é o problema, é o tempo','2026-10-29T11:00');`);
+    const todas = licoes(db, { id: 'x', papel: 'admin' });
+    assert.deepEqual(todas.map((l) => l.texto), ['preço não é o problema, é o tempo', 'dono só atende de manhã']);
+    assert.equal(todas[1].nome, 'Barbearia Zé');
+    assert.deepEqual(licoes(db, { id: 'ana', papel: 'parceiro' }).map((l) => l.lead_id), ['a']);
+});
+
+test('bulk follow-up: status and date change together or apart; closing clears the date; history per lead', () => {
+    const Database = require('better-sqlite3');
+    const { seguimentoLote } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, foco_estado TEXT, revisitar_em TEXT DEFAULT '', foco_linha TEXT DEFAULT 'digitu');
+        INSERT INTO lead (id, foco_estado, revisitar_em) VALUES ('a','contactado','2026-10-01'), ('b','voltar','2026-10-02');`);
+    const log = [];
+    const reg = (id, tipo, p) => log.push([id, tipo, p.de, p.estado, p.voltar_em]);
+    const row = (id) => db.prepare('SELECT foco_estado e, revisitar_em v FROM lead WHERE id = ?').get(id);
+
+    assert.equal(seguimentoLote(db, ['a', 'b'], { voltarEm: '2026-11-05' }, reg), 2);
+    assert.deepEqual(row('a'), { e: 'contactado', v: '2026-11-05' }, 'date only: status kept');
+    assert.deepEqual(log[0], ['a', 'foco_voltar', 'contactado', 'contactado', '2026-11-05']);
+
+    seguimentoLote(db, ['a'], { estado: 'quer_ativar' }, reg);
+    assert.deepEqual(row('a'), { e: 'quer_ativar', v: '2026-11-05' }, 'status only: date kept');
+
+    seguimentoLote(db, ['b'], { estado: 'sem_interesse' }, reg);
+    assert.deepEqual(row('b'), { e: 'sem_interesse', v: '' }, 'closed: no next step');
+    assert.deepEqual(log.at(-1), ['b', 'foco_estado', 'voltar', 'sem_interesse', '']);
+});
+
+test('two lines: a status only applies to its own line, moving a lead restarts its pipeline, imports land in a line', () => {
+    const Database = require('better-sqlite3');
+    const { seguimentoLote, mudarLinha, importar } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, business_type TEXT, nome TEXT, morada TEXT, cidade TEXT, telefone TEXT DEFAULT '',
+        whatsapp TEXT, estado TEXT, foco_estado TEXT DEFAULT '', foco_origem_json TEXT, lat REAL, lng REAL, geocode_status TEXT,
+        vendedor_id TEXT, foco_linha TEXT DEFAULT 'digitu', revisitar_em TEXT DEFAULT '', criado_em TEXT);
+        INSERT INTO lead (id, foco_estado, revisitar_em) VALUES ('d', 'contactado', '2026-11-01');
+        INSERT INTO lead (id, foco_estado, foco_linha) VALUES ('y', 'ym_conversa', 'yourlab');`);
+    const log = [];
+    const reg = (id, tipo, p) => log.push([id, tipo, p]);
+    const row = (id) => db.prepare('SELECT foco_estado e, foco_linha l, revisitar_em v FROM lead WHERE id = ?').get(id);
+
+    assert.equal(seguimentoLote(db, ['d', 'y'], { estado: 'ym_ganho' }, reg), 1, 'Digitu lead skipped');
+    assert.deepEqual(row('y'), { e: 'ym_ganho', l: 'yourlab', v: '' }, 'won = closed = no date');
+    assert.equal(row('d').e, 'contactado');
+
+    assert.equal(mudarLinha(db, ['d', 'y'], 'yourlab', reg), 1, 'already there: not moved again');
+    assert.deepEqual(row('d'), { e: 'ym_novo', l: 'yourlab', v: '' });
+    assert.equal(log.at(-1)[2].para, 'YourLab à medida');
+
+    const r = importar(db, [{ nome: 'Clínica Grande', telefone: '912000777', cidade: 'Lisboa' }], {
+        vendedorId: 'v', soFoco: false, linha: 'yourlab', parseMapsUrl: () => null, whatsappIfMobile: (t) => t,
+        nowIso: () => '2026-10-29', uuid: () => 'novo'
+    });
+    assert.equal(r.novos, 1);
+    assert.deepEqual(row('novo'), { e: 'ym_novo', l: 'yourlab', v: '' });
+});
+
+test('beta usage sync: snapshot saved, used the app → Beta user, paid → Ativou, failures counted', async () => {
+    const Database = require('better-sqlite3');
+    const { sincronizarUso } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, dmn_token TEXT, foco_estado TEXT, foco_linha TEXT DEFAULT 'digitu',
+        vendedor_id TEXT DEFAULT 'ana', foco_uso_json TEXT DEFAULT '');
+        INSERT INTO lead (id, dmn_token, foco_estado) VALUES ('usou','t1','demo_mostrada'), ('pagou','t2','quer_ativar'),
+            ('nada','t3','demo_mostrada'), ('erro','t4','demo_mostrada'), ('fora','t5','por_contactar');`);
+    const respostas = {
+        t1: { pontos: 120, nivel: 2, nivelNome: 'Em crescimento', pago: false, atualizadoEm: '2026-10-20T10:00Z', acoes: [{ chave: 'whatsapp_ok', pontos: 40, criado_em: '2026-10-25T09:00Z' }] },
+        t2: { pontos: 300, nivel: 3, pago: true, acoes: [] },
+        t3: { pontos: 0, nivel: 1, pago: false }
+    };
+    const fetchReal = global.fetch;
+    global.fetch = async (url) => {
+        const token = decodeURIComponent(String(url).split('/').pop());
+        if (!respostas[token]) return { ok: false, status: 500, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => respostas[token] };
+    };
+    try {
+        const log = [];
+        const r = await sincronizarUso(db, { vendedor: { id: 'x', papel: 'admin' }, nowIso: () => 'agora', log: (id, t, p) => log.push([id, p.estado]) });
+        assert.deepEqual(r, { n: 3, falhas: 1, mudaram: 2 });
+        const e = (id) => db.prepare('SELECT foco_estado FROM lead WHERE id = ?').get(id).foco_estado;
+        assert.equal(e('usou'), 'quer_ativar');
+        assert.equal(e('pagou'), 'ativou');
+        assert.equal(e('nada'), 'demo_mostrada', 'no points yet: stays at link sent');
+        const uso = JSON.parse(db.prepare('SELECT foco_uso_json FROM lead WHERE id = ?').get('usou').foco_uso_json);
+        assert.equal(uso.ultimaAtividade, '2026-10-25T09:00Z', 'latest of last edit and last milestone');
+        assert.equal(uso.acoes.length, 1);
+        assert.equal(db.prepare('SELECT foco_uso_json FROM lead WHERE id = ?').get('fora').foco_uso_json, '', 'not contacted: not synced');
+    } finally {
+        global.fetch = fetchReal;
+    }
+});

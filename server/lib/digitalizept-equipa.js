@@ -69,7 +69,16 @@ function instalar(db, addMissingColumns) {
         // What the crawler found (maps, website, instagram, facebook, email, rating).
         foco_origem_json: "TEXT NOT NULL DEFAULT '{}'",
         // Is the pain real? '' not asked yet · sim · talvez · nao — the thing we are testing.
-        foco_dor: "TEXT NOT NULL DEFAULT ''"
+        foco_dor: "TEXT NOT NULL DEFAULT ''",
+        // Which business line: 'digitu' (the simple app, volume) or 'yourlab' (custom software, high-end).
+        foco_linha: "TEXT NOT NULL DEFAULT 'digitu'",
+        // Digitu's minimum win: they follow the brand on Instagram.
+        foco_instagram: "INTEGER NOT NULL DEFAULT 0",
+        // YourLab à medida: project type (ideia · resgate · consolidacao) and estimated value.
+        foco_projeto: "TEXT NOT NULL DEFAULT ''",
+        foco_valor_centimos: "INTEGER NOT NULL DEFAULT 0",
+        // Last usage snapshot pulled from the Digitu app (points, level, milestones, last activity).
+        foco_uso_json: "TEXT NOT NULL DEFAULT ''"
     });
     // Message templates, shared by the team (see foco.js for placeholders).
     db.exec(`CREATE TABLE IF NOT EXISTS foco_mensagem (

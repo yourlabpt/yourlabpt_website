@@ -19,12 +19,13 @@ const FASE = { ataque: 'Ataque', expansao: 'Expansão', depois: 'Depois' };
 
 const state = {
     me: null, cfg: null, tab: 'segmentos', contactos: [], todos: null, equipa: [], pessoas: [],
-    mensagens: [], linha: '', sel: new Set(), filtro: { texto: '', estado: '', segmento: '', dono: '' }
+    mensagens: [], linha: '', sel: new Set(), filtro: { linha: 'digitu', texto: '', estado: '', segmento: '', dono: '' }
 };
 // Pin/chip colour per state: grey = not yet touched, warm = in progress, green = won, red = lost.
 const COR = {
     por_contactar: '#8e8e93', contactado: '#e8d5b7', demo_mostrada: '#f5a623', quer_ativar: '#f97316',
-    ativou: '#4ade80', voltar: '#60a5fa', sem_interesse: '#ff6b6b'
+    ativou: '#4ade80', voltar: '#60a5fa', sem_interesse: '#ff6b6b',
+    ym_novo: '#8e8e93', ym_conversa: '#a78bfa', ym_proposta: '#f5a623', ym_negociacao: '#f97316', ym_ganho: '#4ade80', ym_perdido: '#ff6b6b'
 };
 const $ = (id) => document.getElementById(id);
 const main = $('foco-main');
@@ -419,18 +420,122 @@ function escolhaChips(opcoes, atual, aoEscolher) {
     return { el: box, valor: () => valor };
 }
 
-function amanha() {
-    const d = new Date(Date.now() + 86400000);
-    return d.toISOString().slice(0, 10);
+// Local calendar date — toISOString() is UTC and gives the wrong day around midnight.
+function somarDias(n) {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const amanha = () => somarDias(1);
+
+// ---------- seguimento: every open lead has a next step with a date ----------
+// Each line has its own pipeline: what counts as closed (won/lost) and where it starts depend on it.
+const linhaDo = (c) => state.cfg.linhas[c.linha] || state.cfg.linhas.digitu;
+const fechado = (c, estado = c.estado) => linhaDo(c).fechados.includes(estado);
+const noInicio = (c, estado = c.estado) => estado === linhaDo(c).inicial;
+const daLinha = (c, linha) => (c.linha || 'digitu') === linha;
+const euros = (cent) => (Number(cent || 0) / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const ultimoUso = (c) => (c.uso && c.uso.ultimaAtividade) || '';
+const VISTAS = {
+    hoje: { nome: 'Para hoje', ok: (c, hoje) => !fechado(c) && Boolean(c.voltar_em) && c.voltar_em <= hoje },
+    semana: { nome: 'Próximos 7 dias', ok: (c, hoje) => !fechado(c) && c.voltar_em > hoje && c.voltar_em <= somarDias(7) },
+    sem: { nome: 'Sem próximo passo', ok: (c) => !fechado(c) && !noInicio(c) && !c.voltar_em },
+    // Beta users, the least active first: they are the ones to call.
+    beta: { nome: 'Beta users', so: 'digitu', ok: (c) => c.estado === 'quer_ativar' },
+    todos: { nome: 'Todos', ok: () => true }
+};
+function proximoPasso(c, hoje) {
+    if (fechado(c)) return null;
+    if (!c.voltar_em) return noInicio(c) ? null : { txt: 'Sem próximo passo', cls: 'foco-pp-falta' };
+    const dias = Math.round((new Date(c.voltar_em) - new Date(hoje)) / 86400000);
+    if (dias < 0) return { txt: `Atrasado ${-dias} dia${dias === -1 ? '' : 's'}`, cls: 'foco-pp-atrasado' };
+    if (dias === 0) return { txt: 'Hoje', cls: 'foco-pp-hoje' };
+    if (dias === 1) return { txt: 'Amanhã', cls: '' };
+    return { txt: `Em ${dias} dias (${c.voltar_em.slice(8, 10)}/${c.voltar_em.slice(5, 7)})`, cls: '' };
+}
+// What a beta user actually did in the app, in one line.
+function usoResumo(c) {
+    const u = c.uso;
+    if (!u || !['demo_mostrada', 'quer_ativar', 'ativou'].includes(c.estado)) return null;
+    if (!u.pontos) return h('p', { class: 'foco-meta foco-pp-falta' }, 'Ainda não usou a app');
+    const ult = u.ultimaAtividade;
+    const parado = ult && Date.now() - new Date(ult) > 7 * 86400000;
+    return h('p', { class: `foco-meta${parado ? ' foco-pp-atrasado' : ''}` },
+        [`Nível ${u.nivelNome || u.nivel}`, `${u.pontos} pts`, `${(u.acoes || []).length} passos`, ult && `ativo ${haQuanto(ult)}`, u.pago && 'pago']
+            .filter(Boolean).join(' · '));
+}
+
+// Pull beta usage from the Digitu app (it also moves link-sent → Beta user, paid → Ativou).
+async function sincronizarUso(aoMudar, avisar = false) {
+    try {
+        const r = await api('/api/digitalizept/foco/uso/sincronizar', { method: 'POST' });
+        if (avisar) toast(`Uso atualizado: ${r.n} contactos${r.mudaram ? `, ${r.mudaram} mudaram de estado` : ''}${r.falhas ? `, ${r.falhas} sem resposta` : ''}.`);
+        if (r.n) { await carregarContactos(); aoMudar(); }
+    } catch (err) { if (avisar && err.message !== 'unauthorized') toast(err.message, true); }
+}
+
+function haQuanto(iso) {
+    const dias = Math.floor((Date.now() - new Date(iso)) / 86400000);
+    return dias <= 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`;
+}
+
+// ---------- fila de hoje: tick N contacts, work them one after another ----------
+// Lives on this phone only: it is today's to-do list, not shared state.
+const FILA_KEY = 'foco_fila_hoje';
+let filaAtual = (() => { try { return JSON.parse(localStorage.getItem(FILA_KEY)) || null; } catch (_) { return null; } })();
+function definirFila(f) {
+    filaAtual = f && f.ids.length ? f : null;
+    try { if (filaAtual) localStorage.setItem(FILA_KEY, JSON.stringify(filaAtual)); else localStorage.removeItem(FILA_KEY); } catch (_) { /* só nesta sessão */ }
+}
+const naFila = (id) => Boolean(filaAtual && filaAtual.ids.includes(id));
+function marcarFeito(id) {
+    if (naFila(id) && !filaAtual.feitos.includes(id)) definirFila({ ...filaAtual, feitos: [...filaAtual.feitos, id] });
+}
+// Next contact not done yet after `atual`, wrapping round; null = start from the top.
+function proximoDaFila(atual) {
+    if (!filaAtual) return null;
+    const { ids, feitos } = filaAtual;
+    const i = ids.indexOf(atual);
+    const ordem = i < 0 ? ids : [...ids.slice(i + 1), ...ids.slice(0, i)];
+    for (const id of ordem) {
+        const c = !feitos.includes(id) && state.contactos.find((x) => x.id === id);
+        if (c) return c;
+    }
+    return null;
+}
+function avancarFila(atual) {
+    const prox = proximoDaFila(atual);
+    if (prox) return abrirContacto(prox);
+    fecharSheet();
+    toast(`Fila feita: ${filaAtual.feitos.length} de ${filaAtual.ids.length}.`);
+    return irPara('contactos');
+}
+function filaCabecalho(c) {
+    if (!naFila(c.id)) return null;
+    const { ids, feitos } = filaAtual;
+    return h('div', { class: 'foco-fila' },
+        h('span', {}, `Hoje · ${ids.indexOf(c.id) + 1} de ${ids.length} · ${feitos.length} feitos`),
+        h('button', { type: 'button', class: 'foco-link', onclick: () => avancarFila(c.id) }, 'Seguinte →'));
+}
+function bannerFila() {
+    if (!filaAtual) return null;
+    const { ids, feitos } = filaAtual;
+    const falta = ids.length - feitos.length;
+    return h('div', { class: 'foco-fila foco-fila-banner' },
+        h('strong', {}, falta ? `Hoje: ${feitos.length} de ${ids.length} feitos` : `Hoje: os ${ids.length} feitos ✓`),
+        falta > 0 && h('button', { type: 'button', class: 'btn-primary', onclick: () => { const c = proximoDaFila(null); if (c) abrirContacto(c); } }, 'Continuar'),
+        h('button', { type: 'button', class: 'btn-secondary', onclick: () => { definirFila(null); irPara('contactos'); } }, 'Terminar fila'));
 }
 
 async function guardarEstado(c, body, depois) {
     try {
         const r = await api(`/api/digitalizept/foco/contactos/${c.id}/estado`, { method: 'POST', body });
         toast('Guardado.');
+        marcarFeito(c.id);
         if (depois) return depois(r.contacto);
         fecharSheet();
-        irPara(state.tab === 'mapa' ? 'mapa' : 'contactos');
+        await irPara(state.tab === 'mapa' ? 'mapa' : 'contactos');
+        if (naFila(c.id)) avancarFila(c.id);
     } catch (err) {
         if (err.message !== 'unauthorized') toast(err.message, true);
     }
@@ -471,6 +576,8 @@ function abrirGuiao(c) {
     const sinais = [v.dor_principal, ...(v.urgencia || [])].filter(Boolean);
     const marcados = sinais.map((t) => h('input', { type: 'checkbox', value: t }));
     const palavras = h('textarea', { class: 'field-input', rows: 3, placeholder: 'O que disse, nas palavras dele(a)' });
+    const licaoGuiao = h('textarea', { class: 'field-input', rows: 2, placeholder: 'O que funcionou, o que travou, o que mudar' });
+    const igGuiao = h('input', { type: 'checkbox', checked: c.instagram });
     const pessoa = h('input', { class: 'field-input', placeholder: 'Nome de quem atendeu (ex.: D. Maria)' });
     const pessoaNao = h('input', { class: 'field-input', placeholder: 'Nome de quem atendeu' });
     const numero = h('input', { class: 'field-input', type: 'tel', inputmode: 'tel', value: c.whatsapp || c.telefone || '' });
@@ -528,7 +635,11 @@ function abrirGuiao(c) {
             h('p', { class: 'foco-meta' }, 'É uma dor real?'), dor.el,
             v.posicionamento && dizer(`É exatamente para isso que existimos: ${minuscula(v.posicionamento)}`),
             a.objecao && [h('p', { class: 'foco-meta' }, `Se disser «${a.objecao.texto}»:`), dizer(a.objecao.resposta)]),
-        bloco('4 · Despedir-se', despedida),
+        bloco('4 · Despedir-se',
+            dizer(`Antes de desligar: pode seguir a ${state.cfg.marca.nome} no Instagram${state.cfg.marca.instagram ? `, ${state.cfg.marca.instagram}` : ''}? Vamos lá pondo dicas para negócios como o seu.`),
+            h('label', { class: 'foco-toggle' }, igGuiao, ' Vai seguir / já segue'),
+            despedida),
+        campo('Lição aprendida (opcional)', licaoGuiao),
         h('button', { type: 'button', class: 'btn-primary', onclick: () => {
             if (!proximo.valor()) return toast('Falta o próximo passo.', true);
             const estados = { link: 'contactado', voltar: 'voltar', sem_interesse: 'sem_interesse' };
@@ -537,7 +648,7 @@ function abrirGuiao(c) {
                 quem() && `Falou com: ${quem()}`, palavras.value.trim(), itens.length && `Confirmou: ${itens.join('; ')}`
             ].filter(Boolean).join('\n');
             return guardarEstado(c, {
-                estado: estados[proximo.valor()], canal: 'telefone', dor: dor.valor(), dor_itens: itens, nota, guiao: true,
+                estado: estados[proximo.valor()], canal: 'telefone', dor: dor.valor(), dor_itens: itens, nota, guiao: true, licao: licaoGuiao.value, instagram: igGuiao.checked || undefined,
                 voltar_em: proximo.valor() === 'voltar' ? voltar.value : '',
                 whatsapp: proximo.valor() === 'link' ? numero.value : ''
             }, proximo.valor() === 'link'
@@ -573,6 +684,7 @@ function abrirContacto(c, { modelo } = {}) {
     const historico = h('div', { class: 'foco-historico' }, h('p', { class: 'foco-meta' }, 'A carregar…'));
     carregarHistorico(c.id, historico);
     const cabecalho = [
+        filaCabecalho(c),
         h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, c.vendedor_id ? `com ${c.vendedor}` : 'Lista comum'].filter(Boolean).join(' · ')),
         h('h2', {}, c.nome),
         c.morada && h('p', { class: 'foco-meta' }, c.morada),
@@ -594,39 +706,76 @@ function abrirContacto(c, { modelo } = {}) {
             bloco('Histórico', historico));
     }
 
+    const yl = c.linha === 'yourlab';
     let estado = c.estado;
-    const botoes = escolhaChips(state.cfg.estados, estado, (id) => {
+    const botoes = escolhaChips(linhaDo(c).estados, estado, (id) => {
         estado = id;
-        nota.placeholder = id === 'sem_interesse' ? 'Porquê? (é isto que nos ensina)' : 'Nota';
+        nota.placeholder = ['sem_interesse', 'ym_perdido'].includes(id) ? 'Porquê? (é isto que nos ensina)' : 'Nota';
+        if (fechado(c, id)) voltar.value = '';
     });
+    // Digitu: the minimum win is a follow on Instagram. YourLab: project type and estimated value.
+    let instagram = c.instagram;
+    const ig = h('label', { class: 'foco-toggle' }, h('input', { type: 'checkbox', checked: c.instagram, onchange: (e) => { instagram = e.target.checked; } }),
+        ` Segue a ${state.cfg.marca.nome} no Instagram${state.cfg.marca.instagram ? ` (${state.cfg.marca.instagram})` : ''}`);
+    const projeto = escolhaChips(state.cfg.projetos, c.projeto || '');
+    const valor = h('input', { class: 'field-input', type: 'number', min: 0, step: 100, inputmode: 'numeric', placeholder: 'Valor estimado (€)',
+        value: c.valor_centimos ? c.valor_centimos / 100 : '' });
+    const u = c.uso;
+    const uso = !yl && u && bloco('Uso da app',
+        usoResumo(c),
+        (u.acoes || []).length > 0 && h('ul', {}, u.acoes.map((a) => h('li', {},
+            `${a.chave.replace(/_/g, ' ')} · +${a.pontos} · ${new Date(a.criado_em).toLocaleDateString('pt-PT')}`))),
+        u.sincronizado_em && h('p', { class: 'foco-meta' }, `Lido da app ${haQuanto(u.sincronizado_em)}.`));
     const dor = escolhaChips(state.cfg.dores, c.dor || '');
     const voltar = h('input', { class: 'field-input', type: 'date', value: c.voltar_em || '' });
+    const atalhos = h('div', { class: 'foco-estados' }, [['Amanhã', 1], ['3 dias', 3], ['1 semana', 7], ['2 semanas', 14]]
+        .map(([t, d]) => h('button', { type: 'button', class: 'foco-estado', onclick: () => { voltar.value = somarDias(d); } }, t)));
     const nota = h('textarea', { class: 'field-input', rows: 3, placeholder: 'Nota' });
+    const licao = h('textarea', { class: 'field-input', rows: 2, placeholder: 'Lição aprendida — o que funcionou, o que travou, o que mudar (opcional)' });
     const canal = h('select', { class: 'field-input' }, h('option', { value: '' }, '—'),
         Object.entries(state.cfg.canais).map(([id, nome]) => h('option', { value: id }, nome)));
-    const mensagem = bloco('2 · Mensagem', ...configuradorMensagem(c, modelo));
+    const mensagem = !yl && bloco('2 · Mensagem', ...configuradorMensagem(c, modelo));
     abrirSheet(
         ...cabecalho,
         contactarBotoes(c),
         !c.vendedor_id && h('button', { type: 'button', class: 'btn-secondary', onclick: () => assumir(c) }, 'Ficar com este contacto'),
-        bloco('1 · Perceber a dor',
+        !yl && bloco('1 · Perceber a dor',
             h('button', { type: 'button', class: 'btn-primary', onclick: () => abrirGuiao(c) }, 'Ligar com o guião'),
             c.dor && h('p', { class: 'foco-meta' }, `Última resposta: ${state.cfg.dores[c.dor]}`)),
+        uso,
         mensagem,
-        bloco('3 · O que aconteceu', botoes.el,
-            h('p', { class: 'foco-meta' }, 'É uma dor real?'), dor.el,
-            campo('Como falou', canal), campo('Voltar a falar em', voltar), nota,
-            h('button', { type: 'button', class: 'btn-primary', onclick: () => guardarEstado(c, {
-                estado, voltar_em: voltar.value, nota: nota.value, canal: canal.value, dor: dor.valor()
+        bloco(yl ? 'Estado e próximo passo' : '3 · O que aconteceu', botoes.el,
+            yl ? [h('p', { class: 'foco-meta' }, 'Tipo de projeto'), projeto.el, valor]
+                : [h('p', { class: 'foco-meta' }, 'É uma dor real?'), dor.el, ig],
+            campo('Como falou', canal), campo('Próximo contacto', voltar), atalhos, nota, licao,
+            h('button', { type: 'button', class: 'btn-primary', onclick: () => !fechado(c, estado) && !noInicio(c, estado) && !voltar.value
+                && !window.confirm('Sem próximo contacto marcado — este contacto pode ficar esquecido. Guardar assim?') ? null : guardarEstado(c, {
+                estado, voltar_em: voltar.value, nota: nota.value, licao: licao.value, canal: canal.value,
+                ...(yl ? { projeto: projeto.valor(), valor: valor.value === '' ? undefined : Number(valor.value) } : { dor: dor.valor(), instagram })
             }) }, 'Guardar')
         ),
         bloco('Histórico', historico),
+        meu && h('button', { type: 'button', class: 'foco-link', onclick: () => moverLinha(c) },
+            yl ? `Passar para ${state.cfg.linhas.digitu.nome}` : `Passar para ${state.cfg.linhas.yourlab.nome}`),
         state.me.papel === 'admin' && bloco('Quem trata', atribuir(c)),
         meu && c.vendedor_id && c.estado === 'por_contactar' && h('button', { type: 'button', class: 'foco-link', onclick: () => largar(c) }, 'Devolver à lista comum'),
         v && h('button', { type: 'button', class: 'foco-link', onclick: () => abrirSegmento(v) }, `Ver segmento · ${v.nome}`)
     );
-    if (modelo) mensagem.scrollIntoView({ block: 'start' });
+    if (modelo && mensagem) mensagem.scrollIntoView({ block: 'start' });
     return null;
+}
+
+async function moverLinha(c) {
+    const para = c.linha === 'yourlab' ? 'digitu' : 'yourlab';
+    const nome = state.cfg.linhas[para].nome;
+    if (!window.confirm(`Passar «${c.nome}» para ${nome}? Começa essa pipeline do início.`)) return;
+    try {
+        await api('/api/digitalizept/foco/contactos/lote', { method: 'POST', body: { ids: [c.id], acao: 'linha', linha: para } });
+        toast(`Agora em ${nome}.`);
+        state.filtro.linha = para;
+        fecharSheet();
+        irPara('contactos');
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
 }
 
 async function assumir(c) {
@@ -671,8 +820,13 @@ const QUE = {
         state.cfg.estados[e.estado] || e.estado,
         e.canal && (state.cfg.canais[e.canal] || e.canal),
         e.dor && (state.cfg.dores[e.dor] || e.dor),
-        e.guiao && 'com guião'
+        e.guiao && 'com guião',
+        e.lote && 'em lote',
+        e.auto && 'pela app',
+        e.instagram === true && 'segue no Instagram'
     ].filter(Boolean).join(' · '),
+    foco_linha: (e) => `${e.de} → ${e.para}`,
+    foco_voltar: (e) => (e.voltar_em ? `Próximo contacto: ${e.voltar_em}` : 'Data de próximo contacto removida'),
     foco_mensagem: (e) => `WhatsApp · ${e.modelo}${e.com_link ? ' · com link' : ''}`,
     foco_demo: () => 'Link da app criado',
     foco_atribuido: (e) => `${e.de ? `${e.de} → ` : ''}${e.para}`,
@@ -711,32 +865,64 @@ async function carregarContactos() {
 }
 
 function filtrados() {
-    const { texto: t, estado, segmento, dono } = state.filtro;
+    const { texto: t, estado, segmento, dono, vista } = state.filtro;
     const alvo = t.trim().toLowerCase();
+    const hoje = somarDias(0);
+    const v = VISTAS[vista] || VISTAS.todos;
     const donoOk = (c) => !dono || (dono === 'comum' ? !c.vendedor_id : dono === 'meus' ? c.vendedor_id === state.me.id : c.vendedor_id === dono);
-    return state.contactos.filter((c) => donoOk(c) && (!estado || c.estado === estado)
+    const lista = state.contactos.filter((c) => daLinha(c, state.filtro.linha) && v.ok(c, hoje) && donoOk(c) && (!estado || c.estado === estado)
         && (!segmento || ((segmentoDoTipo(c.tipo) || {}).id || 'outros') === segmento)
         && (!alvo || `${c.nome} ${c.cidade} ${c.morada} ${c.telefone}`.toLowerCase().includes(alvo)));
+    if (vista === 'beta') return lista.sort((a, b) => (ultimoUso(a) < ultimoUso(b) ? -1 : 1));
+    return vista === 'hoje' || vista === 'semana' ? lista.sort((a, b) => (a.voltar_em < b.voltar_em ? -1 : 1)) : lista;
+}
+
+// Follow-up views + the pipeline: where action is needed, at a glance, with counts.
+function barraVistas(aoMudar) {
+    const f = state.filtro;
+    const hoje = somarDias(0);
+    const doLinha = state.contactos.filter((c) => daLinha(c, f.linha));
+    const conta = (ok) => doLinha.filter((c) => ok(c, hoje)).length;
+    const soma = (ok) => doLinha.filter(ok).reduce((t, c) => t + (c.valor_centimos || 0), 0);
+    return h('div', { class: 'foco-crm' },
+        h('div', { class: 'foco-linhas' }, Object.entries(state.cfg.linhas).map(([id, l]) => h('button', {
+            type: 'button', class: `foco-linha${f.linha === id ? ' active' : ''}`,
+            onclick: () => {
+                f.linha = id;
+                f.estado = '';
+                if ((VISTAS[f.vista] || {}).so && VISTAS[f.vista].so !== id) f.vista = 'todos';
+                state.sel = new Set();
+                aoMudar();
+            }
+        }, l.nome, h('b', {}, state.contactos.filter((c) => daLinha(c, id)).length)))),
+        h('div', { class: 'foco-vistas' }, Object.entries(VISTAS).filter(([, v]) => !v.so || v.so === f.linha).map(([id, v]) => {
+            const n = conta(v.ok);
+            return h('button', { type: 'button', class: `foco-vista${f.vista === id ? ' active' : ''}${id !== 'todos' && id !== 'semana' && n ? ' foco-vista-alerta' : ''}`,
+                onclick: () => { f.vista = id; aoMudar(); } }, v.nome, h('b', {}, n));
+        })),
+        h('div', { class: 'foco-pipeline' }, Object.entries(state.cfg.linhas[f.linha].estados).map(([id, nome]) => h('button', {
+            type: 'button', class: `foco-etapa${f.estado === id ? ' active' : ''}`, style: `--cor:${COR[id] || '#888'}`,
+            onclick: () => { f.estado = f.estado === id ? '' : id; aoMudar(); }
+        }, h('span', {}, nome), h('b', {}, conta((c) => c.estado === id))))),
+        f.linha === 'yourlab' && h('p', { class: 'foco-meta' },
+            `Pipeline em aberto: ${euros(soma((c) => !fechado(c)))} · Ganho: ${euros(soma((c) => c.estado === 'ym_ganho'))}`),
+        f.vista === 'beta' && h('button', { type: 'button', class: 'foco-link', onclick: () => sincronizarUso(aoMudar, true) }, 'Atualizar uso da app'));
 }
 
 function barraFiltros(aoMudar) {
     const f = state.filtro;
-    const contagem = (id) => state.contactos.filter((c) => c.estado === id).length;
-    const ativos = [f.estado, f.segmento, f.dono].filter(Boolean).length;
+    const ativos = [f.segmento, f.dono].filter(Boolean).length;
     // Search stays in view; the dropdowns fold away so the first screen shows contacts, not controls.
     return h('div', { class: 'foco-filtros' },
         h('input', { class: 'field-input', type: 'search', placeholder: 'Procurar nome, cidade, telefone…', value: f.texto,
             oninput: (e) => { f.texto = e.target.value; aoMudar(); } }),
         h('details', { class: 'foco-mais', open: ativos > 0 },
             h('summary', {}, ativos ? `Filtros (${ativos})` : 'Filtros'),
-            h('div', { class: 'foco-filtros' }, ...filtrosExtra(f, contagem, aoMudar))));
+            h('div', { class: 'foco-filtros' }, ...filtrosExtra(f, aoMudar))));
 }
 
-function filtrosExtra(f, contagem, aoMudar) {
+function filtrosExtra(f, aoMudar) {
     return nos([
-        h('select', { class: 'field-input', onchange: (e) => { f.estado = e.target.value; aoMudar(); } },
-            h('option', { value: '' }, `Todos os estados (${state.contactos.length})`),
-            Object.entries(state.cfg.estados).map(([id, nome]) => h('option', { value: id, selected: f.estado === id }, `${nome} (${contagem(id)})`))),
         h('select', { class: 'field-input', onchange: (e) => { f.segmento = e.target.value; aoMudar(); } },
             h('option', { value: '' }, 'Todos os segmentos'),
             state.cfg.verticais.filter((v) => v.foco).map((v) => h('option', { value: v.id, selected: f.segmento === v.id }, `${v.foco} · ${v.nome}`)),
@@ -787,10 +973,20 @@ function cartaoContacto(c, hoje, aoMudar) {
                 onclick: (e) => e.stopPropagation(),
                 onchange: (e) => { if (e.target.checked) state.sel.add(c.id); else state.sel.delete(c.id); aoMudar(); } }),
             h('strong', {}, c.nome),
+            c.instagram && h('span', { class: 'foco-chip foco-chip-ig' }, 'IG ✓'),
+            naFila(c.id) && h('span', { class: 'foco-chip foco-chip-hoje' }, filaAtual.feitos.includes(c.id) ? 'Hoje ✓' : 'Hoje'),
             h('span', { class: `foco-chip foco-chip-${c.estado}` }, state.cfg.estados[c.estado] || c.estado)
         ),
         h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, state.me.papel === 'admin' ? '' : dono, c.dor && state.cfg.dores[c.dor]].filter(Boolean).join(' · ')),
-        c.voltar_em && h('p', { class: `foco-meta${c.voltar_em <= hoje ? ' foco-hoje' : ''}` }, `Voltar a falar: ${c.voltar_em}`),
+        (() => {
+            const pp = proximoPasso(c, hoje);
+            return h('p', { class: 'foco-meta' }, ...nos([pp && h('span', { class: `foco-pp ${pp.cls}` }, pp.txt),
+                c.atualizado_em && `${pp ? ' · ' : ''}última atividade ${haQuanto(c.atualizado_em)}`]));
+        })(),
+        c.linha === 'yourlab'
+            ? (c.projeto || c.valor_centimos > 0) && h('p', { class: 'foco-meta' },
+                [state.cfg.projetos[c.projeto], c.valor_centimos && euros(c.valor_centimos)].filter(Boolean).join(' · '))
+            : usoResumo(c),
         controloDono(c, aoMudar)
     );
 }
@@ -830,12 +1026,44 @@ function barraSelecao(itens, aoMudar) {
         fazer(`Atribuir ${n} contactos a ${nome}?`,
             () => api('/api/digitalizept/foco/atribuir', { method: 'POST', body: { ids, vendedor_id: v } }), (r) => `${r.n} atribuídos a ${nome}.`);
     } }, h('option', { value: '-' }, 'Atribuir a…'), opcoesPessoas('-'));
+    const seguimento = (corpo, pergunta) => fazer(pergunta, () => lote({ acao: 'seguimento', ...corpo }), (r) => `${r.n} contactos atualizados.`);
+    const estadoSel = h('select', { class: 'field-input', onchange: (e) => {
+        const v = e.target.value;
+        if (v) seguimento({ estado: v }, `Mudar ${n} contactos para «${state.cfg.estados[v]}»?`);
+    } }, h('option', { value: '' }, 'Mudar estado para…'),
+        Object.entries(state.cfg.linhas[state.filtro.linha].estados).map(([id, nome]) => h('option', { value: id }, nome)));
+    const [outraId, outra] = Object.entries(state.cfg.linhas).find(([id]) => id !== state.filtro.linha);
+    const mover = h('button', { type: 'button', class: 'btn-secondary', onclick: () => fazer(
+        `Passar ${n} contactos para ${outra.nome}? Começam essa pipeline do início.`,
+        () => lote({ acao: 'linha', linha: outraId }), (r) => `${r.n} passaram para ${outra.nome}.`) }, `Passar para ${outra.nome}`);
+    const outraData = h('input', { type: 'date', class: 'field-input hidden', onchange: (e) => {
+        if (e.target.value) seguimento({ voltar_em: e.target.value }, `Próximo contacto de ${n} contactos em ${e.target.value}?`);
+    } });
+    const voltarSel = h('select', { class: 'field-input', onchange: (e) => {
+        const v = e.target.value;
+        if (v === 'outra') { outraData.classList.remove('hidden'); try { outraData.showPicker(); } catch (_) { /* tap the field */ } return; }
+        if (!v) return;
+        const data = v === 'nenhum' ? '' : somarDias(Number(v));
+        seguimento({ voltar_em: data }, data ? `Próximo contacto de ${n} contactos em ${data}?` : `Tirar a data de ${n} contactos?`);
+    } }, h('option', { value: '' }, 'Próximo contacto…'),
+        [['0', 'Hoje'], ['1', 'Amanhã'], ['3', 'Daqui a 3 dias'], ['7', 'Daqui a 1 semana'], ['14', 'Daqui a 2 semanas'], ['outra', 'Outra data…'], ['nenhum', 'Sem data']]
+            .map(([v, t]) => h('option', { value: v }, t)));
+    const trabalhar = h('button', { type: 'button', class: 'btn-primary', onclick: () => {
+        definirFila({ ids, feitos: [] });
+        state.sel = new Set();
+        aoMudar();
+        abrirContacto(itens.find((c) => c.id === ids[0]));
+    } }, `Trabalhar estes (${n})`);
     const apagar = h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => fazer(
         `Apagar ${n} contactos? Não dá para desfazer.`, () => lote({ acao: 'apagar' }),
         (r) => `${r.apagados} apagados${r.com_negocio ? `; ${r.com_negocio} com negócio fechado ficaram` : ''}.`) }, `Apagar (${n})`);
     return h('div', {}, h('div', { class: 'foco-massa' }, marcar),
-        h('div', { class: 'foco-barra' }, h('div', { class: 'foco-massa' }, tipo, dono, apagar,
-            h('button', { type: 'button', class: 'btn-secondary', onclick: () => { state.sel = new Set(); aoMudar(); } }, 'Limpar'))));
+        h('div', { class: 'foco-barra' },
+            h('p', { class: 'foco-meta' }, `${n} selecionado${n === 1 ? '' : 's'}`),
+            h('div', { class: 'foco-massa' }, estadoSel, voltarSel, outraData),
+            h('div', { class: 'foco-massa' }, tipo, dono, mover),
+            h('div', { class: 'foco-massa' }, trabalhar, apagar,
+                h('button', { type: 'button', class: 'btn-secondary', onclick: () => { state.sel = new Set(); aoMudar(); } }, 'Limpar'))));
 }
 
 // «Barbearia do Zé, 912345678, Braga» per line. The order doesn't matter: the phone is the part that looks like one.
@@ -851,12 +1079,15 @@ function abrirAdicionar() {
     const area = h('textarea', { class: 'field-input', rows: 6, placeholder: 'Barbearia do Zé, 912345678, Braga\nSalão Ana; 223456789; Porto' });
     const tipo = h('select', { class: 'field-input' }, h('option', { value: '' }, 'Sem tipo (adivinhar pelo nome)'),
         tiposTodos().filter((t) => t.id !== 'generico').map((t) => h('option', { value: t.id }, t.nome)));
+    const linha = h('select', { class: 'field-input' },
+        Object.entries(state.cfg.linhas).map(([id, l]) => h('option', { value: id, selected: id === state.filtro.linha }, l.nome)));
     const botao = h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
         const rows = lerLinhas(area.value).map((r) => ({ ...r, tipo: tipo.value }));
         if (!rows.length) { toast('Escreva pelo menos um nome.', true); return; }
         botao.disabled = true;
         try {
-            const r = await api('/api/digitalizept/foco/importar', { method: 'POST', body: { rows, soFoco: false, vendedor_id: state.me.id } });
+            const r = await api('/api/digitalizept/foco/importar', { method: 'POST', body: { rows, soFoco: false, linha: linha.value, vendedor_id: state.me.id } });
+            state.filtro.linha = linha.value;
             fecharSheet();
             toast([`${r.novos} novos`, r.ja_existiam && `${r.ja_existiam} já existiam`, r.entraram_na_lista && `${r.entraram_na_lista} voltaram à lista`].filter(Boolean).join(' · ') + '.');
             irPara('contactos');
@@ -867,35 +1098,42 @@ function abrirAdicionar() {
     } }, 'Adicionar');
     abrirSheet(h('h2', {}, 'Adicionar contactos'),
         h('p', { class: 'foco-meta' }, 'Um por linha: nome, telefone, cidade (a ordem não importa). Pode colar uma lista inteira. Quem já existe não é duplicado.'),
-        area, campo('Tipo para todos', tipo), botao);
+        area, campo('Linha', linha), campo('Tipo para todos', tipo), botao);
     area.focus();
 }
 
 async function renderContactos() {
     await carregarContactos();
     state.sel = new Set();
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = somarDias(0);
+    if (!state.filtro.vista) state.filtro.vista = state.contactos.some((c) => daLinha(c, state.filtro.linha) && VISTAS.hoje.ok(c, hoje)) ? 'hoje' : 'todos';
     const listaEl = h('div', { class: 'foco-lista' });
     const barraEl = h('div');
+    const vistasEl = h('div');
     const pintar = () => {
         const itens = filtrados();
-        barraEl.replaceChildren(barraSelecao(itens, pintar));
+        vistasEl.replaceChildren(barraVistas(pintar));
+        barraEl.replaceChildren(...nos([bannerFila(), barraSelecao(itens, pintar)]));
         listaEl.classList.toggle('com-barra', state.sel.size > 0);
         listaEl.replaceChildren(...nos([
             itens.slice(0, MAX_LISTA).map((c) => cartaoContacto(c, hoje, pintar)),
             itens.length > MAX_LISTA && h('p', { class: 'foco-meta' }, `A mostrar ${MAX_LISTA} de ${itens.length}. Afine o filtro ou use o mapa.`),
-            !itens.length && h('p', { class: 'foco-vazio' }, state.contactos.length ? 'Nenhum contacto com este filtro.' : 'Ainda sem contactos. Toque em «Adicionar contactos».')
+            !itens.length && h('p', { class: 'foco-vazio' }, !state.contactos.length ? 'Ainda sem contactos. Toque em «Adicionar contactos».'
+                : state.filtro.vista === 'hoje' ? 'Nada para hoje. Veja «Sem próximo passo».' : 'Nenhum contacto com este filtro.')
         ]));
     };
     render(
         h('div', { class: 'foco-acoes' },
             h('button', { type: 'button', class: 'btn-primary', onclick: abrirAdicionar }, 'Adicionar contactos'),
             h('button', { type: 'button', class: 'btn-secondary', onclick: abrirImportar }, 'Importar CSV / JSON')),
+        vistasEl,
         barraFiltros(pintar),
         barraEl,
         listaEl
     );
     pintar();
+    // Once per visit: fresh beta usage from the app, without holding up the list.
+    if (!state.usoSincronizado) { state.usoSincronizado = true; sincronizarUso(pintar); }
 }
 
 function abrirImportar() {
@@ -995,17 +1233,39 @@ function linhaFunil(r) {
     return [r.contactos, pct(r.dor_sim, r.contactos), r.demos, r.ativos].map((n) => h('td', {}, n));
 }
 
+// Markdown grouped by type, to paste into Notion.
+function copiarLicoes(licoes) {
+    const porTipo = {};
+    licoes.forEach((l) => { (porTipo[nomeTipo(l.tipo)] = porTipo[nomeTipo(l.tipo)] || []).push(l); });
+    const md = [`# Lições — Foco comercial (${new Date().toISOString().slice(0, 10)})`,
+        ...Object.entries(porTipo).flatMap(([tipo, ls]) => ['', `## ${tipo}`, ...ls.map((l) =>
+            `- **${l.nome || 'Sem nome'}**${l.cidade ? ` (${l.cidade})` : ''} — ${state.cfg.estados[l.estado] || l.estado}: ${l.texto.replace(/\s*\n\s*/g, ' / ')}`)])
+    ].join('\n');
+    navigator.clipboard.writeText(md).then(() => toast('Copiado — cole no Notion.')).catch(() => toast('Não foi possível copiar.', true));
+}
+
 async function renderResultados() {
-    const r = await api('/api/digitalizept/foco/resumo');
+    const [r, { licoes }] = await Promise.all([api('/api/digitalizept/foco/resumo'), api('/api/digitalizept/foco/licoes')]);
     const t = r.total;
     const cab = (primeira) => h('tr', {}, [primeira, 'Contactos', 'Dor real', 'Link', 'Ativos'].map((x) => h('th', {}, x)));
     render(
         h('section', { class: 'foco-kpis' },
-            [['Por contactar', t.por_contactar], ['Contactos', t.contactos], ['Dor real', t.dor_sim], ['Link enviado', t.demos], ['Produtos ativos', t.ativos]].map(([k, n]) => h('div', {}, h('strong', {}, n), h('span', {}, k)))
+            [['Por contactar', t.por_contactar], ['Contactos', t.contactos], ['Dor real', t.dor_sim], ['Link enviado', t.demos],
+                ['Beta users', t.beta], ['Seguem no Instagram', t.instagram], ['Produtos ativos', t.ativos]].map(([k, n]) => h('div', {}, h('strong', {}, n), h('span', {}, k)))
         ),
+        h('p', { class: 'foco-meta' }, `Funil ${state.cfg.linhas.digitu.nome}. Os leads ${state.cfg.linhas.yourlab.nome} têm a pipeline e o valor em Contactos.`),
         h('p', { class: 'foco-meta' }, t.ativos === 0
             ? 'Objetivo agora: descobrir em que segmento a dor é mais real, e converter o primeiro.'
             : '«Dor real» = das pessoas contactadas, quantas confirmaram o problema.'),
+        bloco(`Lições aprendidas (${licoes.length})`,
+            licoes.length
+                ? [h('button', { type: 'button', class: 'btn-secondary', onclick: () => copiarLicoes(licoes) }, 'Copiar para o Notion'),
+                    licoes.slice(0, 50).map((l) => h('div', { class: 'foco-evento' },
+                        h('p', {}, h('strong', {}, l.nome || 'Sem nome'), ` · ${nomeTipo(l.tipo)}`),
+                        h('p', { class: 'foco-meta' }, [state.cfg.estados[l.estado] || l.estado, l.dor && state.cfg.dores[l.dor],
+                            new Date(l.criado_em).toLocaleDateString('pt-PT')].filter(Boolean).join(' · ')),
+                        h('p', { class: 'foco-pre' }, l.texto)))]
+                : h('p', { class: 'foco-meta' }, 'Ainda sem lições. Escreva uma ao guardar cada contacto.')),
         bloco('Por segmento',
             h('table', { class: 'foco-tabela' }, cab('Segmento'), r.segmentos.map((s) => h('tr', {}, h('td', {}, s.nome), ...linhaFunil(s)))),
             r.segmentos.filter((s) => s.motivos.length).map((s) => h('div', { class: 'foco-motivos' },
@@ -1031,6 +1291,7 @@ function formMarca() {
     const slogan = h('input', { class: 'field-input', value: m.slogan });
     const numero = h('input', { class: 'field-input', type: 'tel', value: m.numero, placeholder: '+351 9xx xxx xxx' });
     const link = h('input', { class: 'field-input', type: 'url', value: m.link });
+    const instagramMarca = h('input', { class: 'field-input', value: m.instagram || '', placeholder: '@digitu' });
     const descricao = h('input', { class: 'field-input', value: m.descricao });
     const linhas = h('textarea', { class: 'field-input', rows: 5 }, m.linhas.join('\n'));
     return h('div', { class: 'foco-form' },
@@ -1038,6 +1299,7 @@ function formMarca() {
         campo('Frase', slogan),
         campo('Número de WhatsApp da empresa', numero),
         campo('Link', link),
+        campo('Instagram (pedido no fim de cada chamada)', instagramMarca),
         campo('O que é, por palavras ({o_que_e})', descricao),
         campo('As linhas de valor (uma por linha)', linhas),
         h('p', { class: 'foco-meta' }, 'O WhatsApp envia sempre pela conta ligada no aparelho. Para sair deste número, abra o WhatsApp Web com a sessão da empresa e use o botão «WhatsApp Web» em cada contacto.'),
@@ -1045,7 +1307,7 @@ function formMarca() {
             e.target.disabled = true;
             try {
                 const r = await api('/api/digitalizept/foco/marca', { method: 'PATCH', body: {
-                    nome: nome.value, slogan: slogan.value, numero: numero.value, link: link.value, descricao: descricao.value,
+                    nome: nome.value, slogan: slogan.value, numero: numero.value, link: link.value, instagram: instagramMarca.value, descricao: descricao.value,
                     linhas: linhas.value.split('\n').map((t) => t.trim()).filter(Boolean)
                 } });
                 state.cfg.marca = r.marca;
