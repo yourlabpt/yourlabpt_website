@@ -202,3 +202,10 @@
 .foco-linha b { margin-left: 6px; font-weight: 700; }
 .foco-linha.active { background: #e8d5b7; color: #1b1b1b; }
 .foco-chip-ig { background: rgba(225, 48, 108, 0.18); color: #f58aaf; }
+
+/* WhatsApp em lote */
+.foco-lote { display: grid; gap: 10px; }
+.foco-lote-item { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: #242424; border: 1px solid rgba(232, 213, 183, 0.15); }
+.foco-lote-item.enviado { opacity: 0.6; border-color: rgba(74, 222, 128, 0.4); }
+.foco-lote-item a { text-align: center; text-decoration: none; padding: 12px; border-radius: 10px; }
+.foco-mensagem, .foco-pre { white-space: pre-wrap; tab-size: 4; }

@@ -438,6 +438,17 @@ function cleanText(value, max = 1200) {
     return value.trim().replace(/\s+/g, ' ').slice(0, max);
 }
 
+// Multi-line text (message templates, sent messages, notes): keeps \n and \t exactly as written,
+// so a template opens in WhatsApp already formatted. Only strips control characters and trailing blanks.
+function cleanBlock(value, max = 4000) {
+    if (!value || typeof value !== 'string') return '';
+    return value.replace(/\r\n?/g, '\n')
+        .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
+        .replace(/[^\S\n\t]+$/gm, '')
+        .replace(/^\n+|\s+$/g, '')
+        .slice(0, max);
+}
+
 function normalizeEmail(value) {
     const text = cleanText(value, 160).toLowerCase();
     if (!text) return '';
@@ -1906,7 +1917,7 @@ app.post('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => 
         VALUES (?, ?, ?, ?, ?, ?, 'novo', 'contactado', ?)`).run(
         id, tipo, nome, cleanText(b.cidade, 120), cleanText(b.telefone, 40), cleanText(b.whatsapp, 40), now
     );
-    const nota = cleanText(b.nota, 2000);
+    const nota = cleanBlock(b.nota, 2000);
     if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), id, nota, now);
     digitalizeptLogEvento(db, 'lead', id, 'foco_estado', { estado: 'contactado', nota });
     res.json({ contacto: focoContacto(db, id) });
@@ -1990,7 +2001,7 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
         db.prepare('UPDATE lead SET foco_valor_centimos = ? WHERE id = ?').run(Math.round(Number(b.valor) * 100), contacto.id);
     }
     const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
-    const nota = cleanText(b.nota, 2000);
+    const nota = cleanBlock(b.nota, 2000);
     const canal = foco.CANAIS[b.canal] ? b.canal : '';
     const dor = foco.DORES[b.dor] ? b.dor : contacto.dor;
     const dorItens = Array.isArray(b.dor_itens) ? b.dor_itens.map((x) => cleanText(x, 200)).filter(Boolean).slice(0, 12) : [];
@@ -1999,7 +2010,7 @@ app.post('/api/digitalizept/foco/contactos/:id/estado', requireDigitalizept, (re
     const whatsapp = cleanText(b.whatsapp, 40);
     if (whatsapp) db.prepare('UPDATE lead SET whatsapp = ? WHERE id = ?').run(whatsapp, contacto.id);
     if (nota) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, nota, digitalizeptNow());
-    const licao = cleanText(b.licao, 2000);
+    const licao = cleanBlock(b.licao, 2000);
     if (licao) db.prepare('INSERT INTO nota (id, lead_id, texto, criado_em) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), contacto.id, `Lição: ${licao}`, digitalizeptNow());
     digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_estado', {
         estado, nota, voltar_em: voltarEm, canal, de: contacto.estado,
@@ -2123,15 +2134,19 @@ app.post('/api/digitalizept/foco/contactos/:id/mensagem', requireDigitalizept, (
     const contacto = focoContacto(db, req.params.id);
     if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Assuma o contacto primeiro.' });
     const b = req.body || {};
-    const texto = cleanText(b.texto, 4000);
+    const texto = cleanBlock(b.texto, 4000);
     const canal = foco.CANAIS[b.canal] ? b.canal : 'whatsapp';
     const links = [contacto.dmn_link, foco.marca(db).link].filter(Boolean);
     const comLink = links.some((l) => texto.includes(l));
     let estado = contacto.estado;
-    if (['por_contactar', 'contactado', 'voltar'].includes(estado)) estado = comLink ? 'demo_mostrada' : 'contactado';
+    // Only the Digitu pipeline has these statuses; a YourLab lead just gets the message logged.
+    if ((contacto.linha || 'digitu') === 'digitu' && ['por_contactar', 'contactado', 'voltar'].includes(estado)) estado = comLink ? 'demo_mostrada' : 'contactado';
     db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?').run(estado, contacto.id);
+    // Sent in a batch: the follow-up is scheduled at the same time.
+    const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
+    if (voltarEm) db.prepare('UPDATE lead SET revisitar_em = ? WHERE id = ?').run(voltarEm, contacto.id);
     digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_mensagem', {
-        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal, com_link: comLink, estado,
+        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal, com_link: comLink, estado, voltar_em: voltarEm || undefined, lote: b.lote === true || undefined,
         principio: cleanText(b.principio, 120)
     });
     res.json({ contacto: focoContacto(db, contacto.id) });
@@ -2148,7 +2163,7 @@ app.get('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => {
 app.post('/api/digitalizept/foco/mensagens', requireDigitalizept, (req, res) => {
     const b = req.body || {};
     const nome = cleanText(b.nome, 120);
-    const texto = cleanText(b.texto, 4000);
+    const texto = cleanBlock(b.texto, 4000);
     if (!nome || !texto) return res.status(400).json({ error: 'Falta o nome ou o texto.' });
     const db = getDigitalizeptDb();
     const now = digitalizeptNow();
@@ -2168,7 +2183,7 @@ app.patch('/api/digitalizept/foco/mensagens/:id', requireDigitalizept, (req, res
     db.prepare('UPDATE foco_mensagem SET nome = ?, segmento_id = ?, canal = ?, principio = ?, texto = ?, ativo = ?, atualizado_em = ? WHERE id = ?').run(
         cleanText(b.nome, 120) || m.nome, b.segmento_id !== undefined ? cleanText(b.segmento_id, 80) : m.segmento_id,
         b.canal !== undefined ? cleanText(b.canal, 20) : m.canal, b.principio !== undefined ? cleanText(b.principio, 10) : m.principio,
-        cleanText(b.texto, 4000) || m.texto, b.ativo === false ? 0 : 1, digitalizeptNow(), m.id
+        cleanBlock(b.texto, 4000) || m.texto, b.ativo === false ? 0 : 1, digitalizeptNow(), m.id
     );
     res.json({ mensagens: focoMensagens(db) });
 });
@@ -5385,7 +5400,7 @@ app.get('/api/digitalizept/leads/:leadId/notes', requireDigitalizept, (req, res)
 app.post('/api/digitalizept/leads/:leadId/notes', requireDigitalizept, (req, res) => {
     try {
         const leadId = cleanText(req.params.leadId, 80);
-        const texto = cleanText((req.body || {}).texto, 2000);
+        const texto = cleanBlock((req.body || {}).texto, 2000);
         if (!texto) return res.status(400).json({ error: 'Texto em falta.' });
         const db = getDigitalizeptDb();
         const lead = db.prepare('SELECT id FROM lead WHERE id = ?').get(leadId);

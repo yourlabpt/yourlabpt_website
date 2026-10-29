@@ -296,7 +296,7 @@ function preencher(modelo, c, { manter = false } = {}) {
         const m = MARCADORES[k];
         const valor = m && m[1](c, v);
         return valor ? String(valor) : (manter || k === 'link' ? todo : '');
-    }).replace(/[ \t]+([.,!?])/g, '$1');
+    }).replace(/ +([.,!?])/g, '$1');
 }
 
 // The three steps of the strategy: short call → link → follow-up. The team adds its own in Mensagens.
@@ -403,6 +403,116 @@ function configuradorMensagem(c, modeloInicial = '') {
         campo('Modelo', escolha), caixa, aviso, acoes,
         h('button', { type: 'button', class: 'foco-link', onclick: () => { fecharSheet(); irPara('mensagens'); } }, 'Criar ou editar modelos')
     ];
+}
+
+// ---------- WhatsApp em lote ----------
+// Browsers block opening many chats at once and WhatsApp has no free bulk API, so it is a queue:
+// one tap per contact opens WhatsApp with the message already written; the send is logged,
+// the status moves on (contactado / link enviado) and the follow-up date is set.
+const temWhatsApp = (c) => {
+    const d = waNumero(c.whatsapp || c.telefone);
+    return c.whatsapp ? d.length >= 9 : /^3519\d{8}$/.test(d);
+};
+
+function abrirEnvioLote(contactos) {
+    const comNumero = contactos.filter(temWhatsApp);
+    const semNumero = contactos.filter((c) => !temWhatsApp(c));
+    const modelos = [...MODELOS_BASE, ...(state.mensagens || [])].filter((m) => !m.canal || m.canal === 'whatsapp');
+    const escolha = h('select', { class: 'field-input' }, modelos.map((m) => h('option', { value: m.id }, m.nome)));
+    const depois = h('select', { class: 'field-input' },
+        [['2', 'Daqui a 2 dias'], ['3', 'Daqui a 3 dias'], ['7', 'Daqui a 1 semana'], ['', 'Não marcar']]
+            .map(([v, t]) => h('option', { value: v, selected: v === '3' }, t)));
+    const web = h('input', { type: 'checkbox' });
+    const progresso = h('p', { class: 'foco-fila' });
+    const listaEl = h('div', { class: 'foco-lote' });
+    const enviados = [];
+    const modelo = () => modelos.find((m) => m.id === escolha.value) || modelos[0];
+    const link = (c, texto) => (web.checked
+        ? `https://web.whatsapp.com/send?phone=${waNumero(c.whatsapp || c.telefone)}&text=${encodeURIComponent(texto)}`
+        : `https://wa.me/${waNumero(c.whatsapp || c.telefone)}?text=${encodeURIComponent(texto)}`);
+    const pintarProgresso = () => { progresso.textContent = `Enviados ${enviados.length} de ${comNumero.length}`; };
+
+    function linha(c) {
+        state.linha = state.cfg.marca.linhas[principioSugerido(c)] || '';
+        const caixa = h('textarea', { class: 'field-input foco-mensagem', rows: 5 }, preencher(modelo().texto, c));
+        const abrir = h('a', { class: 'btn-primary', target: '_blank', rel: 'noopener', href: link(c, caixa.value) }, 'Abrir WhatsApp');
+        const row = h('div', { class: 'foco-lote-item' },
+            h('div', { class: 'foco-card-top' }, h('strong', {}, c.nome), h('span', { class: 'foco-meta' }, c.whatsapp || c.telefone)),
+            h('details', {}, h('summary', { class: 'foco-meta' }, 'Ver / ajustar mensagem'), caixa),
+            abrir);
+        caixa.addEventListener('input', () => { abrir.href = link(c, caixa.value); });
+        web.addEventListener('change', () => { abrir.href = link(c, caixa.value); });
+        abrir.addEventListener('click', () => {
+            api(`/api/digitalizept/foco/contactos/${c.id}/mensagem`, { method: 'POST', body: {
+                modelo: modelo().nome, texto: caixa.value, canal: 'whatsapp', principio: state.linha, lote: true,
+                voltar_em: depois.value ? somarDias(Number(depois.value)) : ''
+            } }).then(({ contacto }) => Object.assign(c, contacto)).catch((err) => { if (err.message !== 'unauthorized') toast(`${c.nome}: ${err.message}`, true); });
+            if (!enviados.includes(c)) enviados.push(c);
+            row.classList.add('enviado');
+            abrir.textContent = 'Enviado ✓ — abrir de novo';
+            abrir.className = 'btn-secondary';
+            pintarProgresso();
+            const seguinte = row.nextElementSibling && row.nextElementSibling.querySelector('a.btn-primary');
+            if (seguinte) setTimeout(() => seguinte.scrollIntoView({ block: 'center' }), 300);
+        });
+        return row;
+    }
+
+    // Templates with {link} need each business's own app link first (created up front: a WhatsApp
+    // window opened after waiting on the network would be blocked as a pop-up).
+    async function pintar() {
+        if (modelo().texto.includes('{link}')) {
+            const falta = comNumero.filter((c) => !c.dmn_link);
+            for (let i = 0; i < falta.length; i += 1) {
+                listaEl.replaceChildren(h('p', { class: 'foco-meta' }, `A criar os links da app… ${i + 1} de ${falta.length}`));
+                try { Object.assign(falta[i], (await api(`/api/digitalizept/foco/contactos/${falta[i].id}/demo`, { method: 'POST' })).contacto); }
+                catch (err) { if (err.message !== 'unauthorized') toast(`${falta[i].nome}: ${err.message}`, true); }
+            }
+        }
+        listaEl.replaceChildren(...comNumero.map(linha));
+        pintarProgresso();
+    }
+
+    function concluir() {
+        if (!enviados.length) { fecharSheet(); irPara('contactos'); return; }
+        // Pending notes: a line on what came back, or ignore.
+        const itens = enviados.map((c) => {
+            const nota = h('textarea', { class: 'field-input', rows: 2, placeholder: 'Respondeu? O que disse? (opcional)' });
+            const row = h('div', { class: 'foco-lote-item' }, h('strong', {}, c.nome), nota,
+                h('button', { type: 'button', class: 'foco-link', onclick: () => row.remove() }, 'Ignorar'));
+            return { c, nota, row };
+        });
+        abrirSheet(h('h2', {}, 'Notas do envio'),
+            h('p', { class: 'foco-meta' }, `${enviados.length} enviados. Estado atualizado${depois.value ? ' e próximo contacto marcado' : ''}. Escreva só o que valer a pena — o resto ignore.`),
+            itens.map((x) => x.row),
+            h('button', { type: 'button', class: 'btn-primary', onclick: async (e) => {
+                e.target.disabled = true;
+                const comNota = itens.filter((x) => x.row.isConnected && x.nota.value.trim());
+                await Promise.all(comNota.map((x) => api(`/api/digitalizept/leads/${x.c.id}/notes`, { method: 'POST', body: { texto: x.nota.value } })
+                    .catch((err) => { if (err.message !== 'unauthorized') toast(`${x.c.nome}: ${err.message}`, true); })));
+                const n = comNota.length;
+                toast(n ? `${n} nota${n === 1 ? '' : 's'} guardada${n === 1 ? '' : 's'}.` : 'Feito.');
+                fecharSheet();
+                irPara('contactos');
+            } }, 'Guardar e terminar'));
+    }
+
+    escolha.addEventListener('change', pintar);
+    abrirSheet(
+        h('h2', {}, `WhatsApp para ${comNumero.length} contacto${comNumero.length === 1 ? '' : 's'}`),
+        h('p', { class: 'foco-meta' }, 'Um toque por contacto abre o WhatsApp com a mensagem pronta — só carregar em enviar. A formatação (linhas, espaços) vai tal como está no modelo.'),
+        campo('Modelo', escolha),
+        campo('Depois de enviar, próximo contacto', depois),
+        h('label', { class: 'foco-toggle' }, web, ' Abrir no WhatsApp Web (computador)'),
+        progresso, listaEl,
+        semNumero.length > 0 && bloco(`Sem WhatsApp (${semNumero.length}) — ligar em vez de escrever`,
+            h('p', { class: 'foco-meta' }, semNumero.map((c) => c.nome).join(' · ')),
+            h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
+                definirFila({ ids: semNumero.map((c) => c.id), feitos: [] });
+                abrirContacto(semNumero[0]);
+            } }, `Ligar a estes (${semNumero.length})`)),
+        h('button', { type: 'button', class: 'btn-primary', onclick: concluir }, 'Concluir envio'));
+    pintar();
 }
 
 // ---------- guião de chamada ----------
@@ -827,7 +937,7 @@ const QUE = {
     ].filter(Boolean).join(' · '),
     foco_linha: (e) => `${e.de} → ${e.para}`,
     foco_voltar: (e) => (e.voltar_em ? `Próximo contacto: ${e.voltar_em}` : 'Data de próximo contacto removida'),
-    foco_mensagem: (e) => `WhatsApp · ${e.modelo}${e.com_link ? ' · com link' : ''}`,
+    foco_mensagem: (e) => `${state.cfg.canais[e.canal] || 'WhatsApp'} · ${e.modelo}${e.com_link ? ' · com link' : ''}${e.lote ? ' · em lote' : ''}`,
     foco_demo: () => 'Link da app criado',
     foco_atribuido: (e) => `${e.de ? `${e.de} → ` : ''}${e.para}`,
     nota: () => 'Nota'
@@ -1048,6 +1158,12 @@ function barraSelecao(itens, aoMudar) {
     } }, h('option', { value: '' }, 'Próximo contacto…'),
         [['0', 'Hoje'], ['1', 'Amanhã'], ['3', 'Daqui a 3 dias'], ['7', 'Daqui a 1 semana'], ['14', 'Daqui a 2 semanas'], ['outra', 'Outra data…'], ['nenhum', 'Sem data']]
             .map(([v, t]) => h('option', { value: v }, t)));
+    const whatsapp = state.filtro.linha === 'digitu' && h('button', { type: 'button', class: 'btn-primary', onclick: () => {
+        const escolhidos = itens.filter((c) => state.sel.has(c.id));
+        state.sel = new Set();
+        aoMudar();
+        abrirEnvioLote(escolhidos);
+    } }, `WhatsApp (${n})`);
     const trabalhar = h('button', { type: 'button', class: 'btn-primary', onclick: () => {
         definirFila({ ids, feitos: [] });
         state.sel = new Set();
@@ -1062,7 +1178,7 @@ function barraSelecao(itens, aoMudar) {
             h('p', { class: 'foco-meta' }, `${n} selecionado${n === 1 ? '' : 's'}`),
             h('div', { class: 'foco-massa' }, estadoSel, voltarSel, outraData),
             h('div', { class: 'foco-massa' }, tipo, dono, mover),
-            h('div', { class: 'foco-massa' }, trabalhar, apagar,
+            h('div', { class: 'foco-massa' }, whatsapp, trabalhar, apagar,
                 h('button', { type: 'button', class: 'btn-secondary', onclick: () => { state.sel = new Set(); aoMudar(); } }, 'Limpar'))));
 }
 
