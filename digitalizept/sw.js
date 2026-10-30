@@ -1,4 +1,4 @@
-const CACHE = 'digitalizept-v133';
+const CACHE = 'digitalizept-v134';
 const SHELL = [
     '/digitalizept/',
     '/digitalizept/index.html',
@@ -36,7 +36,9 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-    event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+    // `reload`: fill the shell from the server, never from a browser copy a CDN told it to keep for hours.
+    event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
+        .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -54,8 +56,11 @@ function isShellAsset(pathname) {
         || pathname === '/digitalizept/';
 }
 
+// `no-cache` makes the browser ask the server every time (a cheap 304 when unchanged) instead of
+// reusing a copy for the max-age Cloudflare adds — otherwise a deploy stays invisible for hours.
+// A navigation request can't be rebuilt with options; pages are sent no-store anyway.
 function networkFirst(req) {
-    return fetch(req).then((res) => {
+    return fetch(req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' })).then((res) => {
         if (res && res.ok) {
             const copy = res.clone();
             caches.open(CACHE).then((cache) => cache.put(req, copy));
