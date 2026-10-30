@@ -1865,14 +1865,23 @@ const FOCO_SELECT = `
     SELECT l.id, l.nome, l.business_type AS tipo, l.cidade, l.morada, l.whatsapp, l.telefone, l.foco_estado AS estado,
            l.revisitar_em AS voltar_em, l.dmn_link, l.vendedor_id, v.nome AS vendedor, l.lat, l.lng, l.foco_dor AS dor,
            l.foco_origem_json, l.criado_em, l.atualizado_em, l.foco_linha AS linha, l.foco_instagram AS instagram,
-           l.foco_projeto AS projeto, l.foco_valor_centimos AS valor_centimos, l.foco_uso_json, l.foco_arquivado AS arquivado,
+           l.foco_projeto AS projeto, l.foco_valor_centimos AS valor_centimos, l.foco_uso_json, l.foco_arquivado AS arquivado, l.foco_respondeu_em AS respondeu_em,
+           -- Where an email can live: business data of a deal, or the contract's client (crawler email is in origem).
+           -- ponytail: correlated subqueries per row; index dados_negocio(lead_id) if the list passes a few thousand
+           (SELECT d.obrigatorios_json FROM dados_negocio d WHERE d.lead_id = l.id ORDER BY d.rowid DESC LIMIT 1) AS dn_obrig,
+           (SELECT d.opcionais_json FROM dados_negocio d WHERE d.lead_id = l.id ORDER BY d.rowid DESC LIMIT 1) AS dn_opc,
+           (SELECT cl.email FROM cliente_legal cl WHERE cl.lead_id = l.id LIMIT 1) AS legal_email,
            (SELECT texto FROM nota n WHERE n.lead_id = l.id ORDER BY n.criado_em DESC LIMIT 1) AS ultima_nota
     FROM lead l LEFT JOIN vendedor v ON v.id = l.vendedor_id`;
 
 function focoLinha(row) {
     if (!row) return row;
-    const { foco_origem_json: origem, foco_uso_json: uso, ...rest } = row;
-    return { ...rest, instagram: Boolean(rest.instagram), arquivado: Boolean(rest.arquivado), origem: JSON.parse(origem || '{}'), uso: uso ? JSON.parse(uso) : null };
+    const { foco_origem_json: origem, foco_uso_json: uso, dn_obrig: dnObrig, dn_opc: dnOpc, legal_email: legalEmail, ...rest } = row;
+    const o = JSON.parse(origem || '{}');
+    return {
+        ...rest, instagram: Boolean(rest.instagram), arquivado: Boolean(rest.arquivado), origem: o, uso: uso ? JSON.parse(uso) : null,
+        email: o.email || outreach.leadEmailFromRows(dnObrig, dnOpc, legalEmail) || ''
+    };
 }
 
 function focoContacto(db, id) {
@@ -1913,6 +1922,10 @@ app.post('/api/digitalizept/foco/contactos', requireDigitalizept, (req, res) => 
     const tipo = cleanText(b.tipo, 80);
     if (!nome || !tipo) return res.status(400).json({ error: 'Falta o nome do negócio ou o tipo.' });
     const db = getDigitalizeptDb();
+    const repetido = foco.duplicadoDe(foco.indiceContactos(db), { nome, cidade: b.cidade, telefone: b.telefone, whatsapp: b.whatsapp });
+    if (repetido) {
+        return res.status(409).json({ error: `Já existe: ${repetido.nome || '(sem nome)'} (mesmo ${repetido.por}).`, contacto: focoContacto(db, repetido.id) });
+    }
     const id = crypto.randomUUID();
     const now = digitalizeptNow();
     db.prepare(`INSERT INTO lead (id, business_type, nome, cidade, telefone, whatsapp, estado, foco_estado, criado_em)
@@ -1943,6 +1956,77 @@ app.get('/api/digitalizept/foco/licoes', requireDigitalizept, (req, res) => {
     res.json({ licoes: foco.licoes(getDigitalizeptDb(), req.vendedor) });
 });
 
+// Any type we know: the focus segments' and every business-type config (restaurante, ótica…).
+const tiposValidos = () => new Set([...foco.tiposConhecidos(), ...loadBusinessTypes().map((t) => t.id)]);
+
+// Edit a contact's details, and/or mark that they answered. Only fields sent are touched.
+app.post('/api/digitalizept/foco/contactos/:id/dados', requireDigitalizept, (req, res) => {
+    const db = getDigitalizeptDb();
+    const contacto = focoContacto(db, req.params.id);
+    if (!focoPodeMexer(req, contacto)) return res.status(404).json({ error: 'Contacto não encontrado.' });
+    const b = req.body || {};
+    const identidade = ['nome', 'cidade', 'telefone', 'whatsapp', 'instagram', 'email'];
+    if (identidade.some((k) => b[k] !== undefined)) {
+        const pick = (k, atual) => (b[k] !== undefined ? b[k] : atual);
+        const repetido = foco.duplicadoDe(foco.indiceContactos(db), {
+            nome: pick('nome', contacto.nome), cidade: pick('cidade', contacto.cidade), telefone: pick('telefone', contacto.telefone),
+            whatsapp: pick('whatsapp', contacto.whatsapp), instagram: pick('instagram', contacto.origem.instagram), email: pick('email', contacto.origem.email)
+        }, contacto.id);
+        if (repetido) return res.status(409).json({ error: `Já existe outro contacto com o mesmo ${repetido.por}: ${repetido.nome || '(sem nome)'}.` });
+    }
+    const mudou = [];
+    const col = { nome: 200, telefone: 40, whatsapp: 40 };
+    Object.entries(col).forEach(([k, max]) => {
+        if (b[k] === undefined) return;
+        const v = cleanText(b[k], max);
+        if (k === 'nome' && !v) return;
+        db.prepare(`UPDATE lead SET ${k} = ? WHERE id = ?`).run(v, contacto.id);
+        mudou.push(k);
+    });
+    if (b.tipo !== undefined) {
+        const tipo = cleanText(b.tipo, 80);
+        if (!tiposValidos().has(tipo)) return res.status(400).json({ error: 'Tipo desconhecido.' });
+        db.prepare('UPDATE lead SET business_type = ? WHERE id = ?').run(tipo, contacto.id);
+        mudou.push('tipo');
+    }
+    if (b.cidade !== undefined || b.morada !== undefined) {
+        const morada = b.morada !== undefined ? cleanText(b.morada, 300) : contacto.morada;
+        const cidade = b.cidade !== undefined ? cleanText(b.cidade, 120) : contacto.cidade;
+        clearGeocodeIfAddressChanged(db, contacto.id, morada, cidade);
+        db.prepare('UPDATE lead SET morada = ?, cidade = ? WHERE id = ?').run(morada, cidade, contacto.id);
+        if (morada !== contacto.morada || cidade !== contacto.cidade) scheduleLeadGeocode(contacto.id, { force: true });
+        mudou.push('morada');
+    }
+    // Instagram, email and site live with what the crawler found.
+    const origem = { ...contacto.origem };
+    ['instagram', 'email', 'website'].forEach((k) => {
+        if (b[k] === undefined) return;
+        const v = cleanText(b[k], 300);
+        if (k === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return;
+        if (v) origem[k] = v; else delete origem[k];
+        mudou.push(k);
+    });
+    if (['instagram', 'email', 'website'].some((k) => b[k] !== undefined)) {
+        db.prepare('UPDATE lead SET foco_origem_json = ? WHERE id = ?').run(JSON.stringify(origem), contacto.id);
+    }
+    // They answered: on top of the list, in today's follow-ups, and no longer «por contactar».
+    if (typeof b.respondeu === 'boolean') {
+        if (b.respondeu) {
+            const hoje = digitalizeptNow().slice(0, 10);
+            const estado = contacto.estado === 'por_contactar' ? 'contactado' : contacto.estado === 'ym_novo' ? 'ym_conversa' : contacto.estado;
+            db.prepare("UPDATE lead SET foco_respondeu_em = ?, foco_estado = ?, revisitar_em = CASE WHEN revisitar_em = '' OR revisitar_em > ? THEN ? ELSE revisitar_em END WHERE id = ?")
+                .run(digitalizeptNow(), estado, hoje, hoje, contacto.id);
+        } else {
+            db.prepare("UPDATE lead SET foco_respondeu_em = '' WHERE id = ?").run(contacto.id);
+        }
+        digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_resposta', { respondeu: b.respondeu });
+    }
+    // Visits linked to this lead show the same name and address.
+    if (mudou.includes('nome') || mudou.includes('morada')) syncLinkedVisitsIdentity(db, contacto.id);
+    if (mudou.length) digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_dados', { campos: mudou });
+    res.json({ contacto: focoContacto(db, contacto.id) });
+});
+
 // Batch on the ticked contacts: change their type, or delete them. A partner can only touch their own.
 app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res) => {
     const db = getDigitalizeptDb();
@@ -1952,7 +2036,7 @@ app.post('/api/digitalizept/foco/contactos/lote', requireDigitalizept, (req, res
     if (!ids.length) return res.status(400).json({ error: 'Nenhum contacto seu entre os selecionados.' });
     if (b.acao === 'tipo') {
         const tipo = cleanText(b.tipo, 80);
-        if (!foco.tiposConhecidos().has(tipo)) return res.status(400).json({ error: 'Tipo desconhecido.' });
+        if (!tiposValidos().has(tipo)) return res.status(400).json({ error: 'Tipo desconhecido.' });
         const n = foco.mudarTipo(db, ids, tipo);
         digitalizeptLogEvento(db, 'app', 'foco', 'foco_tipo_lote', { n, tipo });
         return res.json({ n });

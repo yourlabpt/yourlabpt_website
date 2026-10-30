@@ -209,3 +209,49 @@ test('archive: hides without deleting, restore brings it back, repeated calls ar
     assert.deepEqual(db.prepare('SELECT id FROM lead WHERE foco_arquivado = 1').all().map((r) => r.id), ['b']);
     assert.deepEqual(log.at(-1), ['a', 'foco_arquivo', false]);
 });
+
+test('phone dedupe: same number in any format matches; a +55 number never matches a Portuguese one', () => {
+    const Database = require('better-sqlite3');
+    const { importar, chaveTelefone } = require('./digitalizept-foco');
+    assert.equal(chaveTelefone('+351 912 345 678'), chaveTelefone('912345678'));
+    assert.equal(chaveTelefone('00351912345678'), '351912345678');
+    assert.notEqual(chaveTelefone('+55 11 91234-5678'), chaveTelefone('912345678'));
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, business_type TEXT, nome TEXT, morada TEXT, cidade TEXT, telefone TEXT DEFAULT '',
+        whatsapp TEXT, estado TEXT, foco_estado TEXT DEFAULT '', foco_origem_json TEXT, lat REAL, lng REAL, geocode_status TEXT,
+        vendedor_id TEXT, foco_linha TEXT DEFAULT 'digitu', revisitar_em TEXT DEFAULT '', criado_em TEXT);
+        INSERT INTO lead (id, nome, cidade, telefone, foco_estado) VALUES ('pt', 'Loja PT', 'Porto', '912345678', 'contactado');`);
+    let n = 0;
+    const r = importar(db, [{ nome: 'Loja Brasil', cidade: 'Porto', telefone: '+55 11 91234-5678' }, { nome: 'Outra', cidade: 'Braga', telefone: '+351 912 345 678' }], {
+        vendedorId: 'v', soFoco: false, parseMapsUrl: () => null, whatsappIfMobile: () => '', nowIso: () => 'x', uuid: () => `n${n += 1}`
+    });
+    assert.deepEqual([r.novos, r.ja_existiam], [1, 1], 'Brazil is new; the +351 form of the PT number is a duplicate');
+});
+
+test('no duplicates: same phone (either field), Instagram, email or name+city — also within one file; near-misses stay new', () => {
+    const Database = require('better-sqlite3');
+    const { importar, indiceContactos, duplicadoDe } = require('./digitalizept-foco');
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE lead (id TEXT PRIMARY KEY, business_type TEXT, nome TEXT, morada TEXT, cidade TEXT, telefone TEXT DEFAULT '',
+        whatsapp TEXT DEFAULT '', estado TEXT, foco_estado TEXT DEFAULT '', foco_origem_json TEXT DEFAULT '{}', lat REAL, lng REAL, geocode_status TEXT,
+        vendedor_id TEXT, foco_linha TEXT DEFAULT 'digitu', revisitar_em TEXT DEFAULT '', criado_em TEXT);
+        INSERT INTO lead (id, nome, cidade, telefone, whatsapp, foco_estado, foco_origem_json) VALUES
+            ('a', 'Salão da Ana', 'Porto', '223456789', '912345678', 'contactado', '{"instagram":"salao_ana","email":"ana@salao.pt"}');`);
+    const indice = indiceContactos(db);
+    const por = (dados) => (duplicadoDe(indice, dados) || {}).por || null;
+    assert.equal(por({ nome: 'X', telefone: '+351 912 345 678' }), 'telefone', 'phone in the WhatsApp field');
+    assert.equal(por({ nome: 'X', instagram: 'https://www.instagram.com/Salao_Ana/' }), 'Instagram');
+    assert.equal(por({ nome: 'X', email: ' ANA@salao.pt ' }), 'email');
+    assert.equal(por({ nome: 'salao da ana!', cidade: 'PORTO' }), 'nome e cidade', 'accents, case, punctuation ignored');
+    assert.equal(por({ nome: 'Salão da Ana', cidade: 'Braga' }), null, 'same name, other city: a different business');
+    assert.equal(duplicadoDe(indice, { nome: 'Salão da Ana', cidade: 'Porto' }, 'a'), null, 'editing itself is not a duplicate');
+
+    let n = 0;
+    const r = importar(db, [
+        { nome: 'Barbearia Nova', cidade: 'Braga', telefone: '931111111' },
+        { nome: 'Barbearia Nova (repetida)', cidade: 'Braga', telefone: '+351 931 111 111' },
+        { nome: 'Outra', cidade: 'Lisboa', email: 'ana@salao.pt' }
+    ], { vendedorId: 'v', soFoco: false, parseMapsUrl: () => null, whatsappIfMobile: () => '', nowIso: () => 'x', uuid: () => `n${n += 1}` });
+    assert.deepEqual([r.novos, r.ja_existiam], [1, 2]);
+    assert.match(r.repetidos.join(' | '), /mesmo telefone.*mesmo email/);
+});

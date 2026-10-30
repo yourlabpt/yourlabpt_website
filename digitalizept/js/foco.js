@@ -19,7 +19,7 @@ const FASE = { ataque: 'Ataque', expansao: 'Expansão', depois: 'Depois' };
 
 const state = {
     me: null, cfg: null, tab: 'segmentos', contactos: [], todos: null, equipa: [], pessoas: [],
-    mensagens: [], linha: '', sel: new Set(), filtro: { linha: 'digitu', texto: '', estado: '', segmento: '', dono: '' }
+    mensagens: [], linha: '', sel: new Set(), duplicados: new Map(), filtro: { linha: 'digitu', canais: [], texto: '', estado: '', segmento: '', dono: '' }
 };
 // Pin/chip colour per state: grey = not yet touched, warm = in progress, green = won, red = lost.
 const COR = {
@@ -64,7 +64,7 @@ async function api(path, options = {}) {
         mostrarLogin(data.error || 'Sessão expirada.');
         throw new Error('unauthorized');
     }
-    if (!response.ok) throw new Error(data.error || 'Erro no servidor.');
+    if (!response.ok) throw Object.assign(new Error(data.error || 'Erro no servidor.'), { data });
     return data;
 }
 
@@ -131,6 +131,9 @@ const nomeTipo = (tipo) => {
     const v = segmentoDoTipo(tipo);
     return (v && (v.tipos_nomes.find((t) => t.id === tipo) || {}).nome) || (tipo === 'generico' ? 'Sem tipo' : (state.cfg.tiposNomes || {})[tipo] || tipo);
 };
+// Every type: the segments' plus every business-type config (restaurante, ótica…), focus or not.
+const todosOsTipos = () => [...new Map([...tiposTodos().map((t) => [t.id, t.nome]), ...Object.entries(state.cfg.tiposNomes || {})])]
+    .map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
 // Every type we sell to, once each, by name — for the batch «mudar tipo» and the add sheet.
 const tiposTodos = () => [...new Map(state.cfg.verticais.flatMap((v) => v.tipos_nomes).map((t) => [t.id, t])).values()]
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
@@ -226,8 +229,10 @@ function novoContacto(v) {
             const r = await api('/api/digitalizept/foco/contactos', { method: 'POST', body: Object.fromEntries(new FormData(form)) });
             abrirContacto(r.contacto);
         } catch (err) {
-            if (err.message !== 'unauthorized') toast(err.message, true);
-            btn.disabled = false;
+            if (err.message === 'unauthorized') return;
+            toast(err.message, true);
+            if (err.data && err.data.contacto) abrirContacto(err.data.contacto); // already there: open it, never a copy
+            else btn.disabled = false;
         }
     });
     abrirSheet(h('p', { class: 'foco-meta' }, v.nome), h('h2', {}, 'Novo contacto'), form);
@@ -239,6 +244,28 @@ function waNumero(n) {
     const d = String(n || '').replace(/\D/g, '');
     return d.length === 9 ? `351${d}` : d;
 }
+
+// WhatsApp only to numbers that can have it: Portuguese mobiles (+351 9…) and Brazilian numbers (+55).
+// Portuguese landlines (2…) and anything else stay out of WhatsApp actions. Returns digits for wa.me, or ''.
+function numeroWa(valor) {
+    let d = String(valor || '').replace(/[^\d+]/g, '');
+    if (d.startsWith('+')) d = d.slice(1);
+    else if (d.startsWith('00')) d = d.slice(2);
+    d = d.replace(/\D/g, '');
+    if (/^9\d{8}$/.test(d)) return `351${d}`;   // PT mobile written without +351
+    if (/^3519\d{8}$/.test(d)) return d;        // PT mobile
+    if (/^55\d{10,11}$/.test(d)) return d;      // Brazil: DDD + 8/9 digits
+    return '';
+}
+// The WhatsApp field first (often the mobile), then the main phone.
+const numeroWhatsApp = (c) => numeroWa(c.whatsapp) || numeroWa(c.telefone);
+
+// Channel tags, read from the contact's own data (never stored, so never stale). A contact can have several.
+const CANAIS_TAG = {
+    whatsapp: { nome: 'WhatsApp', tem: (c) => Boolean(numeroWhatsApp(c)) },
+    instagram: { nome: 'Instagram', tem: (c) => Boolean(instagramHandle((c.origem || {}).instagram)) },
+    email: { nome: 'Email', tem: (c) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(c.email || '').trim()) }
+};
 
 const minuscula = (t) => String(t || '').replace(/^./, (c) => c.toLowerCase());
 
@@ -267,14 +294,14 @@ const instagramConversa = (handle) => (eMovel() ? `https://ig.me/m/${handle}` : 
 function canaisDoContacto(c) {
     const o = c.origem || {};
     const ig = instagramHandle(o.instagram);
-    const numero = waNumero(c.whatsapp || c.telefone);
+    const numero = numeroWhatsApp(c);
     const fbId = String(o.facebook || '').match(/profile\.php\?id=(\d+)/i);
     return [
         numero && { id: 'whatsapp', nome: 'WhatsApp', prefill: true, url: (t) => `https://wa.me/${numero}?text=${encodeURIComponent(t)}` },
         numero && { id: 'whatsapp', nome: 'WhatsApp Web', web: true, prefill: true, url: (t) => `https://web.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(t)}` },
         ig && { id: 'instagram', nome: 'Instagram', url: () => instagramConversa(ig) },
         o.facebook && { id: 'facebook', nome: 'Messenger', url: () => (fbId ? `https://m.me/${fbId[1]}` : (utilizadorDe(o.facebook, 'facebook') ? `https://m.me/${utilizadorDe(o.facebook, 'facebook')}` : o.facebook)) },
-        o.email && { id: 'email', nome: 'Email', prefill: true, url: (t) => `mailto:${o.email}?subject=${encodeURIComponent(`${state.cfg.marca.nome} — ${c.nome}`)}&body=${encodeURIComponent(t)}` }
+        CANAIS_TAG.email.tem(c) && { id: 'email', nome: 'Email', prefill: true, url: (t) => `mailto:${c.email}?subject=${encodeURIComponent(`${state.cfg.marca.nome} — ${c.nome}`)}&body=${encodeURIComponent(t)}` }
     ].filter(Boolean);
 }
 
@@ -427,10 +454,7 @@ function configuradorMensagem(c, modeloInicial = '') {
 // Browsers block opening many chats at once and WhatsApp has no free bulk API, so it is a queue:
 // one tap per contact opens WhatsApp with the message already written; the send is logged,
 // the status moves on (contactado / link enviado) and the follow-up date is set.
-const temWhatsApp = (c) => {
-    const d = waNumero(c.whatsapp || c.telefone);
-    return c.whatsapp ? d.length >= 9 : /^3519\d{8}$/.test(d);
-};
+const temWhatsApp = (c) => Boolean(numeroWhatsApp(c));
 
 function abrirEnvioLote(contactos) {
     const comNumero = contactos.filter(temWhatsApp);
@@ -446,8 +470,8 @@ function abrirEnvioLote(contactos) {
     const enviados = [];
     const modelo = () => modelos.find((m) => m.id === escolha.value) || modelos[0];
     const link = (c, texto) => (web.checked
-        ? `https://web.whatsapp.com/send?phone=${waNumero(c.whatsapp || c.telefone)}&text=${encodeURIComponent(texto)}`
-        : `https://wa.me/${waNumero(c.whatsapp || c.telefone)}?text=${encodeURIComponent(texto)}`);
+        ? `https://web.whatsapp.com/send?phone=${numeroWhatsApp(c)}&text=${encodeURIComponent(texto)}`
+        : `https://wa.me/${numeroWhatsApp(c)}?text=${encodeURIComponent(texto)}`);
     const pintarProgresso = () => { progresso.textContent = `Enviados ${enviados.length} de ${comNumero.length}`; };
 
     function linha(c) {
@@ -455,7 +479,7 @@ function abrirEnvioLote(contactos) {
         const caixa = h('textarea', { class: 'field-input foco-mensagem', rows: 5 }, preencher(modelo().texto, c));
         const abrir = h('a', { class: 'btn-primary', target: '_blank', rel: 'noopener', href: link(c, caixa.value) }, 'Abrir WhatsApp');
         const row = h('div', { class: 'foco-lote-item' },
-            h('div', { class: 'foco-card-top' }, h('strong', {}, c.nome), h('span', { class: 'foco-meta' }, c.whatsapp || c.telefone)),
+            h('div', { class: 'foco-card-top' }, h('strong', {}, c.nome), h('span', { class: 'foco-meta' }, `+${numeroWhatsApp(c)}`)),
             h('details', {}, h('summary', { class: 'foco-meta' }, 'Ver / ajustar mensagem'), caixa),
             abrir);
         caixa.addEventListener('input', () => { abrir.href = link(c, caixa.value); });
@@ -523,7 +547,7 @@ function abrirEnvioLote(contactos) {
         campo('Depois de enviar, próximo contacto', depois),
         h('label', { class: 'foco-toggle' }, web, ' Abrir no WhatsApp Web (computador)'),
         progresso, listaEl,
-        semNumero.length > 0 && bloco(`Sem WhatsApp (${semNumero.length}) — ligar em vez de escrever`,
+        semNumero.length > 0 && bloco(`Sem WhatsApp válido (${semNumero.length}) — fixos (2…), sem número ou de fora — ligar em vez de escrever`,
             h('p', { class: 'foco-meta' }, semNumero.map((c) => c.nome).join(' · ')),
             h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
                 definirFila({ ids: semNumero.map((c) => c.id), feitos: [] });
@@ -565,11 +589,17 @@ const daLinha = (c, linha) => (c.linha || 'digitu') === linha;
 const euros = (cent) => (Number(cent || 0) / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const ultimoUso = (c) => (c.uso && c.uso.ultimaAtividade) || '';
 const VISTAS = {
+    // They answered after a first contact: the ones to deal with first.
+    respostas: { nome: 'Responderam', ok: (c) => Boolean(c.respondeu_em) && !fechado(c) },
     hoje: { nome: 'Para hoje', ok: (c, hoje) => !fechado(c) && Boolean(c.voltar_em) && c.voltar_em <= hoje },
+    // First contacts, ready for a WhatsApp batch.
+    novos: { nome: 'Por contactar', ok: (c) => noInicio(c) },
     semana: { nome: 'Próximos 7 dias', ok: (c, hoje) => !fechado(c) && c.voltar_em > hoje && c.voltar_em <= somarDias(7) },
     sem: { nome: 'Sem próximo passo', ok: (c) => !fechado(c) && !noInicio(c) && !c.voltar_em },
     // Beta users, the least active first: they are the ones to call.
     beta: { nome: 'Beta users', so: 'digitu', ok: (c) => c.estado === 'quer_ativar' },
+    // Repeats already in the data (from before the check existed): side by side, to archive or delete.
+    duplicados: { nome: 'Duplicados', ok: (c) => state.duplicados.has(c.id) },
     todos: { nome: 'Todos', ok: () => true },
     // Out of the way but kept: restore, or delete test contacts for good.
     arquivados: { nome: 'Arquivados', ok: () => true }
@@ -820,6 +850,7 @@ function abrirContacto(c, { modelo } = {}) {
         h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, c.vendedor_id ? `com ${c.vendedor}` : 'Lista comum'].filter(Boolean).join(' · ')),
         h('h2', {}, c.nome),
         c.morada && h('p', { class: 'foco-meta' }, c.morada),
+        meu && editarDados(c),
         c.lat == null && c.morada && h('button', { type: 'button', class: 'foco-link', onclick: async (e) => {
             e.target.disabled = true;
             try {
@@ -870,6 +901,8 @@ function abrirContacto(c, { modelo } = {}) {
     abrirSheet(
         ...cabecalho,
         contactarBotoes(c),
+        meu && h('button', { type: 'button', class: c.respondeu_em ? 'btn-secondary' : 'btn-primary', onclick: () => marcarResposta(c, !c.respondeu_em) },
+            c.respondeu_em ? `Respondeu ${haQuanto(c.respondeu_em)} ✓ — desmarcar` : 'Respondeu'),
         !c.vendedor_id && h('button', { type: 'button', class: 'btn-secondary', onclick: () => assumir(c) }, 'Ficar com este contacto'),
         !yl && bloco('1 · Perceber a dor',
             h('button', { type: 'button', class: 'btn-primary', onclick: () => abrirGuiao(c) }, 'Ligar com o guião'),
@@ -887,17 +920,60 @@ function abrirContacto(c, { modelo } = {}) {
             }) }, 'Guardar')
         ),
         bloco('Histórico', historico),
-        meu && h('div', { class: 'foco-acoes' },
-            h('button', { type: 'button', class: 'btn-secondary', onclick: () => arquivarUm(c, !c.arquivado) }, c.arquivado ? 'Desarquivar' : 'Arquivar'),
-            c.arquivado && h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => apagarUm(c) }, 'Apagar de vez')),
-        meu && h('button', { type: 'button', class: 'foco-link', onclick: () => moverLinha(c) },
-            yl ? `Passar para ${state.cfg.linhas.digitu.nome}` : `Passar para ${state.cfg.linhas.yourlab.nome}`),
-        state.me.papel === 'admin' && bloco('Quem trata', atribuir(c)),
-        meu && c.vendedor_id && c.estado === 'por_contactar' && h('button', { type: 'button', class: 'foco-link', onclick: () => largar(c) }, 'Devolver à lista comum'),
-        v && h('button', { type: 'button', class: 'foco-link', onclick: () => abrirSegmento(v) }, `Ver segmento · ${v.nome}`)
+        // Rarely needed, so folded away.
+        h('details', { class: 'foco-mais' }, h('summary', {}, 'Mais opções'),
+            meu && h('div', { class: 'foco-acoes' },
+                h('button', { type: 'button', class: 'btn-secondary', onclick: () => arquivarUm(c, !c.arquivado) }, c.arquivado ? 'Desarquivar' : 'Arquivar'),
+                c.arquivado && h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => apagarUm(c) }, 'Apagar de vez')),
+            meu && h('button', { type: 'button', class: 'foco-link', onclick: () => moverLinha(c) },
+                yl ? `Passar para ${state.cfg.linhas.digitu.nome}` : `Passar para ${state.cfg.linhas.yourlab.nome}`),
+            state.me.papel === 'admin' && bloco('Quem trata', atribuir(c)),
+            meu && c.vendedor_id && c.estado === 'por_contactar' && h('button', { type: 'button', class: 'foco-link', onclick: () => largar(c) }, 'Devolver à lista comum'),
+            v && h('button', { type: 'button', class: 'foco-link', onclick: () => abrirSegmento(v) }, `Ver segmento · ${v.nome}`))
     );
     if (modelo && mensagem) mensagem.scrollIntoView({ block: 'start' });
     return null;
+}
+
+// Save, refresh the list behind, reopen the contact with what the server now has.
+async function guardarDados(c, body, mensagem) {
+    try {
+        const { contacto } = await api(`/api/digitalizept/foco/contactos/${c.id}/dados`, { method: 'POST', body });
+        toast(mensagem);
+        await irPara(state.tab === 'mapa' ? 'mapa' : 'contactos');
+        abrirContacto(contacto);
+    } catch (err) { if (err.message !== 'unauthorized') toast(err.message, true); }
+}
+
+const marcarResposta = (c, respondeu) => guardarDados(c, { respondeu },
+    respondeu ? 'Respondeu — está em «Responderam» e nos de hoje.' : 'Resposta desmarcada.');
+
+// Contact details behind one small link; only what changed is sent.
+function editarDados(c) {
+    const o = c.origem || {};
+    const tipos = todosOsTipos().map((t) => [t.id, t.nome]);
+    const campos = {
+        nome: h('input', { class: 'field-input', value: c.nome || '' }),
+        telefone: h('input', { class: 'field-input', type: 'tel', inputmode: 'tel', value: c.telefone || '' }),
+        whatsapp: h('input', { class: 'field-input', type: 'tel', inputmode: 'tel', value: c.whatsapp || '', placeholder: 'Se for outro número' }),
+        email: h('input', { class: 'field-input', type: 'email', value: c.email || '' }),
+        instagram: h('input', { class: 'field-input', value: o.instagram || '', placeholder: '@utilizador' }),
+        cidade: h('input', { class: 'field-input', value: c.cidade || '' }),
+        morada: h('input', { class: 'field-input', value: c.morada || '' }),
+        tipo: h('select', { class: 'field-input' }, h('option', { value: 'generico', selected: c.tipo === 'generico' }, 'Sem tipo'),
+            tipos.filter(([id]) => id !== 'generico').map(([id, nome]) => h('option', { value: id, selected: c.tipo === id }, nome)))
+    };
+    const original = { nome: c.nome || '', telefone: c.telefone || '', whatsapp: c.whatsapp || '', email: c.email || '',
+        instagram: o.instagram || '', cidade: c.cidade || '', morada: c.morada || '', tipo: c.tipo };
+    const nomes = { nome: 'Nome', telefone: 'Telefone', whatsapp: 'WhatsApp', email: 'Email', instagram: 'Instagram', cidade: 'Cidade', morada: 'Morada', tipo: 'Tipo de negócio' };
+    return h('details', { class: 'foco-mais foco-editar' }, h('summary', {}, '✎ Editar dados'),
+        h('div', { class: 'foco-form' }, Object.entries(campos).map(([k, input]) => campo(nomes[k], input)),
+            h('button', { type: 'button', class: 'btn-primary', onclick: () => {
+                const body = Object.fromEntries(Object.entries(campos)
+                    .map(([k, input]) => [k, input.value.trim()]).filter(([k, v]) => v !== original[k]));
+                if (!Object.keys(body).length) return toast('Nada mudou.');
+                return guardarDados(c, body, 'Dados guardados.');
+            } }, 'Guardar dados')));
 }
 
 async function arquivarUm(c, arquivar) {
@@ -955,16 +1031,16 @@ async function largar(c) {
 function contactarBotoes(c) {
     const o = c.origem || {};
     const tel = c.telefone || c.whatsapp;
-    const wa = c.whatsapp || (waNumero(tel).startsWith('3519') ? tel : '');
+    const wa = numeroWhatsApp(c);
     const ig = instagramHandle(o.instagram);
     const links = [
         tel && ['Ligar', `tel:${String(tel).replace(/\s/g, '')}`],
-        wa && ['WhatsApp', `https://wa.me/${waNumero(wa)}`],
+        wa && ['WhatsApp', `https://wa.me/${wa}`],
         (ig || /^https?:\/\//i.test(o.instagram || '')) && ['Instagram (perfil)', ig ? instagramPerfil(ig) : o.instagram],
         o.facebook && ['Facebook', o.facebook],
         o.website && ['Site atual', o.website],
         o.maps && ['Maps', o.maps],
-        o.email && ['Email', `mailto:${o.email}`]
+        CANAIS_TAG.email.tem(c) && ['Email', `mailto:${c.email}`]
     ].filter(Boolean);
     if (!links.length) return null;
     return h('div', { class: 'foco-contactar' }, links.map(([nome, href]) => h('a', { href, target: '_blank', rel: 'noopener' }, nome)));
@@ -982,6 +1058,8 @@ const QUE = {
     ].filter(Boolean).join(' · '),
     foco_linha: (e) => `${e.de} → ${e.para}`,
     foco_arquivo: (e) => (e.arquivado ? 'Arquivado' : 'Desarquivado'),
+    foco_resposta: (e) => (e.respondeu ? 'Respondeu' : 'Resposta desmarcada'),
+    foco_dados: (e) => `Dados atualizados (${(e.campos || []).join(', ')})`,
     foco_voltar: (e) => (e.voltar_em ? `Próximo contacto: ${e.voltar_em}` : 'Data de próximo contacto removida'),
     foco_mensagem: (e) => `${state.cfg.canais[e.canal] || 'WhatsApp'} · ${e.modelo}${e.com_link ? ' · com link' : ''}${e.lote ? ' · em lote' : ''}`,
     foco_demo: () => 'Link da app criado',
@@ -1018,19 +1096,52 @@ function atribuir(c) {
 async function carregarContactos() {
     const q = state.todos ? '?todos=1' : '';
     state.contactos = (await api(`/api/digitalizept/foco/contactos${q}`)).contactos;
+    state.duplicados = acharDuplicados(state.contactos);
+}
+
+// Same rule as the server: shared phone (either field), Instagram, email, or name in the same city.
+function chaveTel(t) {
+    let d = String(t || '').replace(/[^\d+]/g, '');
+    if (d.startsWith('+')) d = d.slice(1); else if (d.startsWith('00')) d = d.slice(2);
+    d = d.replace(/\D/g, '');
+    return d.length === 9 ? `351${d}` : d;
+}
+const normal = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function chavesDe(c) {
+    const k = new Set();
+    [c.telefone, c.whatsapp].forEach((t) => { const x = chaveTel(t); if (x.length >= 9) k.add(`t:${x}`); });
+    const ig = instagramHandle((c.origem || {}).instagram);
+    if (ig) k.add(`i:${ig}`);
+    if (CANAIS_TAG.email.tem(c)) k.add(`e:${String(c.email).trim().toLowerCase()}`);
+    if (normal(c.nome)) k.add(`n:${normal(c.nome)}|${normal(c.cidade)}`);
+    return [...k];
+}
+/** id → the key it shares with another live contact (so a group sorts together). */
+function acharDuplicados(contactos) {
+    const porChave = new Map();
+    contactos.filter((c) => !c.arquivado).forEach((c) => chavesDe(c).forEach((k) => porChave.set(k, [...(porChave.get(k) || []), c.id])));
+    const grupo = new Map();
+    porChave.forEach((ids, k) => { if (ids.length > 1) ids.forEach((id) => { if (!grupo.has(id)) grupo.set(id, k); }); });
+    return grupo;
 }
 
 function filtrados() {
     const { texto: t, estado, segmento, dono, vista, tipo } = state.filtro;
     const alvo = t.trim().toLowerCase();
+    // «+351 912 345 678» pasted from WhatsApp finds «912345678»: compare the last 9 digits.
+    const digitosQ = t.replace(/\D/g, '').slice(-9);
     const hoje = somarDias(0);
     const v = VISTAS[vista] || VISTAS.todos;
     const donoOk = (c) => !dono || (dono === 'comum' ? !c.vendedor_id : dono === 'meus' ? c.vendedor_id === state.me.id : c.vendedor_id === dono);
-    const lista = state.contactos.filter((c) => daLinha(c, state.filtro.linha) && naVista(c, vista) && v.ok(c, hoje) && donoOk(c) && (!estado || c.estado === estado)
+    const lista = state.contactos.filter((c) => daLinha(c, state.filtro.linha) && naVista(c, vista) && v.ok(c, hoje) && donoOk(c)
+        && state.filtro.canais.every((k) => CANAIS_TAG[k].tem(c)) && (!estado || c.estado === estado)
         && (!segmento || ((segmentoDoTipo(c.tipo) || {}).id || 'outros') === segmento)
         && (!tipo || c.tipo === tipo)
-        && (!alvo || `${c.nome} ${c.cidade} ${c.morada} ${c.telefone}`.toLowerCase().includes(alvo)));
+        && (!alvo || `${c.nome} ${c.cidade} ${c.morada} ${c.telefone}`.toLowerCase().includes(alvo)
+            || (digitosQ.length >= 4 && [c.telefone, c.whatsapp].some((x) => String(x || '').replace(/\D/g, '').includes(digitosQ)))));
     if (vista === 'beta') return lista.sort((a, b) => (ultimoUso(a) < ultimoUso(b) ? -1 : 1));
+    if (vista === 'respostas') return lista.sort((a, b) => (a.respondeu_em < b.respondeu_em ? 1 : -1));
+    if (vista === 'duplicados') return lista.sort((a, b) => (state.duplicados.get(a.id) < state.duplicados.get(b.id) ? -1 : 1));
     return vista === 'hoje' || vista === 'semana' ? lista.sort((a, b) => (a.voltar_em < b.voltar_em ? -1 : 1)) : lista;
 }
 
@@ -1055,9 +1166,18 @@ function barraVistas(aoMudar) {
         }, l.nome, h('b', {}, state.contactos.filter((c) => daLinha(c, id) && !c.arquivado).length)))),
         h('div', { class: 'foco-vistas' }, Object.entries(VISTAS).filter(([, v]) => !v.so || v.so === f.linha).map(([id, v]) => {
             const n = id === 'arquivados' ? arquivados : conta(v.ok);
+            if (!n && f.vista !== id && id !== 'todos') return null; // empty views stay out of the way
             return h('button', { type: 'button', class: `foco-vista${f.vista === id ? ' active' : ''}${id !== 'todos' && id !== 'semana' && n ? ' foco-vista-alerta' : ''}`,
                 onclick: () => { f.vista = id; aoMudar(); } }, v.nome, h('b', {}, n));
         })),
+        // Channels: tick several = contacts that have all of them (WhatsApp alone = everyone with WhatsApp).
+        h('div', { class: 'foco-vistas foco-canais' }, h('span', { class: 'foco-meta' }, 'Canais'),
+            Object.entries(CANAIS_TAG).map(([id, t]) => {
+                const on = f.canais.includes(id);
+                return h('button', { type: 'button', class: `foco-vista${on ? ' active' : ''}`,
+                    onclick: () => { f.canais = on ? f.canais.filter((x) => x !== id) : [...f.canais, id]; aoMudar(); } },
+                on ? `✓ ${t.nome}` : t.nome, h('b', {}, conta((c) => t.tem(c))));
+            })),
         h('div', { class: 'foco-pipeline' }, Object.entries(state.cfg.linhas[f.linha].estados).map(([id, nome]) => h('button', {
             type: 'button', class: `foco-etapa${f.estado === id ? ' active' : ''}`, style: `--cor:${COR[id] || '#888'}`,
             onclick: () => { f.estado = f.estado === id ? '' : id; aoMudar(); }
@@ -1144,6 +1264,7 @@ function cartaoContacto(c, hoje, aoMudar) {
                 onchange: (e) => { if (e.target.checked) state.sel.add(c.id); else state.sel.delete(c.id); aoMudar(); } }),
             h('strong', {}, c.nome),
             c.arquivado && h('span', { class: 'foco-chip' }, 'Arquivado'),
+            c.respondeu_em && !fechado(c) && h('span', { class: 'foco-chip foco-chip-respondeu' }, 'Respondeu'),
             c.instagram && h('span', { class: 'foco-chip foco-chip-ig' }, 'IG ✓'),
             naFila(c.id) && h('span', { class: 'foco-chip foco-chip-hoje' }, filaAtual.feitos.includes(c.id) ? 'Hoje ✓' : 'Hoje'),
             h('span', { class: `foco-chip foco-chip-${c.estado}` }, state.cfg.estados[c.estado] || c.estado)
@@ -1153,6 +1274,10 @@ function cartaoContacto(c, hoje, aoMudar) {
             const pp = proximoPasso(c, hoje);
             return h('p', { class: 'foco-meta' }, ...nos([pp && h('span', { class: `foco-pp ${pp.cls}` }, pp.txt),
                 c.atualizado_em && `${pp ? ' · ' : ''}última atividade ${haQuanto(c.atualizado_em)}`]));
+        })(),
+        (() => {
+            const tags = Object.entries(CANAIS_TAG).filter(([, t]) => t.tem(c));
+            return tags.length > 0 && h('div', { class: 'foco-tags' }, tags.map(([id, t]) => h('span', { class: `foco-tag foco-tag-${id}` }, t.nome)));
         })(),
         c.linha === 'yourlab'
             ? (c.projeto || c.valor_centimos > 0) && h('p', { class: 'foco-meta' },
@@ -1171,7 +1296,12 @@ function barraSelecao(itens, aoMudar) {
         h('input', { type: 'checkbox', checked: itens.length > 0 && ids.length === itens.length,
             onchange: (e) => { itens.forEach((c) => (e.target.checked ? state.sel.add(c.id) : state.sel.delete(c.id))); aoMudar(); } }),
         ` Selecionar os ${itens.length} da lista`);
-    if (!ids.length) return h('div', { class: 'foco-massa' }, marcar);
+    if (!ids.length) {
+        const validos = itens.filter(temWhatsApp).length;
+        return h('div', { class: 'foco-massa' }, marcar,
+            state.filtro.vista === 'novos' && state.filtro.linha === 'digitu' && validos > 0
+                && h('button', { type: 'button', class: 'btn-primary', onclick: () => abrirEnvioLote(itens) }, `Primeiro contacto: WhatsApp aos ${validos}`));
+    }
 
     const fazer = async (pergunta, chamada, mensagem) => {
         if (!window.confirm(pergunta)) { aoMudar(); return; }
@@ -1189,7 +1319,7 @@ function barraSelecao(itens, aoMudar) {
         const t = e.target.value;
         if (t) fazer(`Mudar ${n} contactos para «${nomeTipo(t)}»?`, () => lote({ acao: 'tipo', tipo: t }), (r) => `${r.n} contactos: ${nomeTipo(t)}.`);
     } }, h('option', { value: '' }, 'Mudar tipo para…'), h('option', { value: 'generico' }, 'Sem tipo'),
-        tiposTodos().map((t) => h('option', { value: t.id }, t.nome)));
+        todosOsTipos().filter((t) => t.id !== 'generico').map((t) => h('option', { value: t.id }, t.nome)));
     const dono = state.me.papel === 'admin' && h('select', { class: 'field-input', onchange: (e) => {
         const v = e.target.value;
         if (v === '-') return;
@@ -1224,7 +1354,10 @@ function barraSelecao(itens, aoMudar) {
         state.sel = new Set();
         aoMudar();
         abrirEnvioLote(escolhidos);
-    } }, `WhatsApp (${n})`);
+    } }, (() => {
+        const validos = itens.filter((c) => state.sel.has(c.id) && temWhatsApp(c)).length;
+        return `WhatsApp (${validos}${validos !== n ? ` de ${n}` : ''})`;
+    })());
     const trabalhar = h('button', { type: 'button', class: 'btn-primary', onclick: () => {
         definirFila({ ids, feitos: [] });
         state.sel = new Set();
@@ -1260,7 +1393,7 @@ function lerLinhas(texto) {
 function abrirAdicionar() {
     const area = h('textarea', { class: 'field-input', rows: 6, placeholder: 'Barbearia do Zé, 912345678, Braga\nSalão Ana; 223456789; Porto' });
     const tipo = h('select', { class: 'field-input' }, h('option', { value: '' }, 'Sem tipo (adivinhar pelo nome)'),
-        tiposTodos().filter((t) => t.id !== 'generico').map((t) => h('option', { value: t.id }, t.nome)));
+        todosOsTipos().filter((t) => t.id !== 'generico').map((t) => h('option', { value: t.id }, t.nome)));
     const linha = h('select', { class: 'field-input' },
         Object.entries(state.cfg.linhas).map(([id, l]) => h('option', { value: id, selected: id === state.filtro.linha }, l.nome)));
     const botao = h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
@@ -1270,9 +1403,13 @@ function abrirAdicionar() {
         try {
             const r = await api('/api/digitalizept/foco/importar', { method: 'POST', body: { rows, soFoco: false, linha: linha.value, vendedor_id: state.me.id } });
             state.filtro.linha = linha.value;
-            fecharSheet();
-            toast([`${r.novos} novos`, r.ja_existiam && `${r.ja_existiam} já existiam`, r.entraram_na_lista && `${r.entraram_na_lista} voltaram à lista`].filter(Boolean).join(' · ') + '.');
-            irPara('contactos');
+            const resumo = [`${r.novos} novos`, r.ja_existiam && `${r.ja_existiam} já existiam`, r.entraram_na_lista && `${r.entraram_na_lista} voltaram à lista`].filter(Boolean).join(' · ') + '.';
+            await irPara('contactos');
+            if (r.repetidos && r.repetidos.length) {
+                abrirSheet(h('h2', {}, 'Adicionados'), h('p', {}, resumo),
+                    bloco('Não duplicados — já existiam', h('ul', {}, r.repetidos.map((t) => h('li', {}, t)))),
+                    h('button', { type: 'button', class: 'btn-primary', onclick: fecharSheet }, 'OK'));
+            } else { fecharSheet(); toast(resumo); }
         } catch (err) {
             if (err.message !== 'unauthorized') toast(err.message, true);
             botao.disabled = false;
@@ -1288,7 +1425,10 @@ async function renderContactos() {
     await carregarContactos();
     state.sel = new Set();
     const hoje = somarDias(0);
-    if (!state.filtro.vista) state.filtro.vista = state.contactos.some((c) => daLinha(c, state.filtro.linha) && !c.arquivado && VISTAS.hoje.ok(c, hoje)) ? 'hoje' : 'todos';
+    if (!state.filtro.vista) {
+        const tem = (id) => state.contactos.some((c) => daLinha(c, state.filtro.linha) && !c.arquivado && VISTAS[id].ok(c, hoje));
+        state.filtro.vista = ['respostas', 'hoje', 'novos'].find(tem) || 'todos';
+    }
     const listaEl = h('div', { class: 'foco-lista' });
     const barraEl = h('div');
     const vistasEl = h('div');

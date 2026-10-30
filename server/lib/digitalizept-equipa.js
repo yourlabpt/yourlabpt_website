@@ -81,7 +81,9 @@ function instalar(db, addMissingColumns) {
         foco_uso_json: "TEXT NOT NULL DEFAULT ''",
         // Archived: out of the lists, counts and map, but kept — history stays, and a re-import
         // still recognises it instead of bringing it back as new.
-        foco_arquivado: "INTEGER NOT NULL DEFAULT 0"
+        foco_arquivado: "INTEGER NOT NULL DEFAULT 0",
+        // When they answered after a first contact — the ones that came back go to the top.
+        foco_respondeu_em: "TEXT NOT NULL DEFAULT ''"
     });
     // Message templates, shared by the team (see foco.js for placeholders).
     db.exec(`CREATE TABLE IF NOT EXISTS foco_mensagem (

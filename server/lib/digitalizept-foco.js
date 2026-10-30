@@ -275,7 +275,58 @@ function tipoDoCrawler(row, tiposConhecidos) {
     return alias ? alias[1] : (partes[0] || 'generico');
 }
 
-const digitos = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+// One key per real number: «+351 912…», «00351 912…» and «912…» match; a +55 number never matches a Portuguese one.
+function chaveTelefone(t) {
+    let d = String(t || '').replace(/[^\d+]/g, '');
+    if (d.startsWith('+')) d = d.slice(1);
+    else if (d.startsWith('00')) d = d.slice(2);
+    d = d.replace(/\D/g, '');
+    return d.length === 9 ? `351${d}` : d;
+}
+
+// ---------- never the same business twice ----------
+// A contact is the same business if it shares ANY of: a phone (phone or WhatsApp field, any format),
+// an Instagram handle, an email, or the same name in the same city (accents, case and punctuation ignored).
+const normalizar = (t) => semAcentos(t).replace(/[^a-z0-9]+/g, ' ').trim();
+function handleInstagram(valor) {
+    const t = String(valor || '').trim();
+    const url = t.match(/instagram\.com\/(?:stories\/)?([^/?#\s]+)/i);
+    const h = (url ? url[1] : t).replace(/^@/, '');
+    return /^[a-z0-9._]{1,30}$/i.test(h) && !/^(p|reel|reels|tv|explore|stories|accounts|direct)$/i.test(h) ? h.toLowerCase() : '';
+}
+function chavesContacto({ nome, cidade, telefone, whatsapp, instagram, email }) {
+    const k = new Set();
+    [telefone, whatsapp].forEach((t) => { const c = chaveTelefone(t); if (c.length >= 9) k.add(`t:${c}`); });
+    const ig = handleInstagram(instagram);
+    if (ig) k.add(`i:${ig}`);
+    const em = String(email || '').trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) k.add(`e:${em}`);
+    const n = normalizar(nome);
+    if (n) k.add(`n:${n}|${normalizar(cidade)}`);
+    return [...k];
+}
+const dadosDoLead = (l) => {
+    const o = (() => { try { return JSON.parse(l.foco_origem_json || '{}'); } catch (_) { return {}; } })();
+    return { nome: l.nome, cidade: l.cidade, telefone: l.telefone, whatsapp: l.whatsapp, instagram: o.instagram, email: o.email };
+};
+/** Every lead (Foco or not, archived too) by each of its keys. */
+function indiceContactos(db) {
+    const indice = new Map();
+    db.prepare('SELECT id, nome, cidade, telefone, whatsapp, foco_origem_json, foco_estado FROM lead').all().forEach((l) => {
+        // One object per lead, shared by all its keys, so a change (e.g. it joins the list) holds for every key.
+        registarNoIndice(indice, { id: l.id, nome: l.nome, foco_estado: l.foco_estado }, dadosDoLead(l));
+    });
+    return indice;
+}
+/** The existing lead these details belong to (ignoring `ignorarId`, the one being edited), or null. */
+function duplicadoDe(indice, dados, ignorarId = '') {
+    for (const k of chavesContacto(dados)) {
+        const l = indice.get(k);
+        if (l && l.id !== ignorarId) return { ...l, por: { t: 'telefone', i: 'Instagram', e: 'email', n: 'nome e cidade' }[k[0]] };
+    }
+    return null;
+}
+const registarNoIndice = (indice, lead, dados) => chavesContacto(dados).forEach((k) => { if (!indice.has(k)) indice.set(k, lead); });
 
 /**
  * Crawler JSON (`node linkgen.js export --json`) → leads "por contactar".
@@ -289,9 +340,8 @@ function importar(db, rows, { vendedorId, soFoco = true, linha = 'digitu', parse
     const { verticais } = carregar();
     const conhecidos = new Set(verticais.flatMap((v) => v.tipos || []));
     const doFoco = new Set(verticais.filter((v) => v.foco).flatMap((v) => v.tipos || []));
-    const r = { novos: 0, ja_existiam: 0, entraram_na_lista: 0, fora_do_foco: 0, invalidos: 0 };
-    const porTelefone = db.prepare("SELECT id, foco_estado FROM lead WHERE substr(replace(replace(replace(telefone, ' ', ''), '+', ''), '-', ''), -9) = ? AND telefone != ''");
-    const porNome = db.prepare('SELECT id, foco_estado FROM lead WHERE lower(nome) = lower(?) AND lower(cidade) = lower(?)');
+    const r = { novos: 0, ja_existiam: 0, entraram_na_lista: 0, fora_do_foco: 0, invalidos: 0, repetidos: [] };
+    const indice = indiceContactos(db);
     const inserir = db.prepare(`INSERT INTO lead (id, business_type, nome, morada, cidade, telefone, whatsapp, estado, foco_estado,
         foco_origem_json, lat, lng, geocode_status, vendedor_id, foco_linha, criado_em)
         VALUES (@id, @tipo, @nome, @morada, @cidade, @telefone, @whatsapp, 'novo', @inicial, @origem, @lat, @lng, @geo, @vendedorId, @linha, @agora)`);
@@ -311,18 +361,27 @@ function importar(db, rows, { vendedorId, soFoco = true, linha = 'digitu', parse
             const lng = maps && maps.ok ? maps.lng : null;
             const origem = JSON.stringify(Object.fromEntries(['maps', 'website', 'instagram', 'facebook', 'email', 'rating', 'fonte', 'tipo', 'foundAt']
                 .filter((k) => row[k] != null && row[k] !== '').map((k) => [k, String(row[k]).slice(0, 600)])));
-            const existe = (digitos(telefone).length === 9 && porTelefone.get(digitos(telefone))) || porNome.get(nome, cidade);
+            const dados = { nome, cidade, telefone, whatsapp: row.whatsapp, instagram: row.instagram, email: row.email };
+            const existe = duplicadoDe(indice, dados);
             if (existe) {
-                if (existe.foco_estado) { r.ja_existiam += 1; return; }
+                if (existe.foco_estado) {
+                    r.ja_existiam += 1;
+                    if (r.repetidos.length < 30) r.repetidos.push(`${nome} = ${existe.nome || '(sem nome)'} (mesmo ${existe.por})`);
+                    return;
+                }
                 juntar.run(origem, lat, lng, existe.id);
+                existe.foco_estado = inicial;
                 r.entraram_na_lista += 1;
                 return;
             }
+            const id = uuid();
             inserir.run({
-                id: uuid(), tipo, nome, morada: String(row.morada || '').slice(0, 300), cidade, telefone,
+                id, tipo, nome, morada: String(row.morada || '').slice(0, 300), cidade, telefone,
                 whatsapp: whatsappIfMobile(telefone), origem, lat, lng, geo: lat != null ? 'maps' : '',
                 vendedorId: vendedorId || '', inicial, linha: L, agora: nowIso()
             });
+            // A repeat further down this same file is caught too.
+            registarNoIndice(indice, { id, nome, foco_estado: inicial }, dados);
             r.novos += 1;
         });
     })();
@@ -495,4 +554,4 @@ async function sincronizarUso(db, { vendedor, log, nowIso }) {
     return r;
 }
 
-module.exports = { arquivarLote, LINHAS, PROJETOS, ESTADOS_TODOS, linhaDe, mudarLinha, sincronizarUso, seguimentoLote, licoes, lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };
+module.exports = { chavesContacto, indiceContactos, duplicadoDe, chaveTelefone, arquivarLote, LINHAS, PROJETOS, ESTADOS_TODOS, linhaDe, mudarLinha, sincronizarUso, seguimentoLote, licoes, lerCsv, tiposConhecidos, apagarLead, contactosMeus, mudarTipo, apagarLote, carregar, segmentoDoTipo, criarDemo, resumo, importar, tipoDoCrawler, marca, guardarMarca, ESTADOS, CANAIS, DORES, VERTICAIS_FILE, DMN_BASE_URL };

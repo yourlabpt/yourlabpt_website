@@ -209,3 +209,16 @@
 .foco-lote-item.enviado { opacity: 0.6; border-color: rgba(74, 222, 128, 0.4); }
 .foco-lote-item a { text-align: center; text-decoration: none; padding: 12px; border-radius: 10px; }
 .foco-mensagem, .foco-pre { white-space: pre-wrap; tab-size: 4; }
+
+/* Channel tags */
+.foco-canais { align-items: center; }
+.foco-canais > .foco-meta { flex: none; margin: 0 2px 0 0; }
+.foco-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.foco-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; background: #2a2a2a; color: #a9a8a3; }
+.foco-tag-whatsapp { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+.foco-tag-instagram { color: #f58aaf; background: rgba(225, 48, 108, 0.14); }
+.foco-tag-email { color: #93c5fd; background: rgba(96, 165, 250, 0.14); }
+
+/* Replies + inline edit */
+.foco-chip-respondeu { background: rgba(74, 222, 128, 0.18); color: #4ade80; }
+.foco-editar > summary { color: #e8d5b7; }
