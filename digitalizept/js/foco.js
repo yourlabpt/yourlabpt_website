@@ -378,18 +378,15 @@ function seletorMensagem(aoMudar) {
         escolha.value = preferido;
         fonte.value = modelo().texto;
     };
-    const editor = h('details', {}, h('summary', {}, 'Alterar mensagem padrão'),
-        campo('Modelo para os próximos contactos (use {nome}, {cidade} ou {link})', fonte),
-        h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
+    const padrao = h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
             if (!fonte.value.trim()) return toast('Escreva a mensagem antes de guardar.', true);
             try { localStorage.setItem(chave, fonte.value); }
             catch { return toast('Não foi possível guardar o padrão neste navegador.', true); }
             lista = [{ id, nome: 'O meu padrão', texto: fonte.value }, ...lista.filter((m) => m.id !== id)];
             opcoes(id);
-            editor.open = false;
             aoMudar();
             toast('Padrão guardado para este canal, neste navegador.');
-        } }, 'Usar agora e no próximo envio'));
+        } }, 'Usar esta mensagem como padrão');
     escolha.addEventListener('change', () => { fonte.value = modelo().texto; aoMudar(); });
     function carregar(modelos, canal, linha, inicial) {
         chave = `foco:padrao:${state.me.id}:${linha}:${canal}`;
@@ -399,43 +396,87 @@ function seletorMensagem(aoMudar) {
         lista = texto ? [{ id, nome: 'O meu padrão', texto }, ...modelos] : modelos;
         opcoes((lista.find((m) => m.id === inicial) || lista.find((m) => m.id === id)
             || modelos.find((m) => m.canal === canal) || modelos[0]).id);
-        editor.open = false;
     }
-    return { campos: [campo('Modelo', escolha), editor], modelo, carregar };
+    return { escolha, fonte, padrao, modelo, carregar };
 }
 
 function configuradorMensagem(c, modeloInicial = '') {
     const canais = canaisDoContacto(c);
     const ids = [...new Set(canais.map((x) => x.id))];
-    let canal = ids[0] || 'whatsapp';
+    if (!ids.length) return [h('p', { class: 'foco-meta' }, 'Sem canal de mensagem. Adicione um em «Editar dados».')];
+    let canal = ids[0];
     state.linha = state.cfg.marca.linhas[principioSugerido(c)] || '';
 
-    const seletor = seletorMensagem(() => preencherCaixa());
+    const seletor = seletorMensagem(() => atualizar());
     const principio = h('select', { class: 'field-input' },
         state.cfg.marca.linhas.map((t, i) => h('option', { value: i, selected: i === principioSugerido(c) }, t.split('—')[0].trim())));
-    const caixa = h('textarea', { class: 'field-input foco-mensagem', rows: 7 });
+    const caixa = seletor.fonte;
+    const previa = h('p', { class: 'foco-pre' });
     const aviso = h('p', { class: 'foco-meta' });
     const acoes = h('div', { class: 'foco-acoes' });
     const modelo = seletor.modelo;
+    const frio = noInicio(c) && !c.respondeu_em && !c.arquivado;
+    const confirmacao = h('div', { class: 'foco-confirmacao', hidden: true });
+    let aGuardar = false;
+    const registar = async (body) => {
+        const { contacto } = await api(`/api/digitalizept/foco/contactos/${c.id}/mensagem`, { method: 'POST', body });
+        Object.assign(c, contacto);
+    };
+    const dados = (texto) => ({ modelo: modelo().nome, texto, canal, principio: state.cfg.marca.linhas[principio.value] || '' });
+    const erro = (err) => { if (err.message !== 'unauthorized') toast(err.message, true); };
 
-    const registar = () => api(`/api/digitalizept/foco/contactos/${c.id}/mensagem`, {
-        method: 'POST',
-        body: { modelo: modelo().nome, texto: caixa.value, canal, principio: state.cfg.marca.linhas[principio.value] || '' }
-    }).then(({ contacto }) => Object.assign(c, contacto)).catch(() => {});
+    function pedirConfirmacao(body, nomeCanal) {
+        body.confirmacao = crypto.randomUUID();
+        const proximo = naFila(c.id) && proximoDaFila(c.id);
+        const rotulo = proximo ? 'Enviado · próximo contacto' : 'Enviado · fechar';
+        const cancelar = h('button', { type: 'button', class: 'foco-link', onclick: () => { confirmacao.hidden = true; } }, 'Não enviei');
+        const confirmar = h('button', { type: 'button', class: 'btn-primary', onclick: async () => {
+            if (aGuardar) return;
+            aGuardar = confirmar.disabled = cancelar.disabled = true;
+            confirmar.textContent = 'A guardar…';
+            try { await registar(body); }
+            catch (err) {
+                aGuardar = confirmar.disabled = cancelar.disabled = false;
+                confirmar.textContent = rotulo;
+                erro(err);
+                return;
+            }
+            marcarFeito(c.id);
+            if (!confirmacao.isConnected || $('foco-sheet').classList.contains('hidden')) return;
+            toast('Envio registado.');
+            const seguinte = naFila(c.id) && proximoDaFila(c.id);
+            if (seguinte) abrirContacto(seguinte);
+            else fecharSheet();
+            irPara(state.tab === 'mapa' ? 'mapa' : 'contactos');
+        } }, rotulo);
+        confirmacao.replaceChildren(h('strong', {}, `Enviou por ${nomeCanal}?`), confirmar, cancelar);
+        confirmacao.hidden = false;
+    }
 
-    function pintarAcoes() {
+    function copiar(mensagem) {
+        if (!navigator.clipboard) return Promise.reject(new Error('Não foi possível copiar. Use a pré-visualização para copiar o texto.'));
+        return navigator.clipboard.writeText(mensagem);
+    }
+
+    function pintarAcoes(mensagem) {
         const m = state.cfg.marca;
         acoes.replaceChildren(...nos([
-            canais.filter((x) => x.id === canal).map((x) => (x.prefill
-                ? h('a', { class: x.web ? 'btn-secondary' : 'btn-primary', target: '_blank', rel: 'noopener', href: x.url(caixa.value), onclick: registar }, x.nome)
-                // No pre-filled text on Instagram/Messenger: a real link tap that copies as it opens.
-                // Nothing awaited first — Safari blocks windows opened later, and only a tap hands off to the app.
-                : h('a', { class: 'btn-primary', target: '_blank', rel: 'noopener', href: x.url(caixa.value), onclick: () => {
-                    navigator.clipboard.writeText(caixa.value).catch(() => {});
-                    registar();
-                    toast('Mensagem copiada — cole na conversa.');
-                } }, `${x.nome} (copia e abre)`))),
-            h('button', { type: 'button', class: 'btn-secondary', onclick: () => navigator.clipboard.writeText(caixa.value).then(() => { registar(); toast('Mensagem copiada.'); }) }, 'Copiar')
+            canais.filter((x) => x.id === canal).map((x) => h('a', {
+                class: x.web ? 'btn-secondary' : 'btn-primary', target: '_blank', rel: 'noopener', href: x.url(mensagem),
+                onclick: (e) => {
+                    if (aGuardar) return e.preventDefault();
+                    if (!x.prefill) copiar(mensagem).then(() => toast('Mensagem copiada — cole na conversa.')).catch(erro);
+                    if (frio) pedirConfirmacao(dados(mensagem), x.nome);
+                    else registar(dados(mensagem)).catch(erro);
+                }
+            }, `Abrir ${x.nome}`)),
+            h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
+                const body = dados(mensagem);
+                copiar(mensagem).then(() => {
+                    toast('Mensagem copiada.');
+                    if (!frio) return registar(body);
+                }).catch(erro);
+            } }, 'Copiar')
         ]));
         aviso.textContent = canal === 'whatsapp'
             ? (m.numero ? `Sai do número ligado: no telemóvel é o seu; no WhatsApp Web use a sessão da ${m.nome} (${m.numero}).`
@@ -451,34 +492,47 @@ function configuradorMensagem(c, modeloInicial = '') {
         seletor.carregar(modelosPara(c, canal), canal, c.linha || 'digitu', modeloInicial);
     }
 
-    const preencherCaixa = async () => {
+    let aPrepararLink = false;
+    async function atualizar() {
+        if (!aGuardar) confirmacao.hidden = true;
         state.linha = state.cfg.marca.linhas[principio.value] || '';
-        if (modelo() && modelo().texto.includes('{link}') && !c.dmn_link) {
-            caixa.value = 'A preparar o link da app com o nome do negócio…';
+        const mensagem = preencher(caixa.value, c);
+        previa.textContent = mensagem;
+        if (caixa.value.includes('{link}') && !c.dmn_link) {
+            acoes.replaceChildren(h('span', { class: 'foco-meta' }, 'A preparar o link…'));
+            if (aPrepararLink) return;
+            aPrepararLink = true;
             try {
                 Object.assign(c, (await api(`/api/digitalizept/foco/contactos/${c.id}/demo`, { method: 'POST' })).contacto);
+                if (!c.dmn_link) throw new Error('O contacto ainda não tem link.');
             } catch (err) {
                 if (err.message !== 'unauthorized') toast(err.message, true);
+                if (caixa.value.includes('{link}')) acoes.replaceChildren(h('button', { type: 'button', class: 'btn-secondary', onclick: atualizar }, 'Tentar preparar o link novamente'));
+                return;
+            } finally {
+                aPrepararLink = false;
             }
+            return atualizar();
         }
-        caixa.value = preencher((modelo() || {}).texto || '', c);
-        pintarAcoes();
-    };
+        if (mensagem.trim()) pintarAcoes(mensagem);
+        else acoes.replaceChildren();
+    }
 
     const canalChips = escolhaChips(
         Object.fromEntries(ids.map((id) => [id, (canais.find((x) => x.id === id) || {}).nome])), canal,
-        (id) => { canal = id; pintarModelos(); preencherCaixa(); }
+        (id) => { canal = id; pintarModelos(); atualizar(); }
     );
-    principio.addEventListener('change', preencherCaixa);
-    caixa.addEventListener('input', pintarAcoes);
+    principio.addEventListener('change', atualizar);
+    caixa.addEventListener('input', atualizar);
     pintarModelos();
-    preencherCaixa();
+    atualizar();
 
     return [
-        ids.length ? campo('Por onde', canalChips.el) : h('p', { class: 'foco-meta' }, 'Sem WhatsApp, Instagram, Facebook nem email guardados neste contacto.'),
-        campo('Princípio (o que lhe falta mais)', principio),
-        ...seletor.campos, campo('Mensagem só para este contacto', caixa), aviso, acoes,
-        h('button', { type: 'button', class: 'foco-link', onclick: () => { fecharSheet(); irPara('mensagens'); } }, 'Criar ou editar modelos')
+        ids.length > 1 && canalChips.el,
+        campo('Mensagem · {nome} muda em cada contacto', caixa), seletor.padrao, acoes, confirmacao,
+        h('details', { class: 'foco-mais' }, h('summary', {}, 'Pré-visualizar ou mudar de modelo'),
+            h('div', { class: 'foco-form' }, previa, campo('Modelo', seletor.escolha), campo('Princípio', principio), aviso,
+                h('button', { type: 'button', class: 'foco-link', onclick: () => { fecharSheet(); irPara('mensagens'); } }, 'Gerir modelos')))
     ];
 }
 
@@ -575,7 +629,9 @@ function abrirEnvioLote(contactos) {
     abrirSheet(
         h('h2', {}, `WhatsApp para ${comNumero.length} contacto${comNumero.length === 1 ? '' : 's'}`),
         h('p', { class: 'foco-meta' }, 'Um toque por contacto abre o WhatsApp com a mensagem pronta — só carregar em enviar. A formatação (linhas, espaços) vai tal como está no modelo.'),
-        ...seletor.campos,
+        campo('Modelo', seletor.escolha),
+        h('details', { class: 'foco-mais' }, h('summary', {}, 'Alterar mensagem padrão'),
+            campo('Mensagem do lote · {nome} muda em cada contacto', seletor.fonte), seletor.padrao),
         campo('Depois de enviar, próximo contacto', depois),
         h('label', { class: 'foco-toggle' }, web, ' Abrir no WhatsApp Web (computador)'),
         progresso, listaEl,
@@ -875,12 +931,15 @@ function abrirGuiao(c) {
 function abrirContacto(c, { modelo } = {}) {
     const v = segmentoDoTipo(c.tipo);
     const meu = c.vendedor_id === state.me.id || state.me.papel === 'admin';
+    const yl = c.linha === 'yourlab';
     const historico = h('div', { class: 'foco-historico' }, h('p', { class: 'foco-meta' }, 'A carregar…'));
     carregarHistorico(c.id, historico);
     const cabecalho = [
         filaCabecalho(c),
-        h('p', { class: 'foco-meta' }, [nomeTipo(c.tipo), c.cidade, c.vendedor_id ? `com ${c.vendedor}` : 'Lista comum'].filter(Boolean).join(' · ')),
         h('h2', {}, c.nome),
+        h('p', { class: 'foco-meta' }, [state.cfg.estados[c.estado], nomeTipo(c.tipo), c.cidade, c.vendedor_id ? `com ${c.vendedor}` : 'Lista comum'].filter(Boolean).join(' · '))
+    ];
+    const dadosContacto = [
         c.morada && h('p', { class: 'foco-meta' }, c.morada),
         meu && editarDados(c),
         c.lat == null && c.morada && h('button', { type: 'button', class: 'foco-link', onclick: async (e) => {
@@ -895,13 +954,12 @@ function abrirContacto(c, { modelo } = {}) {
     ];
 
     if (!c.vendedor_id && state.me.papel !== 'admin') {
-        return abrirSheet(...cabecalho,
+        return abrirSheet(...cabecalho, ...dadosContacto,
             h('p', {}, 'Está na lista comum. Fique com ele para ligar ou enviar mensagem — a partir daí só você o vê.'),
             h('button', { type: 'button', class: 'btn-primary', onclick: () => assumir(c) }, 'Ficar com este contacto'),
             bloco('Histórico', historico));
     }
 
-    const yl = c.linha === 'yourlab';
     let estado = c.estado;
     const botoes = escolhaChips(linhaDo(c).estados, estado, (id) => {
         estado = id;
@@ -929,19 +987,18 @@ function abrirContacto(c, { modelo } = {}) {
     const licao = h('textarea', { class: 'field-input', rows: 2, placeholder: 'Lição aprendida — o que funcionou, o que travou, o que mudar (opcional)' });
     const canal = h('select', { class: 'field-input' }, h('option', { value: '' }, '—'),
         Object.entries(state.cfg.canais).map(([id, nome]) => h('option', { value: id }, nome)));
-    const mensagem = !yl && bloco('2 · Mensagem', ...configuradorMensagem(c, modelo));
+    const mensagem = !yl && bloco('Contactar', ...configuradorMensagem(c, modelo));
+    if (mensagem) mensagem.classList.add('foco-compositor');
+    const seguimento = yl ? bloco : (titulo, ...conteudo) => h('details', { class: 'foco-mais' },
+        h('summary', {}, titulo), h('div', { class: 'foco-form' }, ...conteudo));
     abrirSheet(
         ...cabecalho,
-        contactarBotoes(c),
+        yl && [dadosContacto, contactarBotoes(c)],
+        mensagem,
         meu && h('button', { type: 'button', class: c.respondeu_em ? 'btn-secondary' : 'btn-primary', onclick: () => marcarResposta(c, !c.respondeu_em) },
             c.respondeu_em ? `Respondeu ${haQuanto(c.respondeu_em)} ✓ — desmarcar` : 'Respondeu'),
         !c.vendedor_id && h('button', { type: 'button', class: 'btn-secondary', onclick: () => assumir(c) }, 'Ficar com este contacto'),
-        !yl && bloco('1 · Perceber a dor',
-            h('button', { type: 'button', class: 'btn-primary', onclick: () => abrirGuiao(c) }, 'Ligar com o guião'),
-            c.dor && h('p', { class: 'foco-meta' }, `Última resposta: ${state.cfg.dores[c.dor]}`)),
-        uso,
-        mensagem,
-        bloco(yl ? 'Estado e próximo passo' : '3 · O que aconteceu', botoes.el,
+        seguimento('Estado e próximo passo', botoes.el,
             yl ? [h('p', { class: 'foco-meta' }, 'Tipo de projeto'), projeto.el, valor]
                 : [h('p', { class: 'foco-meta' }, 'É uma dor real?'), dor.el, ig],
             campo('Como falou', canal), campo('Próximo contacto', voltar), atalhos, nota, licao,
@@ -951,9 +1008,12 @@ function abrirContacto(c, { modelo } = {}) {
                 ...(yl ? { projeto: projeto.valor(), valor: valor.value === '' ? undefined : Number(valor.value) } : { dor: dor.valor(), instagram })
             }) }, 'Guardar')
         ),
-        bloco('Histórico', historico),
+        seguimento('Histórico', historico),
         // Rarely needed, so folded away.
         h('details', { class: 'foco-mais' }, h('summary', {}, 'Mais opções'),
+            !yl && [dadosContacto, contactarBotoes(c),
+                h('button', { type: 'button', class: 'btn-secondary', onclick: () => abrirGuiao(c) }, 'Ligar com o guião'),
+                c.dor && h('p', { class: 'foco-meta' }, `Última resposta: ${state.cfg.dores[c.dor]}`), uso],
             meu && h('div', { class: 'foco-acoes' },
                 h('button', { type: 'button', class: 'btn-secondary', onclick: () => arquivarUm(c, !c.arquivado) }, c.arquivado ? 'Desarquivar' : 'Arquivar'),
                 c.arquivado && h('button', { type: 'button', class: 'btn-secondary foco-perigo', onclick: () => apagarUm(c) }, 'Apagar de vez')),

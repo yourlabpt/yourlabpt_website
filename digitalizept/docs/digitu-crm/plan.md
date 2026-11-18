@@ -10,7 +10,9 @@
 
 ## Seller experience
 
-Available on Digitu cards and in the WhatsApp batch: choose **Alterar mensagem padrão**, edit the reusable wording with slots such as `{nome}`, then choose **Usar agora e no próximo envio**. The next run in the same browser loads that seller's default for the channel. The ordinary contact message remains a one-off edit. Shared templates are not changed.
+On the Digitu card, edit the message and press **Usar esta mensagem como padrão**. Without pressing it, the edit is for this contact only. The next run in the same browser uses that seller’s saved wording for the channel, including in the WhatsApp batch. Slots such as `{nome}` are filled separately for each recipient; shared templates are unchanged. Sending and marking a reply stay visible. The model picker, follow-up form, history and contact details are available on demand.
+
+On an uncontacted Digitu card, opening a channel or copying text does not log outreach. Return from the external app and press **Enviado · próximo contacto** to save and advance in the active queue, or **Enviado · fechar** for a standalone or final card. **Não enviei** leaves the lead untouched. If recording fails, retry the confirmation without sending the message again. The separate WhatsApp batch screen retains its previous behavior.
 
 Select cold leads once, then start **Primeiro contacto**. Each card shows the business, available channels, last interaction, current step and next action. No mandatory note, template editor or full contact form.
 

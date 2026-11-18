@@ -135,6 +135,21 @@
 .foco-evento { border-left: 2px solid var(--separator); padding-left: 12px; display: grid; gap: 2px; font-size: 0.9rem; }
 
 .foco-mensagem { font-size: 0.95rem; line-height: 1.4; }
+.foco-sheet-panel:has(> .foco-compositor) { row-gap: 16px; }
+.foco-compositor { gap: 14px; padding-block: 18px 4px; }
+.foco-compositor .foco-campo { gap: 8px; }
+.foco-compositor .foco-mensagem { line-height: 1.55; padding: 12px 14px; }
+.foco-compositor .foco-acoes, .foco-compositor .foco-estados { gap: 10px; }
+.foco-compositor .foco-estado, .foco-compositor .foco-link { min-height: 44px; }
+.foco-compositor > .btn-secondary { justify-self: start; padding-inline: 16px; height: 44px; }
+.foco-confirmacao {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; align-items: center;
+    border: 1px solid var(--separator); border-radius: var(--radius-md);
+    padding: 14px; background: var(--accent-soft);
+}
+.foco-confirmacao strong { grid-column: 1 / -1; }
+.foco-confirmacao .btn-primary { min-height: 48px; height: auto; padding: 8px 14px; }
+.foco-compositor :is(button, a, summary):focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 .foco-pre { white-space: pre-wrap; }
 .foco-checks { display: grid; gap: 8px; font-size: 0.95rem; }
 .foco-checks input { margin-right: 6px; }

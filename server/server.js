@@ -2230,14 +2230,19 @@ app.post('/api/digitalizept/foco/contactos/:id/mensagem', requireDigitalizept, (
     let estado = contacto.estado;
     // Only the Digitu pipeline has these statuses; a YourLab lead just gets the message logged.
     if ((contacto.linha || 'digitu') === 'digitu' && ['por_contactar', 'contactado', 'voltar'].includes(estado)) estado = comLink ? 'demo_mostrada' : 'contactado';
-    db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?').run(estado, contacto.id);
-    // Sent in a batch: the follow-up is scheduled at the same time.
     const voltarEm = /^\d{4}-\d{2}-\d{2}$/.test(String(b.voltar_em || '')) ? b.voltar_em : '';
-    if (voltarEm) db.prepare('UPDATE lead SET revisitar_em = ? WHERE id = ?').run(voltarEm, contacto.id);
-    digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_mensagem', {
-        modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal, com_link: comLink, estado, voltar_em: voltarEm || undefined, lote: b.lote === true || undefined,
-        principio: cleanText(b.principio, 120)
-    });
+    const confirmacao = cleanText(b.confirmacao, 64);
+    db.transaction(() => {
+        // The confirmation may have committed even if the seller never received the response.
+        if (confirmacao && db.prepare(`SELECT 1 FROM evento WHERE entidade = 'lead' AND entidade_id = ?
+            AND tipo = 'foco_mensagem' AND json_extract(payload_json, '$.confirmacao') = ? LIMIT 1`).get(contacto.id, confirmacao)) return;
+        db.prepare('UPDATE lead SET foco_estado = ? WHERE id = ?').run(estado, contacto.id);
+        if (voltarEm) db.prepare('UPDATE lead SET revisitar_em = ? WHERE id = ?').run(voltarEm, contacto.id);
+        digitalizeptLogEvento(db, 'lead', contacto.id, 'foco_mensagem', {
+            modelo: cleanText(b.modelo, 120) || 'Sem modelo', texto, canal, com_link: comLink, estado, voltar_em: voltarEm || undefined, lote: b.lote === true || undefined,
+            principio: cleanText(b.principio, 120), confirmacao: confirmacao || undefined
+        });
+    })();
     res.json({ contacto: focoContacto(db, contacto.id) });
 });
 
