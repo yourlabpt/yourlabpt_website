@@ -366,20 +366,57 @@ function modelosPara(c, canal) {
     return [...MODELOS_BASE, ...(state.mensagens || [])].filter(serve);
 }
 
-// `modeloInicial` only comes from the call guide; otherwise the channel decides.
+// Save the source with its slots, never the draft filled for a particular lead.
+function seletorMensagem(aoMudar) {
+    const escolha = h('select', { class: 'field-input' });
+    const fonte = h('textarea', { class: 'field-input foco-mensagem', rows: 5, maxlength: 4000 });
+    let chave, lista;
+    const id = 'pessoal:atual';
+    const modelo = () => lista.find((m) => m.id === escolha.value);
+    const opcoes = (preferido) => {
+        escolha.replaceChildren(...lista.map((m) => h('option', { value: m.id }, m.nome)));
+        escolha.value = preferido;
+        fonte.value = modelo().texto;
+    };
+    const editor = h('details', {}, h('summary', {}, 'Alterar mensagem padrão'),
+        campo('Modelo para os próximos contactos (use {nome}, {cidade} ou {link})', fonte),
+        h('button', { type: 'button', class: 'btn-secondary', onclick: () => {
+            if (!fonte.value.trim()) return toast('Escreva a mensagem antes de guardar.', true);
+            try { localStorage.setItem(chave, fonte.value); }
+            catch { return toast('Não foi possível guardar o padrão neste navegador.', true); }
+            lista = [{ id, nome: 'O meu padrão', texto: fonte.value }, ...lista.filter((m) => m.id !== id)];
+            opcoes(id);
+            editor.open = false;
+            aoMudar();
+            toast('Padrão guardado para este canal, neste navegador.');
+        } }, 'Usar agora e no próximo envio'));
+    escolha.addEventListener('change', () => { fonte.value = modelo().texto; aoMudar(); });
+    function carregar(modelos, canal, linha, inicial) {
+        chave = `foco:padrao:${state.me.id}:${linha}:${canal}`;
+        let texto;
+        try { texto = localStorage.getItem(chave); }
+        catch { toast('Não foi possível ler o seu padrão neste navegador.', true); }
+        lista = texto ? [{ id, nome: 'O meu padrão', texto }, ...modelos] : modelos;
+        opcoes((lista.find((m) => m.id === inicial) || lista.find((m) => m.id === id)
+            || modelos.find((m) => m.canal === canal) || modelos[0]).id);
+        editor.open = false;
+    }
+    return { campos: [campo('Modelo', escolha), editor], modelo, carregar };
+}
+
 function configuradorMensagem(c, modeloInicial = '') {
     const canais = canaisDoContacto(c);
     const ids = [...new Set(canais.map((x) => x.id))];
     let canal = ids[0] || 'whatsapp';
     state.linha = state.cfg.marca.linhas[principioSugerido(c)] || '';
 
-    const escolha = h('select', { class: 'field-input' });
+    const seletor = seletorMensagem(() => preencherCaixa());
     const principio = h('select', { class: 'field-input' },
         state.cfg.marca.linhas.map((t, i) => h('option', { value: i, selected: i === principioSugerido(c) }, t.split('—')[0].trim())));
     const caixa = h('textarea', { class: 'field-input foco-mensagem', rows: 7 });
     const aviso = h('p', { class: 'foco-meta' });
     const acoes = h('div', { class: 'foco-acoes' });
-    const modelo = () => modelosPara(c, canal).find((m) => m.id === escolha.value) || modelosPara(c, canal)[0];
+    const modelo = seletor.modelo;
 
     const registar = () => api(`/api/digitalizept/foco/contactos/${c.id}/mensagem`, {
         method: 'POST',
@@ -411,11 +448,7 @@ function configuradorMensagem(c, modeloInicial = '') {
     }
 
     function pintarModelos() {
-        const lista = modelosPara(c, canal);
-        escolha.replaceChildren(...lista.map((m) => h('option', { value: m.id }, m.nome)));
-        // The model asked for wins; otherwise one written for this channel; otherwise the first.
-        const preferido = lista.find((m) => m.id === modeloInicial) || lista.find((m) => m.canal === canal) || lista[0];
-        escolha.value = (preferido || {}).id || '';
+        seletor.carregar(modelosPara(c, canal), canal, c.linha || 'digitu', modeloInicial);
     }
 
     const preencherCaixa = async () => {
@@ -436,7 +469,6 @@ function configuradorMensagem(c, modeloInicial = '') {
         Object.fromEntries(ids.map((id) => [id, (canais.find((x) => x.id === id) || {}).nome])), canal,
         (id) => { canal = id; pintarModelos(); preencherCaixa(); }
     );
-    escolha.addEventListener('change', preencherCaixa);
     principio.addEventListener('change', preencherCaixa);
     caixa.addEventListener('input', pintarAcoes);
     pintarModelos();
@@ -445,7 +477,7 @@ function configuradorMensagem(c, modeloInicial = '') {
     return [
         ids.length ? campo('Por onde', canalChips.el) : h('p', { class: 'foco-meta' }, 'Sem WhatsApp, Instagram, Facebook nem email guardados neste contacto.'),
         campo('Princípio (o que lhe falta mais)', principio),
-        campo('Modelo', escolha), caixa, aviso, acoes,
+        ...seletor.campos, campo('Mensagem só para este contacto', caixa), aviso, acoes,
         h('button', { type: 'button', class: 'foco-link', onclick: () => { fecharSheet(); irPara('mensagens'); } }, 'Criar ou editar modelos')
     ];
 }
@@ -460,7 +492,8 @@ function abrirEnvioLote(contactos) {
     const comNumero = contactos.filter(temWhatsApp);
     const semNumero = contactos.filter((c) => !temWhatsApp(c));
     const modelos = [...MODELOS_BASE, ...(state.mensagens || [])].filter((m) => !m.canal || m.canal === 'whatsapp');
-    const escolha = h('select', { class: 'field-input' }, modelos.map((m) => h('option', { value: m.id }, m.nome)));
+    const seletor = seletorMensagem(pintar);
+    seletor.carregar(modelos, 'whatsapp', state.filtro.linha || 'digitu');
     const depois = h('select', { class: 'field-input' },
         [['2', 'Daqui a 2 dias'], ['3', 'Daqui a 3 dias'], ['7', 'Daqui a 1 semana'], ['', 'Não marcar']]
             .map(([v, t]) => h('option', { value: v, selected: v === '3' }, t)));
@@ -468,7 +501,7 @@ function abrirEnvioLote(contactos) {
     const progresso = h('p', { class: 'foco-fila' });
     const listaEl = h('div', { class: 'foco-lote' });
     const enviados = [];
-    const modelo = () => modelos.find((m) => m.id === escolha.value) || modelos[0];
+    const modelo = seletor.modelo;
     const link = (c, texto) => (web.checked
         ? `https://web.whatsapp.com/send?phone=${numeroWhatsApp(c)}&text=${encodeURIComponent(texto)}`
         : `https://wa.me/${numeroWhatsApp(c)}?text=${encodeURIComponent(texto)}`);
@@ -539,11 +572,10 @@ function abrirEnvioLote(contactos) {
             } }, 'Guardar e terminar'));
     }
 
-    escolha.addEventListener('change', pintar);
     abrirSheet(
         h('h2', {}, `WhatsApp para ${comNumero.length} contacto${comNumero.length === 1 ? '' : 's'}`),
         h('p', { class: 'foco-meta' }, 'Um toque por contacto abre o WhatsApp com a mensagem pronta — só carregar em enviar. A formatação (linhas, espaços) vai tal como está no modelo.'),
-        campo('Modelo', escolha),
+        ...seletor.campos,
         campo('Depois de enviar, próximo contacto', depois),
         h('label', { class: 'foco-toggle' }, web, ' Abrir no WhatsApp Web (computador)'),
         progresso, listaEl,
