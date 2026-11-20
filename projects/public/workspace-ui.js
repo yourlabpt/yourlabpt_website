@@ -21,6 +21,8 @@
     planoProject: null,
     requisitosProject: null,
   };
+  // Links that let a client open the mockup without an account (lib/workspace-routes.js).
+  const present = { open: false, loading: false, creating: false, links: [], error: '' };
   const listeners = new Set();
 
   const PHASE_BADGE = {
@@ -54,6 +56,7 @@
     if (!projectId) return;
     if (state.projectId !== projectId) {
       Object.assign(state, { projectId, data: null, error: '', changeRequestUrl: '', surveyed: null });
+      Object.assign(present, { open: false, loading: false, creating: false, links: [], error: '' });
       Object.assign(view, { sel: '', newPath: '', isNew: false, mode: 'view', lastEdit: null, adding: '' });
       steps.outcome = null;
     }
@@ -341,6 +344,91 @@
       </details>`;
   }
 
+  /* ------------------------------------------------- presentation links for clients */
+
+  const presentPath = (suffix = '') => `/${encodeURIComponent(state.projectId)}/workspace/presentation-links${suffix}`;
+  const absolute = (url) => new URL(url, window.location.origin).href;
+
+  async function loadPresentationLinks() {
+    Object.assign(present, { loading: true, error: '' });
+    notify();
+    try {
+      present.links = (await window.apiRequest(presentPath())).links || [];
+    } catch (error) {
+      present.error = error.message;
+    } finally {
+      present.loading = false;
+      notify();
+    }
+  }
+
+  async function createPresentationLink() {
+    const label = document.querySelector('[data-ws-present-label]')?.value || '';
+    const days = Number(document.querySelector('[data-ws-present-days]')?.value || 30);
+    present.creating = true;
+    notify();
+    try {
+      const { link } = await window.apiRequest(presentPath(), { method: 'POST', body: { label, days } });
+      present.links = [link, ...present.links];
+      await copyLink(link.url);
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    } finally {
+      present.creating = false;
+      notify();
+    }
+  }
+
+  async function revokePresentationLink(linkId) {
+    try {
+      const { link } = await window.apiRequest(presentPath(`/${encodeURIComponent(linkId)}`), { method: 'DELETE' });
+      present.links = present.links.map((entry) => (entry.id === linkId ? link : entry));
+      window.showToast?.('Link desativado. Quem o tiver já não abre o mockup.');
+    } catch (error) {
+      window.showToast?.(error.message, 'error');
+    }
+    notify();
+  }
+
+  async function copyLink(url) {
+    const href = absolute(url);
+    try {
+      await navigator.clipboard.writeText(href);
+      window.showToast?.('Link copiado. Pode enviá-lo ao cliente.');
+    } catch {
+      window.prompt?.('Copie o link:', href);
+    }
+  }
+
+  function presentationPanel() {
+    if (!present.open) return '';
+    const k = kit();
+    const rows = present.links.map((link) => `
+      <li class="ios-row">
+        <span class="ios-row-main">
+          <span>${esc(link.label)}</span>
+          <span class="ios-row-sub">${link.active ? `até ${esc(new Date(link.expiresAt).toLocaleDateString('pt-PT'))}` : link.revokedAt ? 'desativado' : 'expirado'} · criado ${esc(k.ago(link.createdAt))}</span>
+        </span>
+        ${link.active ? `
+          <a class="btn" href="${esc(absolute(link.url))}" target="_blank" rel="noopener noreferrer">Abrir</a>
+          <button type="button" class="btn" data-ws-action="present-copy" data-ws-url="${esc(link.url)}">Copiar</button>
+          <button type="button" class="btn" data-ws-action="present-revoke" data-ws-link="${esc(link.id)}">Desativar</button>` : k.badge('gray', link.revokedAt ? 'Desativado' : 'Expirado')}
+      </li>`).join('');
+    return `
+      <div class="ios-docs-present">
+        <p class="ios-card-body">Um link para o cliente abrir o mockup sem conta na plataforma. Abre sempre a versão actual de yourlab/mockup/ e deixa de funcionar quando expira ou é desativado.</p>
+        <div class="ios-card-actions">
+          <input type="text" data-ws-present-label placeholder="Para quem (ex.: Grupo Exemplo, reunião 25/11)" maxlength="80" aria-label="Para quem é o link">
+          <select data-ws-present-days aria-label="Validade">
+            <option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option><option value="180">180 dias</option>
+          </select>
+          <button type="button" class="btn primary" data-ws-action="present-create" ${present.creating ? 'disabled' : ''}>${present.creating ? 'A criar…' : 'Criar e copiar link'}</button>
+        </div>
+        ${present.error ? `<p class="ios-card-body">${esc(present.error)}</p>` : ''}
+        ${present.loading ? '<p class="ios-card-body">A carregar…</p>' : rows ? `<ul class="ios-list">${rows}</ul>` : '<p class="ios-card-body">Ainda não há links de apresentação.</p>'}
+      </div>`;
+  }
+
   /** The documentation's state, for people who can act on it. Clients see the content only. */
   function statusCard() {
     if (isClient()) {
@@ -401,6 +489,7 @@
       }
       if (snap.mockup.screens.length) {
         actions.push(`<button type="button" class="btn primary" data-ws-action="mockup">${icon('image', 16)}Ver mockup</button>`);
+        if (canSync()) actions.push(`<button type="button" class="btn" data-ws-action="present-links" aria-expanded="${present.open}">Link para cliente</button>`);
       }
       actions.push(syncButton());
     }
@@ -420,6 +509,7 @@
         </div>
         ${body ? `<p class="ios-card-body">${esc(body)}</p>` : ''}
         ${actions.filter(Boolean).length ? `<div class="ios-card-actions">${actions.join('')}</div>` : ''}
+        ${presentationPanel()}
         ${link}
         ${snap?.initialized ? findingsFold(snap.findings.filter((finding) => finding.level !== 'info')) : ''}
       </section>`;
@@ -1579,6 +1669,10 @@
       else if (name === 'back') { view.sel = ''; paintArtefactos(); }
       else if (name === 'add-cancel') { view.adding = ''; paintArtefactos(); }
       else if (name === 'mockup') openMockup(action.dataset.wsScreen);
+      else if (name === 'present-links') { present.open = !present.open; if (present.open) loadPresentationLinks(); else notify(); }
+      else if (name === 'present-create') createPresentationLink();
+      else if (name === 'present-copy') copyLink(action.dataset.wsUrl);
+      else if (name === 'present-revoke') revokePresentationLink(action.dataset.wsLink);
       else if (name === 'present') openStage(view.sel, { screen: view.sel.startsWith('yourlab/mockup/') ? view.sel.split('/').pop() : '' });
       return;
     }

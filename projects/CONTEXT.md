@@ -256,6 +256,16 @@ task already shows up.
    exported, watermarked PDF. No client-side anti-copy tricks needed — the
    protection is that the client's role simply has no route to the live HTML.
 
+## Link de apresentação
+The one deliberate exception to "a client never opens live HTML": a link YourLab
+(super_admin or partner) creates on purpose, from Documentação → «Link para cliente»,
+so a prospect or client can click through the repository's `yourlab/mockup/` without
+an account. It is for mockups made to be shown (demo data, never a client's real
+records). Each link has a label, expires (7 to 180 days), can be turned off at any
+time, and is recorded in the activity log. It always shows the mockup as it is now in
+the repository, under the same sandbox as every mockup render, and asks search engines
+not to index it.
+
 ## Ata (meeting minute)
 Not a page, not a separate object — a Tarefa tagged `Ata`, containing a summary of
 a client conversation. Creating one triggers the Reverse Engineer persona to check
