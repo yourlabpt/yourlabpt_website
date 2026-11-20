@@ -9,6 +9,9 @@
  *                                        platform's requirements as openspec/specs/)
  *   GET  /workspace/mockup-link          a short-lived link to one mockup screen
  *   GET  /workspace/mockup/:ticket/:file the screen itself, sandboxed
+ *   GET|POST /workspace/presentation-links       links to the mockup for clients
+ *   DELETE   /workspace/presentation-links/:id   turn one off
+ *   GET  /presentation/:token/:file      the mockup through such a link, no login
  *
  * Reading is deterministic and changes nothing. Writing goes to the project's working
  * copy, or straight to the default branch when there is none (lib/workspace-io.js), so
@@ -55,6 +58,54 @@ function mockupTicketValid(dataDir, projectId, ticket, now = Date.now()) {
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// A presentation link: the mockup a client opens without an account, for some weeks.
+// The token names a link stored on the project, so a link can be turned off before it expires.
+const PRESENTATION_DAYS_DEFAULT = 30;
+const PRESENTATION_DAYS_MAX = 180;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function presentationPayload(projectId, linkId, expiresAt) {
+  return `workspace-presentation:${projectId}:${linkId}:${expiresAt}`;
+}
+
+function signPresentationToken(dataDir, projectId, link) {
+  const expiresAt = Date.parse(link.expiresAt);
+  const signature = crypto.createHmac('sha256', secretBox.signingKey(dataDir))
+    .update(presentationPayload(projectId, link.id, expiresAt))
+    .digest('base64url');
+  return `${link.id}.${expiresAt}.${signature}`;
+}
+
+/** The link a token opens, or null: forged, expired, turned off or unknown all look the same. */
+function presentationLinkFor(dataDir, project, token, now = Date.now()) {
+  const [linkId, rawExpiry, signature] = String(token || '').split('.');
+  const expiresAt = Number(rawExpiry);
+  if (!linkId || !signature || !Number.isFinite(expiresAt) || expiresAt < now) return null;
+  const expected = crypto.createHmac('sha256', secretBox.signingKey(dataDir))
+    .update(presentationPayload(project?.id, linkId, expiresAt))
+    .digest('base64url');
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const link = (project.presentationLinks || []).find((entry) => entry.id === linkId);
+  if (!link || link.revokedAt || Date.parse(link.expiresAt) !== expiresAt) return null;
+  return link;
+}
+
+function presentationView(dataDir, projectId, link, now = Date.now()) {
+  const active = !link.revokedAt && Date.parse(link.expiresAt) > now;
+  return {
+    id: link.id,
+    label: link.label,
+    createdAt: link.createdAt,
+    createdBy: link.createdBy,
+    expiresAt: link.expiresAt,
+    revokedAt: link.revokedAt || null,
+    active,
+    url: active ? `/api/projects/${encodeURIComponent(projectId)}/presentation/${signPresentationToken(dataDir, projectId, link)}/index.html` : null,
+  };
 }
 
 /** What a client may see: the content, not the platform's notes about malformed files. */
@@ -692,6 +743,91 @@ function registerWorkspaceRoutes(app, deps) {
       return res.status(500).send('<!doctype html><meta charset="utf-8"><p>Não foi possível ler o mockup do repositório.</p>');
     }
   });
+
+  /* ---------------------------------------------- presentation links for clients */
+
+  const presentationRoles = requireRole('super_admin', 'partner');
+
+  app.get('/api/projects/:projectId/workspace/presentation-links', authMiddleware, presentationRoles, loadProjectForUser, (req, res) => {
+    const project = req.loadedProject;
+    return res.json({ links: (project.presentationLinks || []).map((link) => presentationView(dataDir, project.id, link)).reverse() });
+  });
+
+  app.post('/api/projects/:projectId/workspace/presentation-links', authMiddleware, presentationRoles, loadProjectForUser, async (req, res) => {
+    const project = req.loadedProject;
+    if (!gitRepositories.normalizeProjectRepository(project.repository)) return noRepository(res);
+    if (!project.workspace?.snapshot?.mockup?.screens?.length) {
+      return res.status(409).json({ message: 'Este projecto ainda não tem mockup em yourlab/mockup/. Sincronize o repositório primeiro.' });
+    }
+    const days = Math.min(PRESENTATION_DAYS_MAX, Math.max(1, Math.round(Number(req.body?.days) || PRESENTATION_DAYS_DEFAULT)));
+    const now = Date.now();
+    const link = {
+      id: crypto.randomBytes(9).toString('base64url'),
+      label: String(req.body?.label || '').trim().slice(0, 80) || 'Apresentação',
+      createdAt: new Date(now).toISOString(),
+      createdBy: req.auth.user.id,
+      expiresAt: new Date(now + days * DAY_MS).toISOString(),
+      revokedAt: null,
+    };
+    try {
+      await updateStore(async (store) => {
+        const target = store.projects.find((entry) => entry.id === project.id);
+        if (!target) throw new Error('Projecto não encontrado.');
+        target.presentationLinks = [...(target.presentationLinks || []), link];
+        appendActivity(store, { projectId: project.id, actorUserId: req.auth.user.id, action: 'presentation_link_created', details: { linkId: link.id, label: link.label, expiresAt: link.expiresAt } });
+      });
+      return res.status(201).json({ link: presentationView(dataDir, project.id, link, now) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/projects/:projectId/workspace/presentation-links/:linkId', authMiddleware, presentationRoles, loadProjectForUser, async (req, res) => {
+    const project = req.loadedProject;
+    if (!(project.presentationLinks || []).some((entry) => entry.id === req.params.linkId)) {
+      return res.status(404).json({ message: 'Link de apresentação não encontrado.' });
+    }
+    try {
+      let revoked = null;
+      await updateStore(async (store) => {
+        const target = store.projects.find((entry) => entry.id === project.id);
+        if (!target) throw new Error('Projecto não encontrado.');
+        revoked = (target.presentationLinks || []).find((entry) => entry.id === req.params.linkId);
+        if (revoked && !revoked.revokedAt) revoked.revokedAt = new Date().toISOString();
+        appendActivity(store, { projectId: project.id, actorUserId: req.auth.user.id, action: 'presentation_link_revoked', details: { linkId: req.params.linkId } });
+      });
+      return res.json({ link: presentationView(dataDir, project.id, revoked) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  // No session: the client has no account. The token grants this project's mockup folder,
+  // read live from the repository, until the link expires or is turned off. It sits in the
+  // path so the relative links between screens keep working. Same sandbox as every mockup.
+  const PRESENTATION_HEADERS = { ...RENDER_HEADERS, 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' };
+  const closedPage = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><p style="font:16px system-ui;margin:40px auto;max-width:520px;padding:0 16px">Este link de apresentação expirou ou foi desativado. Peça um novo link a quem o enviou.</p>';
+
+  app.get('/api/projects/:projectId/presentation/:token/:file', async (req, res) => {
+    res.set(PRESENTATION_HEADERS);
+    const { projectId, token, file } = req.params;
+    if (!SCREEN_NAME.test(file)) return res.status(404).send(closedPage);
+    try {
+      const project = await loadProject(projectId);
+      if (!project || !presentationLinkFor(dataDir, project, token)) return res.status(403).send(closedPage);
+      const repository = gitRepositories.normalizeProjectRepository(project.repository);
+      if (!repository) return res.status(404).send(closedPage);
+      const reader = await workspaceSync.pickReader(repository, { remoteClient });
+      const html = await reader.readFile(`${workspaceFormat.ROOT}/mockup/${file}`);
+      if (!html) return res.status(404).send(`<!doctype html><meta charset="utf-8"><p>O ecrã ${file} não existe.</p>`);
+      return res.send(html);
+    } catch (error) {
+      return res.status(500).send('<!doctype html><meta charset="utf-8"><p>Não foi possível abrir a apresentação. Tente de novo dentro de momentos.</p>');
+    }
+  });
 }
 
-module.exports = { registerWorkspaceRoutes, signMockupTicket, mockupTicketValid, MOCKUP_TICKET_TTL_MS };
+module.exports = {
+  registerWorkspaceRoutes, signMockupTicket, mockupTicketValid, MOCKUP_TICKET_TTL_MS,
+  signPresentationToken, presentationLinkFor, presentationView, PRESENTATION_DAYS_MAX,
+};
