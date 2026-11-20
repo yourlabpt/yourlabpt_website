@@ -24,7 +24,7 @@
     return Object.fromEntries(Object.keys(TYPE_FALLBACK).map((id) => [id, { ...TYPE_FALLBACK[id], ...(config[id] || {}) }]));
   }
 
-  const TYPE_WORD = { ideia: 'Ideia', resgate: 'Resgate', consolidacao: 'Consolidação' };
+  const TYPE_WORD = { ideia: 'Ideia', resgate: 'Resgate', consolidacao: 'Consolidação', interno: 'Interno' };
   const STAGE_WORD = {
     idea: 'Ideia', discovery: 'Descoberta', requirements: 'Requisitos', architecture: 'Arquitectura', roadmap: 'Plano',
     implementation: 'Construção', validation: 'Validação', delivery: 'Entrega', operations: 'Manutenção',
@@ -393,7 +393,18 @@
     ];
   }
 
+  /** The exact prompt an answer came from, folded: what was asked is part of the answer. */
+  function promptFold(outcome) {
+    if (!outcome?.prompt) return '';
+    return `
+      <details class="av-prompt">
+        <summary>Prompt enviado · método ${esc(outcome.promptVersion || 'base')} · ${outcome.prompt.length.toLocaleString('pt-PT')} caracteres</summary>
+        <pre class="ios-code">${esc(outcome.prompt)}</pre>
+      </details>`;
+  }
+
   window.ArtefactViews = {
+    promptFold,
     render,
     hydrate,
     erDiagramFrom,

@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiSteps = require('../lib/ai-steps');
 const packs = require('../lib/prompt-packs');
+// Runs are recorded in the prompt registry: never in the real data folder.
+const RUN_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'packs-test-'));
 
 const SURVEY = {
   docs: ['README.md', 'docs/setup.md'],
@@ -46,7 +48,7 @@ test('artefact_from_code sends the step, its guide section and the current file,
   const step = aiSteps.planSteps(SURVEY).find((entry) => entry.key === 'diagram');
   let prompt = '';
   const run = packs.createPackRunner({
-    dataDir: '/tmp',
+    dataDir: RUN_DIR,
     complete: async (call) => {
       prompt = call.prompt;
       return { text: JSON.stringify({ files: [{ path: 'yourlab/diagrams/arquitectura.mmd', content: 'flowchart LR\n  A --> B' }, { path: 'yourlab/database.md', content: 'x' }], summary: 's' }) };

@@ -191,6 +191,8 @@ test('the starting folder is written from the platform and reads back the same',
   };
   const files = format.skeletonFiles(project);
   assert.deepEqual(files.map((f) => f.path), [
+    'AGENTS.md',
+    'CLAUDE.md',
     'yourlab/GUIDE.md',
     'yourlab/phases/01-mvp-fundacao.md',
     'yourlab/phases/02-mapa.md',
@@ -364,7 +366,7 @@ const SURVEY = {
 
 test('a project that already has code starts from what the survey found, marked for review', () => {
   const files = format.skeletonFiles({ name: 'City Pass', clientName: 'Impakta' }, { survey: SURVEY });
-  assert.deepEqual(files.map((f) => f.path), ['yourlab/GUIDE.md', 'yourlab/diagrams/modulos.mmd', 'yourlab/project.md']);
+  assert.deepEqual(files.map((f) => f.path), ['AGENTS.md', 'CLAUDE.md', 'yourlab/GUIDE.md', 'yourlab/diagrams/modulos.mmd', 'yourlab/project.md']);
 
   const projectMd = files.find((f) => f.path === 'yourlab/project.md').content;
   assert.match(projectMd, /<!-- gerado do código, por rever -->/);

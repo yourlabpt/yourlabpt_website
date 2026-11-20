@@ -14,6 +14,7 @@
  * history.
  */
 const llmCall = require('./llm-call');
+const promptRegistry = require('./prompt-registry');
 const skills = require('./skills');
 const openspecFormat = require('./openspec-format');
 const aiSteps = require('./ai-steps');
@@ -58,6 +59,7 @@ function knownPaths(snapshot) {
 const PACKS = {
   impact: {
     label: 'Analisar impacto',
+  describe: { slice: 'Uma linha por ficheiro do projecto: nomes e títulos, nunca o texto.', change: 'O ficheiro guardado e o diff dessa gravação.' },
     // Our own packs live under skills/_packs/, apart from the vendored persona skills.
     skill: '_packs/impact',
     // Whose engine settings the call borrows. Personas are on hold; this is plumbing.
@@ -94,6 +96,7 @@ const PACKS = {
 
   split_task: {
     label: 'Dividir tarefa',
+  describe: { slice: 'A tarefa: título, descrição e critérios de aceitação.', change: 'O pedido fixo: dividir em tarefas mais pequenas.' },
     skill: '_packs/split-task',
     sliceLabel: 'A tarefa:',
     // The task itself is the slice: nothing else is needed to cut it.
@@ -131,6 +134,7 @@ const PACKS = {
  */
 PACKS.artefacts_from_code = {
   label: 'Requisitos a partir do código',
+  describe: { slice: 'Até 6 ficheiros de uma parte do código que o levantamento encontrou.', change: 'A parte do código a descrever como requisitos.' },
   skill: '_packs/artefacts-from-code',
   sliceLabel: 'O código desta parte:',
   needsCode: true,
@@ -185,6 +189,7 @@ PACKS.artefacts_from_code = {
  */
 PACKS.artefact_from_code = {
   label: 'Artefacto a partir do código',
+  describe: { slice: 'Os factos do levantamento e os ficheiros de apoio do passo.', change: 'O ficheiro a escrever e o seu formato, tirado do GUIDE.md.' },
   skill: '_packs/artefact-from-code',
   sliceLabel: 'O que o código mostra:',
   slice: ({ step, sources, snapshot }) => [
@@ -217,6 +222,7 @@ PACKS.artefact_from_code = {
  */
 PACKS.edit_artefact = {
   label: 'Editar artefacto',
+  describe: { slice: 'O ficheiro como está agora, lido do repositório.', change: 'A frase da pessoa e o formato do ficheiro, do GUIDE.md.' },
   skill: '_packs/edit-artefact',
   needsFile: true,
   // A whole mockup screen is the file; cutting it would return a cut file.
@@ -245,6 +251,46 @@ PACKS.edit_artefact = {
   },
 };
 
+/**
+ * From an artefact to code: a diagram node or a workflow changed (or a sentence asked
+ * for a change), and the code in the folders it is linked to follows. The route reads
+ * the artefact, its links and the code; the scope comes from the links, never from the
+ * browser.
+ */
+PACKS.code_from_artefact = {
+  label: 'Código a partir do artefacto',
+  describe: { slice: 'O artefacto (diagrama ou workflow) e até 6 ficheiros das pastas a que está ligado.', change: 'A frase da pessoa ou o diff do artefacto guardado.' },
+  skill: '_packs/code-from-artefact',
+  needsArtefactCode: true,
+  sliceLabel: 'O artefacto e o código ligado a ele:',
+  sliceMax: 30000,
+  slice: ({ artefact, codeFiles = [], scope, input }) => [
+    `Pode escrever em: ${(scope?.prefixes || []).join(', ')}`,
+    '',
+    `### ${artefact.path} (o artefacto${input.nodeId ? `; o nó em causa é «${input.nodeId}»` : ''})`,
+    artefact.content,
+    ...codeFiles.map((file) => `### ${file.path}\n${file.content}`),
+  ].join('\n\n'),
+  change: ({ input }) => [
+    input.request ? `O pedido: ${input.request}` : '',
+    input.diff ? `O que mudou no artefacto:\n${input.diff}` : '',
+    !input.request && !input.diff ? 'Faça o código fazer o que o artefacto diz.' : '',
+  ].filter(Boolean).join('\n\n'),
+  contract: [
+    'Responda APENAS com este JSON, sem texto antes ou depois:',
+    '{"files":[{"path":"<caminho>","content":"<ficheiro completo>"}],"summary":"<uma frase>"}',
+    'No máximo 4 ficheiros, só dentro de «Pode escrever em».',
+  ].join('\n'),
+  validate(answer, { scope }) {
+    return PACKS.code_from_tests.validate(answer, { scope });
+  },
+  inputError: ({ artefact, scope, input }) => {
+    if (!artefact?.content) return 'Artefacto não encontrado.';
+    if (!scope || scope.unrestricted || !scope.prefixes.length) return 'Ligue este nó ou workflow a uma pasta do código primeiro (no estúdio, «Código ligado»).';
+    return input.request || input.diff ? '' : 'Diga numa frase o que mudar, ou guarde primeiro a alteração ao diagrama.';
+  },
+};
+
 // Where a test file may live. Anything else a pack returns is not a test and is dropped.
 const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/.+\.[a-z]+$|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$|_test\.(go|py)$/i;
 const MAX_TEST_FILE_CHARS = 20000;
@@ -260,6 +306,7 @@ const TEST_FRAMEWORKS = ['vitest', 'jest', 'mocha', 'ava', 'tap', '@playwright/t
 
 PACKS.tests_from_artefacts = {
   label: 'Testes a partir dos requisitos',
+  describe: { slice: 'Os requisitos e cenários de uma capacidade, a ferramenta de testes e os testes que já existem.', change: 'O pedido fixo: testes que provam estes requisitos.' },
   skill: '_packs/tests-from-artefacts',
   sliceLabel: 'Os requisitos a testar:',
   needsTestContext: true,
@@ -345,6 +392,7 @@ function codeScopeFor(targets) {
 
 PACKS.code_from_tests = {
   label: 'Código a partir dos testes',
+  describe: { slice: 'Os testes escolhidos e o código que eles importam.', change: 'A falha dos testes, se a pessoa a colou.' },
   skill: '_packs/code-from-tests',
   sliceLabel: 'Os testes e o código que eles usam:',
   needsTestsAndCode: true,
@@ -391,6 +439,7 @@ PACKS.code_from_tests = {
  */
 PACKS.sync_back = {
   label: 'Os artefactos ainda dizem o mesmo?',
+  describe: { slice: 'O índice do projecto: nomes e títulos dos artefactos.', change: 'Os diffs do código acabado de escrever.' },
   skill: '_packs/sync-back',
   slice: ({ snapshot }) => projectOutline(snapshot),
   change: ({ input }) => (input.changes || []).slice(0, 4)
@@ -460,10 +509,10 @@ function splitDrafts(parent, tasks, { now, actorUserId, newId }) {
 }
 
 /** The four blocks, joined. Pure, so what is sent can be read and tested. */
-function buildInstructions(packId, context) {
+function buildInstructions(packId, context, methodOverride = '') {
   const pack = PACKS[packId];
   if (!pack) throw new Error(`Pacote desconhecido: ${packId}`);
-  const method = skills.readBody(pack.skill);
+  const method = methodOverride || skills.readBody(pack.skill);
   if (!method) throw new Error(`Falta skills/${pack.skill}/SKILL.md.`);
   return [
     method,
@@ -503,21 +552,33 @@ function createPackRunner(deps) {
     const inputError = pack.inputError?.(context);
     if (inputError) return { error: inputError, status: 400 };
 
+    // The method is the registry's active version; the other three blocks are code.
     let prompt;
+    let version = 'base';
     try {
-      prompt = buildInstructions(packId, context);
+      const active = await promptRegistry.activeMethod(dataDir, packId, skills.readBody(pack.skill));
+      version = active.version;
+      prompt = buildInstructions(packId, context, active.body);
     } catch (error) {
       return { error: error.message, status: 500 };
     }
 
+    // Every run is recorded against the version it used, answered or not.
+    const record = (fields) => promptRegistry.recordRun(dataDir, { packId, version, projectId: context.projectId || '', ...fields }).catch(() => '');
     try {
       const reply = await complete({ dataDir, prompt });
       if (reply.error) return reply;
       const answer = parseAnswer(reply.text);
-      if (!answer) return { error: 'O modelo não devolveu o JSON pedido.', status: 502 };
+      if (!answer) {
+        await record({ ok: false, costUsd: reply.costUsd, model: reply.model });
+        return { error: 'O modelo não devolveu o JSON pedido.', status: 502 };
+      }
       const { result, dropped } = pack.validate(answer, context);
-      return { result, dropped, costUsd: Math.max(0, Number(reply.costUsd) || 0), model: reply.model };
+      const costUsd = Math.max(0, Number(reply.costUsd) || 0);
+      const runId = await record({ costUsd, model: reply.model, dropped });
+      return { result, dropped, costUsd, model: reply.model, runId, promptVersion: version, prompt };
     } catch (error) {
+      await record({ ok: false });
       return { error: `A DeepInfra não respondeu: ${error.message}`, status: 502 };
     }
   };

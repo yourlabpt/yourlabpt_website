@@ -36,6 +36,45 @@ lowercase, with words separated by `-`.
 - Change what is true; delete what stopped being true. Never keep two versions of the
   same fact in two files — each fact has exactly one home, listed below.
 
+## The constitution: code and artefacts change together
+
+These files describe the code, and the code does what these files say. Neither is
+allowed to drift. Every change, by a person or by any AI, follows the same rules.
+
+**The links.** A diagram node points at the folder that implements it with
+`%% code: Node = src/folder`; a workflow does it with `- Código: src/folder`. Those two
+lines are the only bridge between drawings and code. Keep them when you edit.
+
+**After you change code** (in the same commit):
+
+1. Find what describes it: search `yourlab/` for the folder you touched —
+   `grep -rn "src/folder" yourlab/`.
+2. Update each artefact that is no longer true: the workflow's steps, the diagram's
+   nodes and arrows, the requirement in `openspec/specs/<capability>/spec.md` (and its
+   scenarios when behaviour changed), `database.md` when a table or field changed.
+3. A new folder of code gets a node in a diagram with its `%% code:` line. A deleted
+   folder loses its node and its line.
+4. Something you could not decide goes to `questions.md` as an open question — never a
+   guess written as fact.
+
+**After you change an artefact:** change the code in the linked folders in the same
+commit, or leave the code alone and say so in the commit message (`yourlab: … — código
+por fazer`). The platform turns that into a task.
+
+**Size of a change.** Small, one-artefact changes go through the platform: each AI
+call there sees one artefact and only the code linked to it, returns whole files, and
+nothing is written until a person presses Escrever. Bigger changes — a refactor, many
+modules at once — are done locally (by a person or a local AI) on a working copy,
+following the rules above, then pushed; the next sync reads them.
+
+**Before you commit,** if the YourLab command is available, run it on the repository:
+`node <platform>/bin/yourlab.js check .` — it lists format errors, links to folders that
+do not exist, folders nobody drew, and artefacts whose code changed after them. Fix
+what it lists, or say in the commit message why not.
+
+**Commit messages.** Artefact-only commits start with `yourlab:`. Code commits name the
+artefacts they updated, or say `artefactos por actualizar` when they did not.
+
 ## project.md
 
 ```markdown
@@ -59,8 +98,8 @@ What someone joining needs to know: the business, the constraints, what exists a
 - One assumption per bullet.
 ```
 
-- `type`: `ideia` (new build), `resgate` (rescue an existing codebase) or `consolidacao`
-  (bring scattered work into one system).
+- `type`: `ideia` (new build), `resgate` (rescue an existing codebase), `consolidacao`
+  (bring scattered work into one system) or `interno` (YourLab's own tools).
 - `stage`: where the project is now — one of `idea`, `discovery`, `requirements`,
   `architecture`, `roadmap`, `implementation`, `validation`, `delivery`, `operations`.
 - `## Propósito` is required. The others may be left out.
@@ -129,7 +168,14 @@ Plain Mermaid, nothing else. The first line may name the diagram:
 %% title: Arquitectura
 flowchart LR
   App --> API --> Base
+
+%% code: API = src/api
+%% code: Base = src/db
 ```
+
+A `%% code: Node = folder` line links a node to the folder of the repository that
+implements it. Keep these lines when you edit the diagram: they are how the platform
+shows a node's code and writes code changes from a diagram change. One line per node.
 
 ## database.md
 
@@ -154,6 +200,9 @@ One `## Entidade: Name` section per entity, with one table of its fields.
 ```
 
 A `#` title, then numbered steps. Prose around them is kept.
+
+`- Código: src/auth, src/routes` (one line, under the title) links the workflow to the
+folders that implement it, the same way `%% code:` does for a diagram node.
 
 ## mockup/*.html
 

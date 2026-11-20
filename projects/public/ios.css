@@ -2465,3 +2465,98 @@ body.av-stage-open { overflow: hidden; }
   .av-scenario { grid-template-columns: 1fr; }
   .av-diagram-hint { display: none; }
 }
+
+/* ================================================================ the studio */
+
+.st-studio .st-head { flex-wrap: wrap; }
+.st-tabs { flex: none; }
+.st-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.st-work { flex: 1; min-height: 0; display: flex; }
+.st-canvas { flex: 1; min-width: 0; position: relative; overflow: hidden; background: var(--bg-2); touch-action: none; cursor: grab; user-select: none; }
+.st-canvas:active { cursor: grabbing; }
+.st-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.st-stage svg { display: block; }
+.st-float { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; padding: 6px; border-radius: 14px; background: var(--surface); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); }
+.st-error { position: absolute; left: 12px; right: 12px; top: 12px; margin: 0; padding: 8px 12px; border-radius: var(--radius-control); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+.st-pad { padding: 24px; }
+
+/* nodes: tappable, with their code state as an outline */
+.st-node { cursor: pointer; }
+.st-node.st-linked :is(rect, polygon, circle, path) { stroke: var(--ok) !important; stroke-width: 2px !important; }
+.st-node.st-missing :is(rect, polygon, circle, path) { stroke: var(--danger) !important; stroke-width: 2px !important; stroke-dasharray: 4 3; }
+.st-node.st-selected :is(rect, polygon, circle, path) { stroke: var(--accent-gold) !important; stroke-width: 3px !important; }
+
+.st-inspector { width: 360px; flex: none; overflow: auto; padding: 16px; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 18px; }
+.st-sheet-grip { display: none; }
+.st-block { display: flex; flex-direction: column; gap: 8px; }
+.st-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.st-field .ios-input { text-transform: none; letter-spacing: 0; font-size: 16px; font-weight: 500; color: var(--text); height: 40px; }
+.st-id { margin: 0; font-size: 12px; color: var(--muted-2); }
+.st-inline { display: flex; gap: 6px; }
+.st-inline .ios-input { flex: 1; min-width: 0; height: 36px; }
+.st-link { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.st-files { max-height: 220px; overflow: auto; }
+.st-ask { display: flex; flex-direction: column; gap: 6px; }
+.st-ask textarea { min-height: 64px; padding: 8px 12px; font: inherit; font-size: 14px; resize: vertical; height: auto; }
+.st-proposal { display: flex; flex-direction: column; gap: 8px; }
+.st-proposal pre { max-height: 260px; overflow: auto; margin: 0; }
+.st-danger { color: var(--danger); align-self: flex-start; }
+.st-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--accent-soft); color: var(--accent-ink); font-size: 14px; }
+.st-pending span { flex: 1 1 100%; }
+
+.st-scroll { flex: 1; overflow: auto; }
+.st-textwrap { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.st-text { min-height: calc(100vh - 160px); }
+
+.st-file { position: absolute; inset: 24px; z-index: 5; display: flex; flex-direction: column; border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); overflow: hidden; }
+.st-file-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.st-file-code { flex: 1; margin: 0; overflow: auto; border-radius: 0; }
+
+/* workflow steps */
+.st-steps-page { max-width: 760px; margin: 0 auto; padding: 20px 16px 64px; display: flex; flex-direction: column; gap: 14px; }
+.st-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.st-step { display: grid; grid-template-columns: 32px 1fr; gap: 8px 10px; padding: 12px; border-radius: var(--radius-card); background: var(--surface); box-shadow: 0 1px 0 var(--line); }
+.st-step-n { width: 28px; height: 28px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-3); font-size: 13px; font-weight: 600; }
+.st-step-text { height: auto; min-height: 44px; padding: 8px 10px; font: inherit; font-size: 15px; line-height: 1.4; resize: vertical; }
+.st-step-tools { grid-column: 2; display: flex; gap: 6px; }
+.st-step-tools .btn.tiny { min-width: 36px; height: 32px; }
+.st-chip-x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 0 0 4px; font-size: 14px; }
+
+@media (max-width: 900px) {
+  .st-studio .st-head { gap: 8px; }
+  .st-tabs { order: 5; flex-basis: 100%; display: grid; }
+  .st-work { flex-direction: column; }
+  /* The inspector is a sheet over the canvas: small until a node is chosen. */
+  .st-inspector { width: auto; max-height: 30vh; border-left: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12); padding: 10px 16px 24px; }
+  .st-inspector.has-node { max-height: 46vh; }
+  .st-canvas { min-height: 38vh; }
+  .st-sheet-grip { display: block; width: 40px; height: 5px; margin: 0 auto 4px; border-radius: 3px; background: var(--line-2); }
+  .st-float { bottom: 10px; left: 10px; }
+  .st-float .btn.ios-round { width: 40px; height: 40px; }
+  .st-file { inset: 0; border-radius: 0; }
+  .st-text { min-height: 60vh; }
+  .st-step-tools .btn.tiny { min-width: 44px; height: 40px; }
+}
+
+/* ================================================================ prompts de IA */
+
+.pp-list .ios-row { gap: 10px; }
+.pp-open { display: flex; flex-direction: column; }
+.pp-body { padding: 4px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.pp-blocks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.pp-blocks li { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); display: flex; flex-direction: column; gap: 6px; }
+.pp-blocks h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--heading); }
+.pp-blocks p { margin: 0; font-size: 14px; line-height: 1.45; }
+.pp-blocks pre { margin: 0; white-space: pre-wrap; }
+.pp-tag { margin-left: 6px; padding: 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-weight: 600; }
+.pp-method { min-height: 260px; }
+.av-prompt { font-size: 13px; color: var(--muted); }
+.av-prompt summary { cursor: pointer; padding: 4px 0; }
+.av-prompt pre { max-height: 320px; overflow: auto; margin: 6px 0 0; white-space: pre-wrap; font-size: 12px; }
+.st-consequences { padding: 12px; border-radius: var(--radius-card); background: var(--surface-2); }
+
+/* ================================================================ drift */
+
+.av-drift { margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radius-card); background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.av-drift.is-clean { flex-direction: row; align-items: center; gap: 8px; color: var(--ok); font-size: 14px; }
+.av-drift-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }

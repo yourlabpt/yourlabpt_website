@@ -30,7 +30,7 @@ const SNAPSHOT_VERSION = 1;
 const MAX_TEXT_BYTES = 200 * 1024;
 
 const STAGES = ['idea', 'discovery', 'requirements', 'architecture', 'roadmap', 'implementation', 'validation', 'delivery', 'operations'];
-const TYPES = { ideia: 'ideia', resgate: 'resgate', consolidacao: 'consolidacao' };
+const TYPES = { ideia: 'ideia', resgate: 'resgate', consolidacao: 'consolidacao', interno: 'interno' };
 const PHASE_STATUS = { planeada: 'planned', 'em curso': 'in_progress', concluida: 'done' };
 const PHASE_STATUS_WORD = { planned: 'planeada', in_progress: 'em curso', done: 'concluída' };
 const QUESTION_STATE = { aberta: 'open', respondida: 'answered' };
@@ -153,7 +153,7 @@ function readProject(file, content, note) {
   if (fm.broken) note(file, 1, 'error', 'O bloco inicial --- não fecha. Termine-o com uma linha só com ---.');
 
   const type = TYPES[key(fm.data.type)] || '';
-  if (!type) note(file, 1, 'warning', 'type deve ser ideia, resgate ou consolidacao.');
+  if (!type) note(file, 1, 'warning', 'type deve ser ideia, resgate, consolidacao ou interno.');
   const stage = STAGES.includes(key(fm.data.stage)) ? key(fm.data.stage) : '';
   if (!stage) note(file, 1, 'warning', `stage deve ser um de: ${STAGES.join(', ')}.`);
 
@@ -394,7 +394,11 @@ function readWorkspace(files = []) {
       note(filePath, 0, 'warning', 'Ficheiro ignorado: não é um dos ficheiros do GUIDE.md (nome em minúsculas, palavras com -).');
       continue;
     }
-    if (kind === 'guide') continue;
+    if (kind === 'guide') {
+      // The rules move on; a repository keeps whatever version it was given until refreshed.
+      if (digest(content) !== digest(guide())) note(filePath, 1, 'warning', 'GUIDE.md é de uma versão anterior das regras. Documentação → Actualizar o guia (ou yourlab.js init).');
+      continue;
+    }
     if (bytes > MAX_TEXT_BYTES) {
       note(filePath, 0, 'warning', `Ficheiro ignorado: tem mais de ${Math.round(MAX_TEXT_BYTES / 1024)} KB.`);
       continue;
@@ -513,9 +517,31 @@ function taskFromEdit({ filePath, before, after, snapshot }) {
 
 /* ------------------------------------------------------------------ writing the starting folder */
 
+let guideText = '';
 function guide() {
-  return fs.readFileSync(path.join(__dirname, 'workspace-guide.md'), 'utf8');
+  if (!guideText) guideText = fs.readFileSync(path.join(__dirname, 'workspace-guide.md'), 'utf8');
+  return guideText;
 }
+
+/**
+ * The two files every local AI tool reads first, pointing it at the constitution.
+ * Written only when absent: an AGENTS.md or CLAUDE.md someone wrote is never replaced.
+ */
+const POINTERS = {
+  'AGENTS.md': [
+    '# Agents',
+    '',
+    'This repository documents itself in `yourlab/` (requirements in `openspec/specs/`).',
+    'Before changing code, read `yourlab/GUIDE.md`. After changing code, update the',
+    'artefacts linked to what you changed, in the same commit — the GUIDE says how',
+    '(«The constitution»). When the YourLab command is available, run',
+    '`node <platform>/bin/yourlab.js check .` before committing.',
+    '',
+  ].join('\n'),
+  // Claude Code reads CLAUDE.md; this one imports the same instructions.
+  'CLAUDE.md': '@AGENTS.md\n',
+};
+const POINTER_LINE = 'yourlab/GUIDE.md';
 
 function frontmatterBlock(entries) {
   return ['---', ...entries.filter(([, value]) => value !== '' && value !== undefined).map(([k, v]) => `${k}: ${v}`), '---'].join('\n');
@@ -716,6 +742,9 @@ function modulesDiagram(modules) {
     const parent = entry.name.includes('/') ? entry.name.slice(0, entry.name.lastIndexOf('/')) : '';
     if (parent && names.includes(parent)) lines.push(`  ${id(parent)} --> ${id(entry.name)}`);
   }
+  // Each node already points at its folder: the constitution's bridge, from day one.
+  lines.push('');
+  for (const entry of modules) lines.push(`%% code: ${id(entry.name)} = ${entry.name}`);
   return `${lines.join('\n')}\n`;
 }
 
@@ -732,6 +761,7 @@ function skeletonFiles(project = {}, { existing = new Set(), survey = null, requ
   const add = (filePath, content) => {
     if (content && !existing.has(filePath)) files.push({ path: filePath, content });
   };
+  for (const [filePath, content] of Object.entries(POINTERS)) add(filePath, content);
 
   // Requirements the platform already holds move into the repository with the folder,
   // so from here on the files are the whole record. Never over a spec someone wrote.
@@ -794,6 +824,9 @@ module.exports = {
   skeletonFiles,
   pieceOf,
   templateFor,
+  POINTERS,
+  POINTER_LINE,
+  firstParagraph,
   GENERATED_MARK,
   serializeProject,
   serializePhase,

@@ -26,6 +26,12 @@ const promptPacks = require('./prompt-packs');
 const aiSteps = require('./ai-steps');
 const aiRuns = require('./ai-runs');
 const workspaceIo = require('./workspace-io');
+const codeMap = require('./code-map');
+const promptRegistry = require('./prompt-registry');
+const { driftReport } = require('./artefact-drift');
+const skills = require('./skills');
+const artefactEdit = require('../public/artefact-edit');
+const { buildScope } = require('./agent-code-commit');
 const { promptDiff } = require('./work-snapshot');
 const { RENDER_HEADERS } = require('./mockup-routes');
 
@@ -82,6 +88,46 @@ function registerWorkspaceRoutes(app, deps) {
     const files = [];
     for (const filePath of paths) files.push({ path: filePath, content: (await reader.readFile(filePath)).slice(0, 2000) });
     return files.filter((file) => file.content.trim());
+  }
+
+  /**
+   * An artefact's code: the folders it is linked to (one node's, or all), as a scope,
+   * and the source files inside them. Read here — the browser never says where to write.
+   */
+  async function loadArtefactCode(repository, artefactPath, nodeId = '') {
+    if (!/\.mmd$/.test(artefactPath) && !/^yourlab\/workflows\//.test(artefactPath)) throw new Error('Só diagramas e workflows se ligam ao código.');
+    if (!workspaceFormat.isWritablePath(artefactPath)) throw new Error('Ficheiro fora do formato yourlab/.');
+    const reader = await workspaceSync.pickReader(repository, { remoteClient });
+    const content = await reader.readFile(artefactPath).catch(() => '');
+    const paths = artefactEdit.codeLinksOf(artefactPath, content, nodeId)
+      .map((entry) => String(entry).trim().replace(/^\/+|\/+$/g, ''))
+      .filter((entry) => entry && !entry.split('/').some((part) => part === '..' || part.startsWith('.')));
+    const scope = buildScope({ modulePaths: paths });
+    const codeFiles = [];
+    for (const prefix of scope.prefixes) {
+      const listed = SOURCE_FILE.test(prefix) ? [prefix] : (await reader.listTree(`${prefix}/`).catch(() => [])).filter((p) => SOURCE_FILE.test(p)).sort();
+      for (const filePath of listed) {
+        if (codeFiles.length >= 6) break;
+        const text = await reader.readFile(filePath).catch(() => '');
+        if (text) codeFiles.push({ path: filePath, content: text.slice(0, 6000) });
+      }
+    }
+    return { reader, artefact: { path: artefactPath, content }, scope, codeFiles };
+  }
+
+  // The map is read file by file; it is kept a while so opening the studio twice is free.
+  // ponytail: in-memory, per process; key on the clone's HEAD if maps go stale in practice.
+  const codeMaps = new Map();
+  const CODE_MAP_TTL_MS = 10 * 60 * 1000;
+  async function codeMapFor(project, repository, refresh = false) {
+    let entry = codeMaps.get(project.id);
+    if (!entry || refresh || Date.now() - entry.at > CODE_MAP_TTL_MS) {
+      const reader = await workspaceSync.pickReader(repository, { remoteClient });
+      const map = await codeMap.buildCodeMap(reader, project.repositorySurvey, { maxFiles: reader.kind === 'local' ? 300 : 80 });
+      entry = { at: Date.now(), map };
+      codeMaps.set(project.id, entry);
+    }
+    return entry;
   }
 
   /**
@@ -358,6 +404,16 @@ function registerWorkspaceRoutes(app, deps) {
         existingTests = existingTests.filter((filePath) => promptPacks.testPath(filePath)).slice(0, 30);
       }
     }
+    if (promptPacks.PACKS[req.params.packId]?.needsArtefactCode) {
+      const repository = gitRepositories.normalizeProjectRepository(req.loadedProject.repository);
+      if (!repository) return noRepository(res);
+      try {
+        testsAndCode = await loadArtefactCode(repository, input.path, String(req.body?.nodeId || '').slice(0, 80));
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+      input.nodeId = String(req.body?.nodeId || '').slice(0, 80);
+    }
     let code = null;
     if (promptPacks.PACKS[req.params.packId]?.needsCode && input.area) {
       // Only an area the survey found — never a path typed in.
@@ -368,6 +424,7 @@ function registerWorkspaceRoutes(app, deps) {
       code = await readArea(repository, input.area);
     }
     const outcome = await runPack(req.params.packId, {
+      projectId: req.params.projectId,
       snapshot: req.loadedProject.workspace?.snapshot || null,
       task: input.taskId ? workItems.findWorkItem(req.loadedProject, input.taskId) : null,
       code,
@@ -416,30 +473,18 @@ function registerWorkspaceRoutes(app, deps) {
         if (await reader.readFile(file.path)) return res.status(409).json({ message: `${file.path} já existe. Os testes gerados não substituem testes escritos.` });
       }
 
-      let changeRequest = null;
-      if (typeof reader.writeFile === 'function') {
-        for (const file of files) await reader.writeFile(file.path, file.content);
-      } else {
-        const client = await remoteClient();
-        const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-        const result = await openspecRepository.commitFilesForReview(client, repository, {
-          files,
-          branch: `yourlab/testes-${stamp}`,
-          title: `Testes: ${files.map((file) => file.path).join(', ')}`,
-          body: 'Testes escritos a partir dos requisitos, antes do código.',
-          commitMessage: 'testes a partir dos requisitos',
-        });
-        changeRequest = result.changeRequest;
-      }
+      // Same as every write: pull first, then commit and push (lib/workspace-io.js).
+      const written = await workspaceIo.writeFiles(dataDir, repository, files, 'testes a partir dos requisitos');
+      const changeRequest = null;
       await updateStore(async (store) => {
         appendActivity(store, {
           projectId: req.params.projectId,
           actorUserId: req.auth.user.id,
           action: 'tests_written',
-          details: { files: files.map((file) => file.path), source: reader.kind },
+          details: { files: files.map((file) => file.path), source: written.source },
         });
       });
-      return res.json({ written: files.map((file) => file.path), changeRequest });
+      return res.json({ written: files.map((file) => file.path), changeRequest, git: written.git || null, branch: written.branch || '' });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -464,30 +509,17 @@ function registerWorkspaceRoutes(app, deps) {
         return res.status(400).json({ message: `Só código dentro de ${scope.prefixes.join(', ')} — nunca testes, configuração ou lockfiles.` });
       }
 
-      let changeRequest = null;
-      if (typeof reader.writeFile === 'function') {
-        for (const file of result.files) await reader.writeFile(file.path, file.content);
-      } else {
-        const client = await remoteClient();
-        const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-        const committed = await openspecRepository.commitFilesForReview(client, repository, {
-          files: result.files,
-          branch: `yourlab/codigo-${stamp}`,
-          title: `Código para: ${testPaths.join(', ')}`,
-          body: 'Código escrito para fazer passar estes testes.',
-          commitMessage: 'código a partir dos testes',
-        });
-        changeRequest = committed.changeRequest;
-      }
+      const written = await workspaceIo.writeFiles(dataDir, repository, result.files, 'código a partir dos testes');
+      const changeRequest = null;
       await updateStore(async (store) => {
         appendActivity(store, {
           projectId: req.params.projectId,
           actorUserId: req.auth.user.id,
           action: 'code_written',
-          details: { files: result.files.map((file) => file.path), tests: testPaths, source: reader.kind },
+          details: { files: result.files.map((file) => file.path), tests: testPaths, source: written.source },
         });
       });
-      return res.json({ written: result.files.map((file) => file.path), changeRequest });
+      return res.json({ written: result.files.map((file) => file.path), changeRequest, git: written.git || null, branch: written.branch || '' });
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
@@ -555,7 +587,7 @@ function registerWorkspaceRoutes(app, deps) {
       if (step.kind === 'spec') {
         // Requirements already have their own pack; its answer becomes one file here.
         const code = await readArea(repository, step.area);
-        outcome = await runPack('artefacts_from_code', { snapshot, code, input: { area: step.area } });
+        outcome = await runPack('artefacts_from_code', { projectId: project.id, snapshot, code, input: { area: step.area } });
         if (!outcome.error) {
           const { result } = outcome;
           outcome.result = {
@@ -571,7 +603,7 @@ function registerWorkspaceRoutes(app, deps) {
         }
         const single = !step.target.endsWith('/');
         const current = single ? await reader.readFile(step.target).catch(() => '') : '';
-        outcome = await runPack('artefact_from_code', { snapshot, step, sources: aiSteps.readSources(sources), current, input: {} });
+        outcome = await runPack('artefact_from_code', { projectId: project.id, snapshot, step, sources: aiSteps.readSources(sources), current, input: {} });
       }
       if (outcome.error) return res.status(outcome.status || 400).json({ message: outcome.error });
       for (const file of outcome.result.files) {
@@ -591,6 +623,160 @@ function registerWorkspaceRoutes(app, deps) {
       return res.json({ key: step.key, ...outcome });
     } catch (error) {
       return res.status(502).json({ message: error.message });
+    }
+  });
+
+  /** The code as a diagram, and — given a diagram — how the two compare. */
+  app.get('/api/projects/:projectId/workspace/code-map', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const project = req.loadedProject;
+      const repository = workspaceIo.repositoryOf(project);
+      if (!repository) return noRepository(res);
+      const entry = await codeMapFor(project, repository, req.query?.refresh === '1');
+      let comparison = null;
+      const diagramPath = String(req.query?.diagram || '');
+      if (diagramPath && /\.mmd$/.test(diagramPath) && workspaceFormat.isWritablePath(diagramPath)) {
+        const content = await workspaceIo.readFile(dataDir, repository, diagramPath);
+        comparison = codeMap.compare(artefactEdit.parseFlowchart(content), entry.map);
+      }
+      return res.json({ map: entry.map, comparison, readAt: new Date(entry.at).toISOString() });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /**
+   * What no longer matches — the same report `yourlab.js check` prints. Staleness reads
+   * git, so it needs the working copy; without one the rest still comes back.
+   */
+  app.get('/api/projects/:projectId/workspace/drift', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const project = req.loadedProject;
+      const repository = workspaceIo.repositoryOf(project);
+      if (!repository) return noRepository(res);
+      const snapshot = project.workspace?.snapshot || null;
+      const { map } = await codeMapFor(project, repository, req.query?.refresh === '1');
+      const modules = map.modules.filter((entry) => entry.files > 0).map((entry) => entry.name);
+      const local = workspaceSync.localPathUsable(repository);
+      return res.json({
+        local,
+        ...(await driftReport({ root: local ? repository.localPath : '', snapshot, modules, knownFolders: map.modules.map((entry) => entry.name) })),
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /** One source file, read-only, for the studio's «código ligado». Never a dotfile. */
+  app.get('/api/projects/:projectId/repository/file', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const filePath = String(req.query?.path || '').replace(/^\/+/, '');
+      if (!filePath || filePath.split('/').some((part) => !part || part === '..' || part.startsWith('.'))) {
+        return res.status(400).json({ message: 'Caminho inválido.' });
+      }
+      const repository = workspaceIo.repositoryOf(req.loadedProject);
+      if (!repository) return noRepository(res);
+      const content = await workspaceIo.readFile(dataDir, repository, filePath);
+      return res.json({ path: filePath, content: content.slice(0, 200000), truncated: content.length > 200000 });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /**
+   * Writes the code a person accepted from code_from_artefact. The scope is read again
+   * from the artefact's links here; files outside it are refused, not dropped quietly.
+   */
+  app.post('/api/projects/:projectId/repository/code-from-artefact', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const repository = workspaceIo.repositoryOf(req.loadedProject);
+      if (!repository) return noRepository(res);
+      const artefactPath = String(req.body?.path || '');
+      const { scope } = await loadArtefactCode(repository, artefactPath, String(req.body?.nodeId || ''));
+      if (!scope.prefixes.length) return res.status(400).json({ message: 'Este artefacto não está ligado a nenhuma pasta do código.' });
+      const incoming = (Array.isArray(req.body?.files) ? req.body.files : []).map((entry) => ({ path: entry?.path, content: entry?.content }));
+      const { result } = promptPacks.PACKS.code_from_tests.validate({ files: incoming }, { scope });
+      if (!result.files.length || result.files.length !== incoming.length) {
+        return res.status(400).json({ message: `Só código dentro de ${scope.prefixes.join(', ')} — nunca testes, configuração ou lockfiles.` });
+      }
+      const written = await workspaceIo.writeFiles(dataDir, repository, result.files, `código a partir de ${artefactPath}`);
+      codeMaps.delete(req.params.projectId);
+      await updateStore(async (store) => {
+        appendActivity(store, {
+          projectId: req.params.projectId,
+          actorUserId: req.auth.user.id,
+          action: 'code_written',
+          details: { files: result.files.map((file) => file.path), artefact: artefactPath, source: written.source },
+        });
+      });
+      return res.json({ written: result.files.map((file) => file.path), git: written.git || null, branch: written.branch || '', source: written.source });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /* ------------------------------------------------------------ the prompts, as an interface */
+
+  /** One pack, as a person reads it: its four blocks, its versions and how each did. */
+  async function packView(packId, registry) {
+    const pack = promptPacks.PACKS[packId];
+    const entry = registry.packs[packId] || { active: 'base', versions: [] };
+    const stats = promptRegistry.statsFor(registry, packId);
+    const base = skills.readBody(pack.skill);
+    return {
+      id: packId,
+      label: pack.label || packId,
+      skill: `skills/${pack.skill}/SKILL.md`,
+      active: entry.active || 'base',
+      blocks: {
+        slice: { label: pack.sliceLabel || 'O projecto (só nomes e títulos):', describe: pack.describe?.slice || '', maxChars: pack.sliceMax || promptPacks.MAX_SLICE_CHARS },
+        change: { describe: pack.describe?.change || '' },
+        contract: pack.contract,
+      },
+      versions: [
+        { id: 'base', body: base, note: 'O método do repositório', createdAt: '', stats: stats.base || null },
+        ...entry.versions.map((version) => ({ ...version, stats: stats[version.id] || null })),
+      ],
+    };
+  }
+
+  app.get('/api/projects/prompt-packs', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      const registry = await promptRegistry.read(dataDir);
+      const packs = await Promise.all(Object.keys(promptPacks.PACKS).map((id) => packView(id, registry)));
+      return res.json({ packs });
+    } catch (error) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/prompt-packs/:packId/versions', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      if (!promptPacks.PACKS[req.params.packId]) return res.status(404).json({ message: 'Pacote desconhecido.' });
+      await promptRegistry.saveVersion(dataDir, req.params.packId, { body: req.body?.body, note: req.body?.note }, req.auth.user.id);
+      return res.json({ pack: await packView(req.params.packId, await promptRegistry.read(dataDir)) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/projects/prompt-packs/:packId/activate', authMiddleware, requireRole('super_admin'), async (req, res) => {
+    try {
+      if (!promptPacks.PACKS[req.params.packId]) return res.status(404).json({ message: 'Pacote desconhecido.' });
+      await promptRegistry.activate(dataDir, req.params.packId, String(req.body?.version || ''));
+      return res.json({ pack: await packView(req.params.packId, await promptRegistry.read(dataDir)) });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  /** What the person did with an AI answer: written (accepted) or thrown away. */
+  app.post('/api/projects/:projectId/ai-runs/:runId/outcome', authMiddleware, requireRole('super_admin', 'partner'), loadProjectForUser, async (req, res) => {
+    try {
+      const outcome = await promptRegistry.recordOutcome(dataDir, req.params.runId, String(req.body?.outcome || ''), req.params.projectId);
+      return res.json({ outcome });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
     }
   });
 
@@ -647,6 +833,10 @@ function registerWorkspaceRoutes(app, deps) {
         ...await reader.listTree(`${workspaceFormat.ROOT}/`),
         ...await reader.listTree(workspaceFormat.SPEC_PREFIX),
       ]);
+      // AGENTS.md and CLAUDE.md are written only where there is none.
+      for (const pointer of Object.keys(workspaceFormat.POINTERS)) {
+        if (await reader.readFile(pointer).catch(() => '')) existing.add(pointer);
+      }
       // A project that already has code starts from what the survey found in it; one
       // with requirements on the platform takes them along as openspec/specs/.
       const files = workspaceFormat.skeletonFiles(project, { existing, survey: project.repositorySurvey || null, requirements: project.requirements || [] });

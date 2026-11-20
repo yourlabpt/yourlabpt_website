@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const format = require('../lib/workspace-format');
 const packs = require('../lib/prompt-packs');
+// Runs are recorded in the prompt registry: never in the real data folder.
+const RUN_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'packs-test-'));
 
 test('pieceOf gives the viewer the same reading a sync would, for one file', () => {
   const project = format.pieceOf('yourlab/project.md', '---\nname: Cupões\nclient: Impakta\ntype: ideia\nstage: requirements\n---\n\n## Propósito\nCupões.\n\n## Riscos\n- MB Way\n');
@@ -52,7 +54,7 @@ test('questions keep their notes when the file is rewritten', () => {
 });
 
 test('edit_artefact returns the same file only, checked, and never another path', async () => {
-  const reply = (content) => packs.createPackRunner({ dataDir: '/tmp', complete: async () => ({ text: JSON.stringify({ content, summary: 'mudou' }) }) });
+  const reply = (content) => packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: JSON.stringify({ content, summary: 'mudou' }) }) });
   const input = { path: 'yourlab/workflows/login.md', request: 'acrescenta um passo final' };
   const ok = await reply('# Entrar\n1. Email.\n2. Entra.')('edit_artefact', { input, current: '# Entrar\n1. Email.' });
   assert.equal(ok.result.file.path, 'yourlab/workflows/login.md');

@@ -88,4 +88,18 @@ async function commitAndPush(root, paths, message) {
     : { committed: true, pushed: false, commit: sha, message: `Commit feito; o envio falhou: ${push.err.split('\n')[0]}` };
 }
 
-module.exports = { isRepo, status, pull, commitAndPush };
+/**
+ * When a path last changed (seconds) and in which commit. Uncommitted or untracked
+ * changes count as «now»: they are the newest thing there is.
+ */
+async function lastChange(root, relative) {
+  if (!isRepo(root)) return { at: 0, commit: '' };
+  const pending = await run(root, ['status', '--porcelain', '--', relative]);
+  // One fixed «now» for every pending change, so two pending things are never a second apart.
+  if (pending.out) return { at: Number.MAX_SAFE_INTEGER, commit: 'por commitar' };
+  const result = await run(root, ['log', '-1', '--format=%ct %h', '--', relative]);
+  const [at, commit] = result.out.split(' ');
+  return { at: Number(at) || 0, commit: commit || '' };
+}
+
+module.exports = { isRepo, status, pull, commitAndPush, lastChange };

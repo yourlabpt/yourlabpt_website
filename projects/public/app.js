@@ -1644,6 +1644,7 @@ function renderActiveTab(project, tabId) {
       break;
     case 'definicoesPlataforma':
       window.PlatformSettingsUI?.render?.();
+      window.PromptPacksUI?.render?.();
       window.GoogleSignInUI?.renderSettings?.();
       break;
     case 'agentes':
@@ -1682,6 +1683,7 @@ function renderProjectDetails(options = {}) {
     }
     if (state.activeTab === 'definicoesPlataforma') {
       window.PlatformSettingsUI?.render?.();
+      window.PromptPacksUI?.render?.();
       window.GoogleSignInUI?.renderSettings?.();
     }
     if (state.activeTab === 'conta') window.AccountUI?.render?.();
@@ -3105,6 +3107,7 @@ function switchToTab(tabId) {
     window.AgentsAdminUI?.render?.();
   } else if (activeId === 'definicoesPlataforma') {
     window.PlatformSettingsUI?.render?.();
+      window.PromptPacksUI?.render?.();
       window.GoogleSignInUI?.renderSettings?.();
   }
   persistNavigationState();

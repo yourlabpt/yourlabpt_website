@@ -8,6 +8,8 @@ const path = require('node:path');
 
 const packs = require('../lib/prompt-packs');
 const format = require('../lib/workspace-format');
+// Runs are recorded in the prompt registry: never in the real data folder.
+const RUN_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'packs-test-'));
 
 const SNAPSHOT = format.readWorkspace([
   { path: 'yourlab/project.md', content: '---\nname: City Pass\ntype: ideia\nstage: requirements\n---\n## Propósito\nCupões para restaurantes.\n' },
@@ -63,7 +65,7 @@ test('the runner sends one single-pass job and returns the checked answer', asyn
     sent = call;
     return { text: '{"artefacts":[{"path":"yourlab/phases/01-mvp.md","why":"usa auth"}],"codeAreas":[],"summary":"s"}', costUsd: 0.002, model: 'm' };
   };
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete });
   const outcome = await run('impact', { snapshot: SNAPSHOT, input: INPUT });
 
   assert.equal(outcome.error, undefined);
@@ -73,11 +75,11 @@ test('the runner sends one single-pass job and returns the checked answer', asyn
 });
 
 test('the runner refuses cleanly: no input, no key, or an answer that is not JSON', async () => {
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: 'desculpe' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: 'desculpe' }) });
   assert.equal((await run('impact', { snapshot: SNAPSHOT, input: {} })).status, 400);
   assert.equal((await run('nada', { snapshot: SNAPSHOT, input: INPUT })).status, 404);
   assert.equal((await run('impact', { snapshot: SNAPSHOT, input: INPUT })).status, 502);
-  const noKey = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ error: 'Falta a chave da DeepInfra.', status: 409 }) });
+  const noKey = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ error: 'Falta a chave da DeepInfra.', status: 409 }) });
   assert.equal((await noKey('impact', { snapshot: SNAPSHOT, input: INPUT })).status, 409);
 });
 
@@ -136,7 +138,7 @@ test('the children a split creates sit under the task, in order, each after the 
 });
 
 test('the runner splits with no repository read, and impact still asks for one', async () => {
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: '{"tasks":[{"title":"A","goal":"a"},{"title":"B","goal":"b"}],"summary":"ok"}' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: '{"tasks":[{"title":"A","goal":"a"},{"title":"B","goal":"b"}],"summary":"ok"}' }) });
   const split = await run('split_task', { snapshot: null, task: TASK, input: { taskId: TASK.id } });
   assert.deepEqual(split.result.tasks.map((t) => t.title), ['A', 'B']);
   assert.equal((await run('split_task', { snapshot: null, task: null, input: {} })).status, 400);
@@ -178,7 +180,7 @@ test('artefacts_from_code sends the code as its slice, and refuses an area with 
   assert.match(text, /O código desta parte:\n\n### src\/coupons\/generate\.js/);
   assert.match(text, /Parte do código: src\/coupons/);
 
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: '{"capability":"x","requirements":[]}' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: '{"capability":"x","requirements":[]}' }) });
   assert.equal((await run('artefacts_from_code', { code: [], input: { area: 'src/vazio' } })).status, 400);
   assert.equal((await run('artefacts_from_code', { code, input: {} })).status, 400);
 });
@@ -240,7 +242,7 @@ test('the test framework comes from package.json, and a capability with no requi
   assert.equal(packs.detectTestFramework({ packageJson: { dependencies: ['express'] } }), '');
   assert.equal(packs.detectTestFramework(null), '');
 
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: '{"files":[]}' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: '{"files":[]}' }) });
   assert.equal((await run('tests_from_artefacts', { snapshot: SPEC_SNAPSHOT, input: { capability: 'nada' } })).status, 400);
   assert.equal((await run('tests_from_artefacts', { snapshot: null, input: { capability: 'cupoes' } })).status, 400);
 });
@@ -292,7 +294,7 @@ test('code_from_tests shows the tests and the code they import, and fails closed
   assert.match(text, /### src\/coupons\/generate\.js \(ainda não existe\)/);
   assert.match(text, /TypeError: gerar is not a function/);
 
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: '{"files":[]}' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: '{"files":[]}' }) });
   assert.equal((await run('code_from_tests', { testFiles: [], scope, input: {} })).status, 400);
   const unscoped = await run('code_from_tests', { testFiles: [{ path: 'tests/a.test.js', content: 'x' }], scope: packs.codeScopeFor([]), input: {} });
   assert.equal(unscoped.status, 400);
@@ -325,7 +327,7 @@ test('sync_back keeps one real proposal per existing artefact, never the guide o
 });
 
 test('sync_back refuses without a read repository or without a code change', async () => {
-  const run = packs.createPackRunner({ dataDir: DATA_DIR, complete: async () => ({ text: '{"proposals":[]}' }) });
+  const run = packs.createPackRunner({ dataDir: RUN_DIR, complete: async () => ({ text: '{"proposals":[]}' }) });
   assert.equal((await run('sync_back', { snapshot: SPEC_SNAPSHOT, input: { changes: [] } })).status, 400);
   assert.equal((await run('sync_back', { snapshot: null, input: { changes: [{ path: 'a.js', diff: '+x' }] } })).status, 400);
   const ok = await run('sync_back', { snapshot: SPEC_SNAPSHOT, input: { changes: [{ path: 'a.js', diff: '+x' }] } });

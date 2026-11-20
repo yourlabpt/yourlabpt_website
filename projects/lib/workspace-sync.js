@@ -12,6 +12,7 @@ const format = require('./workspace-format');
 
 // A repository with more than this under yourlab/ is not being used as the guide says.
 const MAX_FILES = 400;
+const SKIP_DIRS = new Set(['node_modules', 'vendor', 'dist', 'build', 'out', 'target', '__pycache__', 'coverage']);
 
 function createLocalReader(root) {
   const base = path.resolve(root);
@@ -26,7 +27,7 @@ function createLocalReader(root) {
   return {
     kind: 'local',
     ref: '',
-    async listTree(prefix) {
+    async listTree(prefix, { limit = MAX_FILES } = {}) {
       const out = [];
       const walk = async (dir) => {
         let entries;
@@ -37,8 +38,9 @@ function createLocalReader(root) {
         }
         entries.sort((a, b) => (a.name < b.name ? -1 : 1));
         for (const entry of entries) {
-          if (out.length >= MAX_FILES) return;
-          if (entry.name.startsWith('.')) continue;
+          if (out.length >= limit) return;
+          // Dotfiles, dependencies and build output are never the project's own files.
+          if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
           const full = path.join(dir, entry.name);
           if (entry.isDirectory()) await walk(full);
           else if (entry.isFile()) out.push(path.relative(base, full).split(path.sep).join('/'));

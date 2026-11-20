@@ -82,6 +82,7 @@
       const response = await window.apiRequest(`/${encodeURIComponent(projectId)}/workspace/sync`, { method: 'POST', body: {} });
       if (state.projectId === projectId) {
         state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
+        drift.data = null;
       }
       if (!quiet) window.showToast?.('Lido do repositório.', 'ok');
     } catch (error) {
@@ -99,14 +100,10 @@
     notify();
     try {
       const response = await window.apiRequest(`/${encodeURIComponent(projectId)}/workspace/initialize`, { method: 'POST', body: {} });
-      if (response.local) {
-        state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
-        window.showToast?.(`Pasta yourlab/ criada na cópia local (${response.files.length} ficheiros).`, 'ok');
-      } else {
-        const request = response.changeRequest || {};
-        state.changeRequestUrl = request.url || request.html_url || request.webUrl || request.web_url || '';
-        window.showToast?.('Pedido de alteração aberto no repositório. Aceite-o e toque em Actualizar.', 'ok');
-      }
+      if (response.workspace) state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
+      const git = response.git;
+      window.showToast?.(`Guia e pasta yourlab/ escritos (${response.files.length} ficheiros)${git?.pushed ? `, enviados (${git.commit})` : response.written === 'remote' ? ' no ramo principal' : ''}.`, 'ok');
+      drift.data = null;
     } catch (error) {
       window.showToast?.(error.message, 'error');
     } finally {
@@ -402,6 +399,10 @@
       if (snap.mockup.screens.length) {
         actions.push(`<button type="button" class="btn primary" data-ws-action="mockup">${icon('image', 16)}Ver mockup</button>`);
       }
+      // The rules moved on since this repository got its GUIDE.md.
+      if (canInitialize() && snap.findings.some((finding) => finding.file === 'yourlab/GUIDE.md')) {
+        actions.push(`<button type="button" class="btn" data-ws-action="initialize" ${state.initializing ? 'disabled' : ''}>${state.initializing ? 'A escrever…' : 'Actualizar o guia'}</button>`);
+      }
       actions.push(syncButton());
     }
 
@@ -663,6 +664,8 @@
         body: { path: target, content, previousSha: view.isNew ? '' : view.sha },
       });
       writeDraft(target, null);
+      drift.data = null;
+      if (view.aiRunId) { reportOutcome(view.aiRunId, 'accepted'); view.aiRunId = ''; }
       state.data = { ...(state.data || {}), hasRepository: true, workspace: response.workspace };
       view.lastEdit = { path: target, diff: response.diff || '', task: response.task || null, ai: null, running: false };
       view.newPath = '';
@@ -674,15 +677,18 @@
       await select(target);
       view.lastEdit = { ...view.lastEdit };
       paintArtefactos();
+      return response.diff || '';
     } catch (error) {
       window.showToast?.(error.message, 'error');
       view.saving = false;
       paintArtefactos();
+      return null;
     }
   }
 
   function cancelEdit() {
     writeDraft(view.sel, null);
+    if (view.aiRunId) { reportOutcome(view.aiRunId, 'discarded'); view.aiRunId = ''; }
     if (view.isNew) {
       Object.assign(view, { sel: '', newPath: '', isNew: false, mode: 'view' });
     } else {
@@ -747,7 +753,7 @@
     const text = currentText();
     const dirty = text !== view.content || view.isNew;
     return `
-      ${view.aiNote ? `<div class="av-ai-note">${icon('sparkle', 16)}<span><strong>Proposta da IA — reveja e Guardar.</strong> ${esc(view.aiNote)}</span></div>` : ''}
+      ${view.aiNote ? `<div class="av-ai-note">${icon('sparkle', 16)}<span><strong>Proposta da IA — reveja e Guardar.</strong> ${esc(view.aiNote)}</span></div>${window.ArtefactViews.promptFold({ prompt: view.aiPrompt, promptVersion: view.aiVersion })}` : ''}
       <div class="ios-segmented av-seg" role="tablist">
         <button type="button" class="ios-segment ${view.pane === 'text' ? 'is-active' : ''}" data-ws-pane="text">Texto</button>
         <button type="button" class="ios-segment ${view.pane === 'view' ? 'is-active' : ''}" data-ws-pane="view">Vista</button>
@@ -926,7 +932,7 @@
         view.ask = { open: true, running: false, text: request };
       } else {
         writeDraft(target, outcome.result.file.content);
-        Object.assign(view, { mode: 'edit', live: outcome.result.file.view, aiNote: outcome.result.summary || 'Alteração proposta.', ask: { open: false, running: false } });
+        Object.assign(view, { mode: 'edit', live: outcome.result.file.view, aiNote: outcome.result.summary || 'Alteração proposta.', aiRunId: outcome.runId || '', aiPrompt: outcome.prompt || '', aiVersion: outcome.promptVersion || '', ask: { open: false, running: false } });
       }
     } catch (error) {
       window.showToast?.(error.message, 'error');
@@ -1029,6 +1035,7 @@
     const files = outcome.result.files;
     return `
       <div class="av-ai-note">${icon('sparkle', 16)}<span><strong>Proposta da IA · por rever.</strong> ${esc(outcome.result.summary || '')}</span></div>
+      ${window.ArtefactViews.promptFold(outcome)}
       ${files.length ? files.map((file) => `
         <section class="av-proposal">
           <div class="av-proposal-head">
@@ -1093,6 +1100,7 @@
           body: { path: file.path, content: file.content, previousSha: file.sha, aiStep: outcome.key },
         });
       }
+      reportOutcome(outcome.runId, 'accepted');
       const fresh = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace`);
       state.data = { ...(state.data || {}), ...fresh };
       steps.outcome = null;
@@ -1121,7 +1129,12 @@
     const generated = view.saved?.generated;
     const actions = [];
     if (isFile && canSync() && view.mode === 'view' && !view.loading && !proposalShown(target)) {
-      actions.push(`<button type="button" class="btn primary" data-ws-action="edit">Editar</button>`);
+      if (/\.mmd$/.test(target) || /^yourlab\/workflows\//.test(target)) {
+        actions.push(`<button type="button" class="btn primary" data-ws-action="studio">${icon('branch', 15)}Estúdio</button>`);
+        actions.push(`<button type="button" class="btn" data-ws-action="edit">Texto</button>`);
+      } else {
+        actions.push(`<button type="button" class="btn primary" data-ws-action="edit">Editar</button>`);
+      }
       actions.push(`<button type="button" class="btn" data-ws-action="ask">${icon('sparkle', 15)}Pedir à IA</button>`);
       const spec = target.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
       if (spec && view.content) actions.push(`<button type="button" class="btn" data-ws-tests="${esc(spec[1])}">Gerar testes</button>`);
@@ -1177,6 +1190,51 @@
     return `${specHere}${impactPane()}${window.ArtefactViews.render(view.saved, { ...opts, editable: canSync() })}${stepsBlock(target)}`;
   }
 
+  /* ------------------------------------------------------------ what no longer matches the code */
+
+  // The same report `yourlab.js check` prints, read on the server (files + git, no AI).
+  const drift = { data: null, loading: false, projectId: '' };
+
+  async function loadDrift() {
+    if (drift.loading || !canSync() || !snapshot()?.initialized) return;
+    drift.loading = true;
+    drift.projectId = state.projectId;
+    try {
+      drift.data = await window.apiRequest(`/${encodeURIComponent(state.projectId)}/workspace/drift`);
+    } catch {
+      drift.data = { error: true };
+    } finally {
+      drift.loading = false;
+      paintArtefactos();
+    }
+  }
+
+  function driftCard() {
+    const k = kit();
+    if (!canSync() || !snapshot()?.initialized) return '';
+    if (drift.projectId !== state.projectId) drift.data = null;
+    if (!drift.data) { loadDrift(); return ''; }
+    const d = drift.data;
+    if (d.error) return '';
+    const rows = [
+      ...d.stale.map((s) => ({ path: s.artefact, title: `${s.title} — «${s.what}»`, sub: `o código em ${s.folder} mudou depois (${s.codeCommit})`, badge: k.badge('amber', 'desactualizado') })),
+      ...d.missing.map((m) => ({ path: m.artefact, title: `${m.title} — «${m.what}»`, sub: `liga a ${m.folder}, que não existe`, badge: k.badge('red', 'ligação partida') })),
+      ...d.undrawn.map((u) => ({ path: (snapshot()?.diagrams || [])[0]?.file || '@group:diagram', title: u, sub: 'pasta de código que nenhum diagrama mostra', badge: k.badge('gray', 'sem nó') })),
+    ];
+    if (!rows.length) {
+      return `<div class="av-drift is-clean">${icon('check', 16)}<span>Os artefactos estão de acordo com o código${d.local ? '' : ' (sem cópia local: a data das alterações não é verificada)'}.</span></div>`;
+    }
+    return `
+      <section class="av-drift">
+        <div class="av-drift-head"><strong>Por actualizar · ${rows.length}</strong><span class="ios-footnote">O mesmo que <code>yourlab.js check</code> — lido dos ficheiros e do git.</span></div>
+        <div class="ios-list">${rows.map((row) => `
+          <button type="button" class="ios-row" data-ws-file="${esc(row.path)}">
+            <span class="ios-row-main"><span class="ios-row-title">${esc(row.title)}</span><span class="ios-row-sub">${esc(row.sub)}</span></span>
+            ${row.badge}${icon('chevron', 14, 'ios-chevron')}
+          </button>`).join('')}</div>
+      </section>`;
+  }
+
   function progressLine() {
     const list = state.data?.aiSteps || [];
     if (!canSync() || !list.length) return '';
@@ -1219,6 +1277,7 @@
     host.innerHTML = `
       ${head}
       ${progressLine()}
+      ${driftCard()}
       <div class="av-layout ${view.sel ? 'has-selection' : ''}">
         <nav class="av-list" aria-label="Artefactos">${artefactList(snap)}</nav>
         <div class="av-viewer">${view.sel ? `${viewerHead()}<div class="av-viewer-body">${viewerBody(snap)}</div>` : '<p class="av-empty av-pick">Escolha um artefacto.</p>'}</div>
@@ -1305,6 +1364,7 @@
         method: 'POST',
         body: { files },
       });
+      reportOutcome(testsDraft.outcome?.runId, 'accepted');
       testsDraft.outcome = null;
       if (!response.changeRequest) Object.assign(codeDraft, { testPaths: response.written, outcome: null });
       window.showToast?.(response.changeRequest
@@ -1387,6 +1447,7 @@
         method: 'POST',
         body: { testPaths: codeDraft.testPaths, files: files.map(({ path, content }) => ({ path, content })) },
       });
+      reportOutcome(codeDraft.outcome?.runId, 'accepted');
       Object.assign(codeDraft, { testPaths: [], outcome: null });
       Object.assign(syncDraft, { changes: files.map((file) => ({ path: file.path, diff: file.diff || file.content.slice(0, 2000) })), outcome: null });
       window.showToast?.(response.changeRequest
@@ -1457,6 +1518,17 @@
     }
   }
 
+  /**
+   * What the person did with an AI answer, sent back to the prompt registry: that is how
+   * each prompt version earns its acceptance rate. Fire and forget — never blocks the work.
+   */
+  function reportOutcome(runId, outcome) {
+    if (!runId) return;
+    window.apiRequest(`/${encodeURIComponent(state.projectId || projectIdNow())}/ai-runs/${encodeURIComponent(runId)}/outcome`, {
+      method: 'POST', body: { outcome },
+    }).catch(() => {});
+  }
+
   /** Anything outside Artefactos that opens an artefact: Resumo rows, links, cards. */
   function openArtefact(target) {
     if (!target) return;
@@ -1516,7 +1588,7 @@
     paintSplit(host);
     try {
       const outcome = await window.apiRequest(`/${encodeURIComponent(projectIdNow())}/packs/split_task`, { method: 'POST', body: { taskId } });
-      splits.set(taskId, { result: outcome.result, running: false });
+      splits.set(taskId, { result: outcome.result, runId: outcome.runId, running: false });
     } catch (error) {
       splits.set(taskId, { ...entry, running: false });
       window.showToast?.(error.message, 'error');
@@ -1533,6 +1605,7 @@
         method: 'POST',
         body: { tasks: result.tasks },
       });
+      reportOutcome(splits.get(taskId)?.runId, 'accepted');
       splits.delete(taskId);
       window.showToast?.(`${response.children.length} tarefas criadas por baixo desta.`, 'ok');
       if (window.state?.selectedProject) window.WorkItemsUI?.open?.(window.state.selectedProject);
@@ -1566,14 +1639,15 @@
       else if (name === 'sync-run') runSyncBack();
       else if (name === 'sync-close') { Object.assign(syncDraft, { changes: [], outcome: null }); paintArtefactos(); }
       else if (name === 'code-write') writeCode();
-      else if (name === 'code-discard') { codeDraft.outcome = null; paintArtefactos(); }
+      else if (name === 'code-discard') { reportOutcome(codeDraft.outcome?.runId, 'discarded'); codeDraft.outcome = null; paintArtefactos(); }
       else if (name === 'code-close') { Object.assign(codeDraft, { testPaths: [], outcome: null }); paintArtefactos(); }
-      else if (name === 'tests-discard') { testsDraft.outcome = null; paintArtefactos(); }
+      else if (name === 'tests-discard') { reportOutcome(testsDraft.outcome?.runId, 'discarded'); testsDraft.outcome = null; paintArtefactos(); }
       else if (name === 'steps-create') createSteps();
       else if (name === 'step-write') writeStep();
-      else if (name === 'step-discard') { steps.outcome = null; paintArtefactos(); }
+      else if (name === 'step-discard') { reportOutcome(steps.outcome?.runId, 'discarded'); steps.outcome = null; paintArtefactos(); }
       else if (name === 'step-diff') { view.showDiff = !view.showDiff; paintArtefactos(); }
       else if (name === 'edit') startEdit();
+      else if (name === 'studio') window.ArtefactStudio?.open(view.sel);
       else if (name === 'ask') { view.ask = { open: true, running: false }; paintArtefactos(); document.querySelector('[data-ws-ask-text]')?.focus(); }
       else if (name === 'ask-close') { view.ask = { open: false, running: false }; paintArtefactos(); }
       else if (name === 'back') { view.sel = ''; paintArtefactos(); }
@@ -1633,7 +1707,7 @@
     const splitHost = target?.closest?.('[data-split-task]');
     if (splitHost && target.closest('[data-split-ask]')) { askSplit(splitHost); return; }
     if (splitHost && target.closest('[data-split-apply]')) { applySplit(splitHost); return; }
-    if (splitHost && target.closest('[data-split-discard]')) { splits.delete(splitHost.dataset.splitTask); paintSplit(splitHost); return; }
+    if (splitHost && target.closest('[data-split-discard]')) { reportOutcome(splits.get(splitHost.dataset.splitTask)?.runId, 'discarded'); splits.delete(splitHost.dataset.splitTask); paintSplit(splitHost); return; }
     const step = target?.closest?.('[data-ws-step]');
     if (step) { runStep(step.dataset.wsStep); return; }
     const tests = target?.closest?.('[data-ws-tests]');
@@ -1763,6 +1837,26 @@
     openArtefact,
     select,
     present: openStage,
+    reportOutcome,
+    // What the studio needs from the page: the open file, its draft, and the one save.
+    studio: {
+      projectId: () => state.projectId,
+      context(path) {
+        if (view.sel !== path || view.loading) return null;
+        const draft = readDraft(path);
+        return { text: draft === null ? view.content : draft, saved: view.content };
+      },
+      setDraft: (path, value) => writeDraft(path, value),
+      save: (path, text) => (view.sel === path ? saveContent(text) : Promise.resolve(null)),
+      refresh: () => { if (view.sel) select(view.sel); },
+      snapshot: () => snapshot(),
+      open: (path) => openArtefact(path),
+      newDraft(path, content) {
+        writeDraft(path, content);
+        if (!hasFile(path)) view.newPath = path;
+        select(path);
+      },
+    },
     openMockup,
     subscribe: (listener) => {
       listeners.add(listener);
