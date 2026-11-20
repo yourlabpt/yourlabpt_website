@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DMN_DIR = process.env.DMN_DIR
-    || path.resolve(__dirname, '../../../../../yourlab_company/drive/03_WORK/digitalizemeunegocio');
+    || path.resolve(__dirname, '../../../../digitalizemeunegocio');
 const origem = path.join(DMN_DIR, 'server/config/verticais.json');
 const destino = path.join(__dirname, '..', 'config', 'foco');
 
